@@ -1,0 +1,102 @@
+{
+  "models": {
+    "providers": {
+      "ollama": {
+        "api": "ollama",
+        "apiKey": "ollama-local",
+        "baseUrl": "http://127.0.0.1:11434",
+        "models": [
+          {
+            "id": "qwen3.5:35b",
+            "name": "Qwen 3.5 35B",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 32768,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "__ROOT_DIR__",
+      "repoRoot": "__ROOT_DIR__",
+      "skipBootstrap": true,
+      "timeoutSeconds": 900,
+      "model": {
+        "primary": "ollama/qwen3.5:35b"
+      },
+      "sandbox": {
+        "mode": "all",
+        "scope": "agent",
+        "workspaceAccess": "rw",
+        "workspaceRoot": "__ROOT_DIR__/.agents/sandboxes",
+        "docker": {
+          "image": "openclaw-sandbox:pytorch-shared-venv",
+          "user": "1000:1000",
+          "workdir": "/workspace",
+          "tmpfs": ["/tmp", "/var/tmp"],
+          "setupCommand": "bash /workspace/.agents/scripts/setup_env_python.sh",
+          "env": {
+            "VIRTUAL_ENV": "/workspace/env-python",
+            "PATH": "/workspace/env-python/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1"
+          }
+        }
+      }
+    },
+    "list": [
+      {
+        "id": "local-ollama-qwen-manager",
+        "default": true,
+        "name": "Manager",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-manager/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
+        "id": "local-ollama-qwen-planner",
+        "name": "Planner",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-planner/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
+        "id": "local-ollama-qwen-coder",
+        "name": "Coder",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-coder/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
+        "id": "local-ollama-qwen-tester",
+        "name": "Tester",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-tester/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      }
+    ]
+  },
+  "tools": {
+    "sandbox": {
+      "tools": {
+        "allow": ["exec", "process", "read", "write", "edit", "apply_patch"]
+      }
+    }
+  }
+}

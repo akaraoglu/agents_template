@@ -1,0 +1,5 @@
+.agents/openclaw.json
+.agents/state/*
+!.agents/state/.gitkeep
+.agents/sandboxes/*
+!.agents/sandboxes/.gitkeep

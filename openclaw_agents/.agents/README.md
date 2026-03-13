@@ -1,0 +1,42 @@
+# Local OpenClaw Team Template
+
+This folder contains a reusable local OpenClaw team template backed by Docker.
+Project-specific context belongs in `PROJECT.md`. Local agent config, prompts,
+wrappers, generated state, and Docker assets live under `.agents/`.
+
+## Team Roles
+- `manager`: orchestrates work, delegates scoped tasks, and synthesizes results
+- `planner`: produces implementation plans and identifies risks
+- `coder`: makes code changes
+- `tester`: validates behavior and checks regressions
+
+## Runtime Model
+- Model family: `ollama/qwen3.5:35b`
+- Sandbox base image: `pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime`
+- Derived runtime image: `openclaw-sandbox:pytorch-shared-venv`
+- Shared sandbox virtual environment: generated during sandbox setup
+- Config file: generated from `.agents/openclaw.template.json` into `.agents/openclaw.json`
+- Local runtime artifacts: `.agents/state/` and `.agents/sandboxes/`
+
+## Key Files
+- `PROJECT.md`: project-specific goals, constraints, commands, and acceptance criteria
+- `.agents/openclaw.template.json`: portable OpenClaw config template
+- `.agents/prompts/`: role prompts
+- `.agents/docker/pytorch-shared-venv/`: sandbox image build context
+- `.agents/scripts/render_openclaw_config.sh`: generates local config from the template
+- `.agents/scripts/setup_local_team.sh`: prepares the local template and optional validation
+- `.agents/run_manager.sh`: direct manager entrypoint
+- `.agents/run_team.sh`: manager-led orchestration wrapper
+
+## Quick Start
+```bash
+bash .agents/scripts/setup_local_team.sh
+bash .agents/run_manager.sh "Read PROJECT.md and summarize the next best step."
+bash .agents/run_team.sh "Implement the requested change and validate it."
+```
+
+## Notes
+- Edit `PROJECT.md` for each project before running the team.
+- Edit `.agents/docker/pytorch-shared-venv/requirements-extra.txt` when the sandbox needs additional Python packages.
+- Do not edit the generated `.agents/openclaw.json` directly; update the template or rendering script instead.
+- The manager is the logical orchestrator. In this local template, `run_team.sh` coordinates the manager, planner, coder, and tester externally because embedded local mode may not expose direct in-agent delegation tools consistently.
