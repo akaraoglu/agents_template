@@ -20,6 +20,8 @@ wrappers, generated state, and Docker assets live under `.agents/`.
 
 ## Key Files
 - `PROJECT.md`: project-specific goals, constraints, commands, and acceptance criteria
+- `ZULIP_SETUP_GUIDE.md`: human-facing Zulip installation, account creation, and UI workflow guide
+- `ZULIP_PLAN.md`: Zulip architecture, rollout phases, and sprint planning guide
 - `.agents/openclaw.template.json`: portable OpenClaw config template
 - `.agents/prompts/`: role prompts
 - `.agents/docker/pytorch-shared-venv/`: sandbox image build context

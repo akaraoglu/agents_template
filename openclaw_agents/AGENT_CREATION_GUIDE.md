@@ -11,6 +11,12 @@ This guide describes how to create a reusable local OpenClaw team template that:
 
 The canonical local template in this repository is `openclaw_agents/`.
 
+Related guide:
+- `ZULIP_SETUP_GUIDE.md` for setting up a self-hosted Zulip UI for human-visible
+  agent discussions, account creation, and intervention workflows
+- `ZULIP_PLAN.md` for the target architecture, rollout phases, and Phase 1
+  sprint plan for the Zulip and bridge integration
+
 ## Core Principles
 
 - Keep project-specific information in `PROJECT.md`.
