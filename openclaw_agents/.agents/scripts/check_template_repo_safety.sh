@@ -35,6 +35,7 @@ check_dir_only_gitkeep() {
 
 check_absent_path "$ROOT_DIR/.agents/openclaw.json"
 check_absent_path "$ROOT_DIR/software_bridge_v1/config.json"
+check_absent_path "$ROOT_DIR/software_bridge_v1/__pycache__"
 check_dir_only_gitkeep "$ROOT_DIR/.agents/state"
 check_dir_only_gitkeep "$ROOT_DIR/.agents/sandboxes"
 check_dir_only_gitkeep "$ROOT_DIR/software_bridge_v1/private"
