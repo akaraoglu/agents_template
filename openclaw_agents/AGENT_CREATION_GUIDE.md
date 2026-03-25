@@ -16,6 +16,29 @@ Related guide:
   agent discussions, account creation, and intervention workflows
 - `ZULIP_PLAN.md` for the target architecture, rollout phases, and Phase 1
   sprint plan for the Zulip and bridge integration
+- `ZULIP_SPRINT_1.md` for the concrete Sprint 1 execution checklist and
+  validation path for the initial local Zulip deployment
+- `ZULIP_V1_SOFTWARE_TEAM.md` for the chosen first implementation: one
+  `software` channel, one visible manager bot, and one mounted project workspace
+- `software_bridge_v1/README.md` for the first working bridge runtime between
+  Zulip and the software team workspace
+- `.agents/scripts/check_template_repo_safety.sh` for template-maintainer checks
+  before committing changes to this repository
+
+## Template Variables
+
+Committed docs and examples in this repository should use explicit placeholders
+instead of local-machine values.
+
+Use these variables consistently:
+- `YOUR_PROJECT_WORKSPACE`
+- `YOUR_ZULIP_WORKDIR`
+- `YOUR_DOCKER_ZULIP_DIR`
+- `YOUR_ZULIP_EXTERNAL_HOST`
+- `YOUR_ZULIP_SITE_URL`
+- `YOUR_ZULIP_ADMIN_EMAIL`
+- `YOUR_SOFTWARE_STREAM_NAME`
+- `YOUR_SOFTWARE_MANAGER_BOT_EMAIL`
 
 ## Core Principles
 
@@ -172,3 +195,8 @@ bash .agents/scripts/setup_local_team.sh --validate
 - Keep role prompts and wrapper behavior aligned.
 - Prefer portable relative references in committed docs and scripts.
 - Keep host-specific paths out of committed files other than the locally generated config.
+- Before committing template changes, run:
+
+```bash
+bash .agents/scripts/check_template_repo_safety.sh
+```

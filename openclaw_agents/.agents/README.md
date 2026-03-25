@@ -22,11 +22,16 @@ wrappers, generated state, and Docker assets live under `.agents/`.
 - `PROJECT.md`: project-specific goals, constraints, commands, and acceptance criteria
 - `ZULIP_SETUP_GUIDE.md`: human-facing Zulip installation, account creation, and UI workflow guide
 - `ZULIP_PLAN.md`: Zulip architecture, rollout phases, and sprint planning guide
+- `ZULIP_SPRINT_1.md`: detailed Sprint 1 execution plan for the first local Zulip deployment
+- `ZULIP_V1_SOFTWARE_TEAM.md`: chosen v1 design for the software-only Zulip bridge flow
+- `software_bridge_v1/README.md`: reusable bridge runtime for the chosen v1 design
+- `SOFTWARE_WORKSPACE_README.md`: reusable starting README for the mounted software workspace
 - `.agents/openclaw.template.json`: portable OpenClaw config template
 - `.agents/prompts/`: role prompts
 - `.agents/docker/pytorch-shared-venv/`: sandbox image build context
 - `.agents/scripts/render_openclaw_config.sh`: generates local config from the template
 - `.agents/scripts/setup_local_team.sh`: prepares the local template and optional validation
+- `.agents/scripts/check_template_repo_safety.sh`: checks that the template repo does not include generated local config, local state, or machine-specific committed values
 - `.agents/run_manager.sh`: direct manager entrypoint
 - `.agents/run_team.sh`: manager-led orchestration wrapper
 
@@ -42,3 +47,4 @@ bash .agents/run_team.sh "Implement the requested change and validate it."
 - Edit `.agents/docker/pytorch-shared-venv/requirements-extra.txt` when the sandbox needs additional Python packages.
 - Do not edit the generated `.agents/openclaw.json` directly; update the template or rendering script instead.
 - The manager is the logical orchestrator. In this local template, `run_team.sh` coordinates the manager, planner, coder, and tester externally because embedded local mode may not expose direct in-agent delegation tools consistently.
+- Template maintainers should run `bash .agents/scripts/check_template_repo_safety.sh` before committing changes in this repository.

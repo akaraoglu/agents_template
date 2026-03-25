@@ -69,6 +69,11 @@ append_section() {
 }
 
 append_section "$PROMPT_TEXT"
+append_section "SANDBOX_CONTEXT:
+- The repository root is mounted inside the sandbox at /workspace.
+- PROJECT.md is available at /workspace/PROJECT.md.
+- Do not use host paths like $ROOT_DIR inside the sandbox.
+- Use repo-root-relative paths or /workspace/... paths only."
 append_section "PROJECT_CONTEXT:
 $PROJECT_TEXT"
 

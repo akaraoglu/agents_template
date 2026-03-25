@@ -3,3 +3,8 @@
 !.agents/state/.gitkeep
 .agents/sandboxes/*
 !.agents/sandboxes/.gitkeep
+software_bridge_v1/config.json
+software_bridge_v1/private/*
+!software_bridge_v1/private/.gitkeep
+software_bridge_v1/state/*
+!software_bridge_v1/state/.gitkeep

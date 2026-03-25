@@ -1,0 +1,5 @@
+config.json
+private/*
+!private/.gitkeep
+state/*
+!state/.gitkeep

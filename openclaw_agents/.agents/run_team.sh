@@ -9,6 +9,12 @@ if [[ $# -eq 0 ]]; then
 fi
 
 USER_TASK="$*"
+SANDBOX_ROOT="/workspace"
+
+normalize_for_sandbox() {
+  local input_text="$1"
+  printf '%s' "${input_text//$ROOT_DIR/$SANDBOX_ROOT}"
+}
 
 extract_section() {
   local section_name="$1"
@@ -27,6 +33,10 @@ print(match.group(1).strip())
 }
 
 ASSIGNMENT_PROMPT="You are assigning work for the local OpenClaw team.
+
+Use sandbox-visible paths only.
+- The repository root inside the sandbox is /workspace.
+- Do not use host paths like $ROOT_DIR in assignments.
 
 Return exactly in this format:
 PLAN_SUMMARY:
@@ -47,8 +57,10 @@ TESTER_TASK:
 SUCCESS_CRITERIA:
 <project-relevant success criteria>"
 
+SANDBOX_USER_TASK="$(normalize_for_sandbox "$USER_TASK")"
+
 ASSIGNMENT_OUTPUT="$("$ROOT_DIR/.agents/run_manager.sh" "User task:
-$USER_TASK
+$SANDBOX_USER_TASK
 
 $ASSIGNMENT_PROMPT")"
 
@@ -59,9 +71,16 @@ CODER_TASK="$(printf '%s' "$ASSIGNMENT_OUTPUT" | extract_section CODER_TASK)"
 TESTER_TASK="$(printf '%s' "$ASSIGNMENT_OUTPUT" | extract_section TESTER_TASK)"
 SUCCESS_CRITERIA="$(printf '%s' "$ASSIGNMENT_OUTPUT" | extract_section SUCCESS_CRITERIA)"
 
+PLAN_SUMMARY="$(normalize_for_sandbox "$PLAN_SUMMARY")"
+PLANNER_TASK="$(normalize_for_sandbox "$PLANNER_TASK")"
+CODER_TASK="$(normalize_for_sandbox "$CODER_TASK")"
+TESTER_TASK="$(normalize_for_sandbox "$TESTER_TASK")"
+SUCCESS_CRITERIA="$(normalize_for_sandbox "$SUCCESS_CRITERIA")"
+
 PLANNER_OUTPUT="NONE"
 if [[ "$PLANNER_NEEDED" == "yes" && "$PLANNER_TASK" != "NONE" ]]; then
   PLANNER_OUTPUT="$("$ROOT_DIR/.agents/run_planner.sh" "$PLANNER_TASK")"
+  PLANNER_OUTPUT="$(normalize_for_sandbox "$PLANNER_OUTPUT")"
 fi
 
 CODER_PROMPT="$CODER_TASK"$'\n\n'"Manager plan summary:
@@ -72,6 +91,7 @@ if [[ "$PLANNER_OUTPUT" != "NONE" ]]; then
 $PLANNER_OUTPUT"
 fi
 CODER_OUTPUT="$("$ROOT_DIR/.agents/run_coder.sh" "$CODER_PROMPT")"
+CODER_OUTPUT="$(normalize_for_sandbox "$CODER_OUTPUT")"
 
 TESTER_PROMPT="$TESTER_TASK"$'\n\n'"Manager plan summary:
 $PLAN_SUMMARY"$'\n\n'"Success criteria:
@@ -83,9 +103,10 @@ fi
 TESTER_PROMPT+=$'\n\n'"Coder output for context:
 $CODER_OUTPUT"
 TESTER_OUTPUT="$("$ROOT_DIR/.agents/run_tester.sh" "$TESTER_PROMPT")"
+TESTER_OUTPUT="$(normalize_for_sandbox "$TESTER_OUTPUT")"
 
 SYNTHESIS_PROMPT="User task:
-$USER_TASK
+$SANDBOX_USER_TASK
 
 Plan summary:
 $PLAN_SUMMARY

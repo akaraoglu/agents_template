@@ -1,0 +1,11 @@
+{
+  "zuliprc_path": "./private/YOUR_SOFTWARE_MANAGER_BOT.zuliprc",
+  "stream_name": "YOUR_SOFTWARE_STREAM_NAME",
+  "software_workspace": "YOUR_PROJECT_WORKSPACE",
+  "software_run_command": ["bash", ".agents/run_team.sh"],
+  "state_dir": "./state",
+  "verify_tls": true,
+  "poll_timeout_seconds": 30,
+  "history_entry_limit": 20,
+  "send_acknowledgement": true
+}
