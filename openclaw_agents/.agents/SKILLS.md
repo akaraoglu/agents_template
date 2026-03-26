@@ -15,6 +15,8 @@ Canonical entrypoints:
 
 Project context:
 - `PROJECT.md` is the single project-specific source of truth for goals, constraints, architecture notes, and commands.
+- For the multi-project direction, `project_template/` provides the per-project
+  documents and `.agents/project_registry.json` maps project slugs to workspaces.
 - `.agents/openclaw.json` is generated locally from `.agents/openclaw.template.json`.
 
 ## 1. Local Agent Generator
@@ -23,7 +25,8 @@ Project context:
 - Canonical skill file: `.agents/skills/local-openclaw-agent-generator/SKILL.md`
 - Scope:
   - keep agent assets under `.agents/`
-  - keep project-specific context in `PROJECT.md`
+  - keep single-project context in `PROJECT.md`, or per-project context in
+    `project_template/`-based folders for multi-project setups
   - keep OpenClaw config and runtime state local, never global
   - keep the manager-led team model aligned across config, prompts, wrappers, and docs
 
@@ -35,6 +38,8 @@ Project context:
   - use the current manager/planner/coder/tester roles and wrappers
   - use the manager-led team wrapper when orchestration is needed
   - verify Docker sandbox image and local runtime when needed
+  - keep project-registry driven multi-project routing aligned with the bridge
+    and the per-project document model
   - rely on the configured shared sandbox environment instead of hardcoded system interpreter paths
   - keep prompts, scripts, config generation, and local rules aligned
 

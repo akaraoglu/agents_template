@@ -1,0 +1,15 @@
+{
+  "default_project": "alpha",
+  "projects": {
+    "alpha": {
+      "display_name": "Project Alpha",
+      "workspace": "YOUR_AGENT_HOME/projects/project-alpha",
+      "description": "Replace this with a short description."
+    },
+    "beta": {
+      "display_name": "Project Beta",
+      "workspace": "YOUR_AGENT_HOME/projects/project-beta",
+      "description": "Replace this with a short description."
+    }
+  }
+}

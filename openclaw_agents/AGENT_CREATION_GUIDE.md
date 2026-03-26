@@ -12,6 +12,8 @@ This guide describes how to create a reusable local OpenClaw team template that:
 The canonical local template in this repository is `openclaw_agents/`.
 
 Related guide:
+- `SETUP_BLUEPRINT.md` for the canonical end-to-end instructions another agent
+  should follow to recreate this OpenClaw, project, bridge, and Zulip setup
 - `ZULIP_SETUP_GUIDE.md` for setting up a self-hosted Zulip UI for human-visible
   agent discussions, account creation, and intervention workflows
 - `ZULIP_PLAN.md` for the target architecture, rollout phases, and Phase 1
@@ -20,6 +22,15 @@ Related guide:
   validation path for the initial local Zulip deployment
 - `ZULIP_V1_SOFTWARE_TEAM.md` for the chosen first implementation: one
   `software` channel, one visible manager bot, and one mounted project workspace
+- `MULTI_PROJECT_PLAN.md` for the next-step split between the shared runtime and
+  per-project folders
+- `project_template/README.md` for the reusable per-project document scaffold
+- `.agents/project_registry.example.json` for the shared multi-project registry
+  shape
+- `.agents/scripts/project_registry.py` for validating and inspecting the shared
+  project registry
+- `persona_bridge_v1/README.md` for a shared multi-bot bridge that makes
+  discussion personas DM-able and stream-visible in Zulip
 - `software_bridge_v1/README.md` for the first working bridge runtime between
   Zulip and the software team workspace
 - `.agents/scripts/check_template_repo_safety.sh` for template-maintainer checks
@@ -32,6 +43,7 @@ instead of local-machine values.
 
 Use these variables consistently:
 - `YOUR_PROJECT_WORKSPACE`
+- `YOUR_PROJECT_REGISTRY`
 - `YOUR_ZULIP_WORKDIR`
 - `YOUR_DOCKER_ZULIP_DIR`
 - `YOUR_ZULIP_EXTERNAL_HOST`
@@ -43,10 +55,15 @@ Use these variables consistently:
 ## Core Principles
 
 - Keep project-specific information in `PROJECT.md`.
+- In multi-project mode, keep the shared project-to-workspace mapping in a local
+  project registry file derived from `.agents/project_registry.example.json`.
 - Keep reusable agent assets under `.agents/`.
 - Generate local `openclaw.json` from a template instead of committing machine-specific paths.
 - Keep runtime state and sandbox artifacts out of version control.
 - Use a `manager` role to orchestrate the rest of the team.
+
+If you need one document to hand to another agent so it can recreate this whole
+stack, use `SETUP_BLUEPRINT.md`.
 
 ## Template Layout
 
@@ -98,7 +115,11 @@ The manager should not be the default code editor. Its main job is orchestration
 
 ## Project Context Contract
 
-`PROJECT.md` is the only file expected to change per project. At minimum, include:
+For the single-project template, `PROJECT.md` is the primary per-project file.
+For the multi-project direction, instantiate `project_template/` inside each
+project folder and keep the full project document set there.
+
+At minimum, include:
 - project summary
 - current goal
 - constraints
@@ -108,7 +129,9 @@ The manager should not be the default code editor. Its main job is orchestration
 - setup, test, lint, typecheck, and run commands
 - risks and open questions
 
-All role prompts and wrappers should either read or inject `PROJECT.md` so the team always works from the current project context.
+All role prompts and wrappers should read or inject the current project's
+documents, not a global default project, so the team always works from the
+correct project context.
 
 ## Config Generation Model
 
@@ -144,6 +167,17 @@ The canonical local template uses an external wrapper for orchestration:
 - `run_team.sh` asks the manager to synthesize the final answer
 
 This model is preferred because embedded local mode may not expose direct in-agent delegation tools consistently.
+
+## Zulip Bridge Split
+
+Keep discussion personas and execution teams on separate bridge layers.
+
+Recommended split:
+- `persona_bridge_v1/` for DM-able and room-visible personas such as
+  `AgentSmith`, `Yoda`, and `Architect`
+- `software_bridge_v1/` for manager-led execution teams such as `Morpheus`
+
+This avoids mixing human-facing persona chat with execution-team orchestration.
 
 ## Creating a New Role
 
@@ -183,11 +217,15 @@ bash .agents/scripts/setup_local_team.sh --validate
 ## Adapting the Template to a New Project
 
 1. Copy `openclaw_agents/` into the project.
-2. Update `PROJECT.md`.
-3. Adjust `requirements-extra.txt` if the sandbox needs more Python packages.
-4. Run the setup script to render local config.
-5. Build the Docker image if needed.
-6. Validate the team registration and sandbox configuration.
+2. For a single-project setup, update `PROJECT.md`.
+3. For a multi-project setup, create project folders from `project_template/`
+   and keep the shared runtime generic.
+4. In multi-project mode, create a local `.agents/project_registry.json` file
+   from the example template and point the bridge at it.
+5. Adjust `requirements-extra.txt` if the sandbox needs more Python packages.
+6. Run the setup script to render local config.
+7. Build the Docker image if needed.
+8. Validate the team registration and sandbox configuration.
 
 ## Maintenance Rules
 

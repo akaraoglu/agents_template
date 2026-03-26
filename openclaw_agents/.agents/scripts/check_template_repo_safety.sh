@@ -36,13 +36,23 @@ check_dir_only_gitkeep() {
 check_absent_path "$ROOT_DIR/.agents/openclaw.json"
 check_absent_path "$ROOT_DIR/software_bridge_v1/config.json"
 check_absent_path "$ROOT_DIR/software_bridge_v1/__pycache__"
+check_absent_path "$ROOT_DIR/persona_bridge_v1/config.json"
+check_absent_path "$ROOT_DIR/persona_bridge_v1/persona_registry.json"
+check_absent_path "$ROOT_DIR/persona_bridge_v1/__pycache__"
 check_dir_only_gitkeep "$ROOT_DIR/.agents/state"
 check_dir_only_gitkeep "$ROOT_DIR/.agents/sandboxes"
 check_dir_only_gitkeep "$ROOT_DIR/software_bridge_v1/private"
 check_dir_only_gitkeep "$ROOT_DIR/software_bridge_v1/state"
+check_dir_only_gitkeep "$ROOT_DIR/persona_bridge_v1/private"
+check_dir_only_gitkeep "$ROOT_DIR/persona_bridge_v1/state"
 
 PATTERN='(/home/|localhost\.localdomain|claw_software_workspace|software-manager-bot@localhost\.localdomain|akaraoglu@gmail\.com)'
-MATCHES="$(rg -n "$PATTERN" "$ROOT_DIR" -g '!software_bridge_v1/private/**' -g '!software_bridge_v1/state/**' -g '!**/.gitkeep' || true)"
+MATCHES="$(rg -n "$PATTERN" "$ROOT_DIR" \
+  -g '!software_bridge_v1/private/**' \
+  -g '!software_bridge_v1/state/**' \
+  -g '!persona_bridge_v1/private/**' \
+  -g '!persona_bridge_v1/state/**' \
+  -g '!**/.gitkeep' || true)"
 if [[ -n "$MATCHES" ]]; then
   echo "$MATCHES" >&2
   report_failure "Found local-machine specific values in committed template files."

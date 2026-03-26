@@ -30,14 +30,14 @@ The goal is to add a human-visible collaboration surface where:
 
 This plan separates:
 - Zulip as the conversation surface
-- a bridge service as the integration layer
+- persona and team bridges as the integration layer
 - the research and software teams as execution backends
 
 ## Goals
 
 - Run Zulip locally or privately with Docker Compose.
 - Keep Zulip operationally separate from the OpenClaw sandbox runtime.
-- Add a bridge service that is the only component talking to both Zulip and the agent teams.
+- Add bridge services that are the only components talking to both Zulip and the agent runtimes.
 - Support human-in-the-loop checkpoints and intervention.
 - Preserve durable artifacts in repository files instead of relying on chat history alone.
 - Start with a narrow and stable V1, then expand.
@@ -74,17 +74,21 @@ The target system has four major parts:
 - self-hosted Zulip server running with Docker Compose
 - persistent data, admin UI, streams, topics, bot accounts, and human accounts
 
-2. Bridge service
-- one service that listens to Zulip and calls the agent teams
+2. Persona bridge
+- one shared multi-bot service for human-facing personas
+- handles DMs, group DMs, selected streams, status, and stop control
+
+3. Team bridge
+- one service that listens to Zulip and calls the execution teams
 - responsible for run state, message routing, checkpoints, and posting results
 
-3. Research team
+4. Research team
 - `research-manager`
 - `explorer`
 - `skeptic`
 - `feasibility`
 
-4. Software team
+5. Software team
 - `manager`
 - `planner`
 - `coder`
@@ -98,7 +102,13 @@ Zulip is responsible for:
 - bot identities
 - reviewable conversation history
 
-The bridge is responsible for:
+The persona bridge is responsible for:
+- reading Zulip events for discussion personas
+- routing DMs and stream discussions to the correct persona runtime
+- posting persona replies under the correct bot identity
+- enforcing stream-level invocation rules
+
+The team bridge is responsible for:
 - reading Zulip events
 - deciding whether a message starts, continues, redirects, or stops a run
 - turning chat messages into agent tasks
@@ -123,7 +133,8 @@ The agent runtimes are responsible for:
 Recommended deployment shape:
 - one Zulip Compose project
 - one agent/orchestrator environment
-- one bridge service
+- one persona bridge service
+- one team bridge service
 - one shared Docker network when needed
 
 Important constraint:
@@ -131,12 +142,14 @@ Important constraint:
 
 ## Communication Model
 
-Communication should happen through a single bridge service.
+Communication should happen through bridge services, not directly from every
+agent.
 
 Recommended flow:
-- Zulip -> bridge via Zulip bot/event API
-- bridge -> research or software manager via local wrappers or API
-- manager/team output -> bridge
+- Zulip -> persona bridge for DM-able and room-visible discussion personas
+- Zulip -> team bridge for manager-led execution teams
+- bridge -> persona or team runtime via local wrappers or API
+- runtime output -> bridge
 - bridge -> Zulip via bot message API
 
 ## Human-in-the-Loop Model
@@ -179,6 +192,11 @@ Recommended bot accounts:
 - `skeptic-bot`
 - `feasibility-bot`
 - `software-manager-bot`
+
+Recommended persona bots:
+- `agentsmith-bot`
+- `yoda-bot`
+- `architect-bot`
 
 Optional later:
 - `planner-bot`

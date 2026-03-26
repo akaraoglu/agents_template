@@ -43,6 +43,15 @@ def contains_template_placeholder(value: str) -> bool:
     return "YOUR_" in value
 
 
+def validate_project_workspace(path: pathlib.Path) -> None:
+    if contains_template_placeholder(str(path)):
+        raise RuntimeError(f"Replace template placeholders in project workspace path: {path}")
+    if not path.exists():
+        raise RuntimeError(f"Project workspace does not exist: {path}")
+    if not (path / "PROJECT.md").exists():
+        raise RuntimeError(f"Missing PROJECT.md in project workspace: {path / 'PROJECT.md'}")
+
+
 def load_zuliprc(path: pathlib.Path) -> dict[str, str]:
     parser = configparser.ConfigParser()
     with path.open() as handle:
@@ -172,13 +181,26 @@ class Bridge:
         zuliprc = load_zuliprc(zuliprc_path)
 
         self.stream_name = raw_config["stream_name"]
-        self.software_workspace = resolve_path(self.config_dir, raw_config["software_workspace"])
+        software_workspace_value = raw_config.get("software_workspace")
+        self.software_workspace = (
+            resolve_path(self.config_dir, software_workspace_value)
+            if software_workspace_value
+            else None
+        )
+        project_registry_value = raw_config.get("project_registry_path")
+        self.project_registry_path = (
+            resolve_path(self.config_dir, project_registry_value)
+            if project_registry_value
+            else None
+        )
+        self.default_project_slug = raw_config.get("default_project_slug")
         self.software_run_command = raw_config.get("software_run_command", ["bash", ".agents/run_team.sh"])
         self.state_dir = resolve_path(self.config_dir, raw_config.get("state_dir", "./state"))
         self.verify_tls = bool(raw_config.get("verify_tls", False))
         self.poll_timeout_seconds = int(raw_config.get("poll_timeout_seconds", 30))
         self.history_entry_limit = int(raw_config.get("history_entry_limit", 20))
         self.send_acknowledgement = bool(raw_config.get("send_acknowledgement", True))
+        self.project_registry = self._load_project_registry()
 
         ensure_dir(self.state_dir)
         ensure_dir(self.state_dir / "topics")
@@ -207,23 +229,79 @@ class Bridge:
         self.state["processed_message_ids"] = processed[-500:]
         save_json(self.state_path, self.state)
 
+    def _load_project_registry(self) -> dict[str, Any] | None:
+        if self.project_registry_path is None:
+            return None
+        if contains_template_placeholder(str(self.project_registry_path)):
+            raise RuntimeError(
+                "Replace the project_registry_path placeholder in the bridge config."
+            )
+        if not self.project_registry_path.exists():
+            raise RuntimeError(f"Project registry does not exist: {self.project_registry_path}")
+
+        raw_registry = load_json(self.project_registry_path)
+        raw_projects = raw_registry.get("projects")
+        if not isinstance(raw_projects, dict) or not raw_projects:
+            raise RuntimeError("Project registry must define a non-empty 'projects' mapping.")
+
+        projects: dict[str, dict[str, Any]] = {}
+        for slug, entry in raw_projects.items():
+            if contains_template_placeholder(slug):
+                raise RuntimeError(f"Replace template placeholders in project slug: {slug}")
+            if not isinstance(entry, dict):
+                raise RuntimeError(f"Project registry entry for {slug} must be an object.")
+            workspace_value = entry.get("workspace")
+            if not workspace_value:
+                raise RuntimeError(f"Project registry entry for {slug} is missing 'workspace'.")
+            workspace = resolve_path(self.project_registry_path.parent, workspace_value)
+            projects[slug] = {
+                "slug": slug,
+                "display_name": entry.get("display_name") or slug,
+                "description": entry.get("description", ""),
+                "workspace": workspace,
+            }
+
+        default_slug = self.default_project_slug or raw_registry.get("default_project")
+        if default_slug is not None and default_slug not in projects:
+            raise RuntimeError(f"Default project '{default_slug}' is not present in the registry.")
+
+        return {
+            "default_project": default_slug,
+            "projects": projects,
+        }
+
     def check(self) -> None:
-        run_script = self.software_workspace / self.software_run_command[1]
         if contains_template_placeholder(self.stream_name):
             raise RuntimeError("Replace the stream_name placeholder in the bridge config.")
-        if contains_template_placeholder(str(self.software_workspace)):
-            raise RuntimeError("Replace the software_workspace placeholder in the bridge config.")
-        if not self.software_workspace.exists():
-            raise RuntimeError(f"Software workspace does not exist: {self.software_workspace}")
-        if not (self.software_workspace / "PROJECT.md").exists():
-            raise RuntimeError(f"Missing PROJECT.md in software workspace: {self.software_workspace / 'PROJECT.md'}")
+        if self.software_workspace is not None and self.project_registry is not None:
+            raise RuntimeError(
+                "Configure either software_workspace or project_registry_path, not both."
+            )
+        if self.software_workspace is None and self.project_registry is None:
+            raise RuntimeError(
+                "Configure software_workspace for single-project mode or project_registry_path for multi-project mode."
+            )
         if len(self.software_run_command) < 2:
             raise RuntimeError("software_run_command must include the executable and script path")
-        if not run_script.exists():
-            raise RuntimeError(f"Missing software team run script: {run_script}")
+        if self.software_workspace is not None:
+            validate_project_workspace(self.software_workspace)
+            run_script = self.software_workspace / self.software_run_command[1]
+            if not run_script.exists():
+                raise RuntimeError(f"Missing software team run script: {run_script}")
+        if self.project_registry is not None:
+            for slug, entry in self.project_registry["projects"].items():
+                validate_project_workspace(entry["workspace"])
+                run_script = entry["workspace"] / self.software_run_command[1]
+                if not run_script.exists():
+                    raise RuntimeError(f"Missing software team run script for {slug}: {run_script}")
         print("Bridge config OK")
         print(f"- stream: {self.stream_name}")
-        print(f"- software workspace: {self.software_workspace}")
+        if self.software_workspace is not None:
+            print(f"- software workspace: {self.software_workspace}")
+        if self.project_registry is not None:
+            print(f"- project registry: {self.project_registry_path}")
+            print(f"- default project: {self.project_registry['default_project']}")
+            print(f"- registered projects: {', '.join(sorted(self.project_registry['projects'].keys()))}")
         print(f"- state dir: {self.state_dir}")
         print(f"- zulip site: {self.client.site}")
 
@@ -281,15 +359,127 @@ class Bridge:
             blocks.append(f"{header}\n{entry['content'].strip()}")
         return "\n\n".join(blocks)
 
-    def _build_prompt(self, stream_name: str, topic: str, topic_state: dict[str, Any]) -> str:
+    def _parse_project_command(self, content: str) -> tuple[str, str | None] | None:
+        stripped = content.strip()
+        if not stripped.lower().startswith("/project"):
+            return None
+        parts = stripped.split()
+        if len(parts) == 1:
+            return "status", None
+        action = parts[1].lower()
+        argument = " ".join(parts[2:]).strip() or None
+        return action, argument
+
+    def _project_command_response(self, topic_state: dict[str, Any], action: str, argument: str | None) -> str:
+        if self.project_registry is None:
+            if action == "status":
+                assert self.software_workspace is not None
+                return (
+                    "Bridge project mode: single project\n\n"
+                    f"Workspace: `{self.software_workspace}`\n"
+                    "Project selection commands are unavailable because no multi-project registry is configured."
+                )
+            return "Project selection commands are unavailable because no multi-project registry is configured."
+
+        projects = self.project_registry["projects"]
+        default_slug = self.project_registry["default_project"]
+
+        if action == "list":
+            lines = ["Registered projects:"]
+            for slug in sorted(projects):
+                entry = projects[slug]
+                suffix = " (default)" if slug == default_slug else ""
+                description = entry.get("description", "")
+                detail = f" - {description}" if description else ""
+                lines.append(f"- `{slug}` -> `{entry['workspace']}`{suffix}{detail}")
+            lines.append("")
+            lines.append("Commands: `/project use <slug>`, `/project status`, `/project clear`")
+            return "\n".join(lines)
+
+        if action == "use":
+            if not argument:
+                return "Usage: `/project use <slug>`"
+            entry = projects.get(argument)
+            if entry is None:
+                return f"Unknown project slug `{argument}`. Use `/project list`."
+            topic_state["selected_project_slug"] = argument
+            return (
+                f"Selected project `{argument}` for this topic.\n\n"
+                f"Workspace: `{entry['workspace']}`"
+            )
+
+        if action == "status":
+            selected_slug = topic_state.get("selected_project_slug")
+            if selected_slug:
+                entry = projects.get(selected_slug)
+                if entry is None:
+                    return (
+                        f"This topic still references unknown project `{selected_slug}`.\n\n"
+                        "Use `/project list` and `/project use <slug>` to repair it."
+                    )
+                return (
+                    f"Current topic project: `{selected_slug}`\n\n"
+                    f"Workspace: `{entry['workspace']}`\n"
+                    f"Default project: `{default_slug}`"
+                )
+            if default_slug:
+                entry = projects[default_slug]
+                return (
+                    "No topic-specific project is selected.\n\n"
+                    f"Default project: `{default_slug}`\n"
+                    f"Workspace: `{entry['workspace']}`"
+                )
+            return "No project is selected for this topic. Use `/project list` and `/project use <slug>`."
+
+        if action == "clear":
+            cleared = topic_state.pop("selected_project_slug", None)
+            if cleared:
+                return f"Cleared topic-specific project selection `{cleared}`."
+            return "This topic did not have a topic-specific project selection."
+
+        return "Unknown project command. Use `/project list`, `/project use <slug>`, `/project status`, or `/project clear`."
+
+    def _resolve_project_context(self, topic_state: dict[str, Any]) -> tuple[str | None, pathlib.Path]:
+        if self.project_registry is None:
+            assert self.software_workspace is not None
+            validate_project_workspace(self.software_workspace)
+            return None, self.software_workspace
+
+        selected_slug = topic_state.get("selected_project_slug") or self.project_registry["default_project"]
+        if not selected_slug:
+            raise RuntimeError(
+                "No project is selected for this topic. Use `/project list` and `/project use <slug>` before requesting software work."
+            )
+
+        entry = self.project_registry["projects"].get(selected_slug)
+        if entry is None:
+            raise RuntimeError(
+                f"Selected project `{selected_slug}` is not present in the registry. Use `/project list` and `/project use <slug>`."
+            )
+        validate_project_workspace(entry["workspace"])
+        return selected_slug, entry["workspace"]
+
+    def _build_prompt(
+        self,
+        stream_name: str,
+        topic: str,
+        topic_state: dict[str, Any],
+        project_slug: str | None,
+        project_workspace: pathlib.Path,
+    ) -> str:
         transcript = self._format_recent_history(topic_state)
+        project_line = (
+            f"Selected project slug: {project_slug}\n" if project_slug is not None else ""
+        )
         return (
             "Handle the following Zulip software task thread.\n\n"
             f"Stream: {stream_name}\n"
             f"Topic: {topic}\n"
+            f"{project_line}"
+            f"Host project workspace: {project_workspace}\n"
             "Sandbox workspace path: /workspace\n\n"
             "Instructions:\n"
-            "- Use PROJECT.md in the project workspace as the current source of truth.\n"
+            "- Use PROJECT.md and management/ in the selected project workspace as the current source of truth.\n"
             "- Inside the OpenClaw sandbox, the repository root is /workspace.\n"
             "- Use repo-root-relative paths or /workspace/... paths only in assignments and summaries.\n"
             "- Treat the transcript below as the current task thread.\n"
@@ -299,12 +489,19 @@ class Bridge:
             f"{transcript}"
         )
 
-    def _run_software_team(self, stream_name: str, topic: str, topic_state: dict[str, Any]) -> str:
-        prompt = self._build_prompt(stream_name, topic, topic_state)
+    def _run_software_team(
+        self,
+        stream_name: str,
+        topic: str,
+        topic_state: dict[str, Any],
+        project_slug: str | None,
+        project_workspace: pathlib.Path,
+    ) -> str:
+        prompt = self._build_prompt(stream_name, topic, topic_state, project_slug, project_workspace)
         command = list(self.software_run_command) + [prompt]
         completed = subprocess.run(
             command,
-            cwd=self.software_workspace,
+            cwd=project_workspace,
             capture_output=True,
             text=True,
             check=False,
@@ -353,12 +550,53 @@ class Bridge:
         )
         self._write_transcript(topic_dir, topic_state)
 
+        project_command = self._parse_project_command(content)
+        if project_command is not None:
+            action, argument = project_command
+            response = self._project_command_response(topic_state, action, argument)
+            self._append_history(
+                topic_state,
+                role="manager",
+                sender=self.bot_email,
+                content=response,
+            )
+            self._write_transcript(topic_dir, topic_state)
+            self.client.send_stream_message(stream_name, topic, response)
+            processed_ids.append(message_id)
+            self._save_state()
+            return
+
+        try:
+            project_slug, project_workspace = self._resolve_project_context(topic_state)
+        except Exception as exc:
+            error_text = f"Software manager cannot start this topic.\n\n```text\n{exc}\n```"
+            self._append_history(
+                topic_state,
+                role="manager",
+                sender=self.bot_email,
+                content=error_text,
+            )
+            self._write_transcript(topic_dir, topic_state)
+            self.client.send_stream_message(stream_name, topic, error_text)
+            processed_ids.append(message_id)
+            self._save_state()
+            return
+
         if self.send_acknowledgement:
-            ack = "Software manager received this task and is starting a run."
+            if project_slug is None:
+                ack = "Software manager received this task and is starting a run in the configured single project workspace."
+            else:
+                ack = f"Software manager received this task and is starting a run for project `{project_slug}`."
             self.client.send_stream_message(stream_name, topic, ack)
 
         try:
-            result = self._run_software_team(stream_name, topic, topic_state)
+            result = self._run_software_team(
+                stream_name,
+                topic,
+                topic_state,
+                project_slug,
+                project_workspace,
+            )
         except Exception as exc:
             error_text = f"Software manager run failed.\n\n```text\n{exc}\n```"
             self._append_history(

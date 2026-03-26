@@ -18,6 +18,8 @@ Use this document together with:
 - `ZULIP_SETUP_GUIDE.md`
 - `ZULIP_PLAN.md`
 - `ZULIP_SPRINT_1.md`
+- `MULTI_PROJECT_PLAN.md`
+- `project_template/README.md`
 - `software_bridge_v1/README.md`
 
 ## V1 Summary
@@ -25,7 +27,8 @@ Use this document together with:
 The chosen V1 model is:
 - one Zulip software stream
 - one visible manager bot
-- one mounted project workspace
+- one mounted project workspace in single-project mode
+- or one shared project registry in multi-project mode
 - one internal software team:
   `manager`, `planner`, `coder`, `tester`
 
@@ -48,16 +51,17 @@ Included in V1:
 - one software stream
 - one topic per task
 - one visible manager bot
-- one project workspace
+- one project workspace or one shared project registry
 - one internal software team
 - human request -> implementation -> result loop
+- explicit per-topic `/project` commands for multi-project selection
 
 Out of scope for V1:
 - research team
 - multi-team iteration loops
 - visible planner/coder/tester bots
 - fully autonomous cross-team orchestration
-- multiple project workspaces
+- automatic project discovery without an explicit registry
 
 ## Components
 
@@ -126,6 +130,23 @@ This does not mean:
 
 For V1, this is a trusted local development model.
 
+### Project Registry
+
+In multi-project mode, the bridge can use a shared project registry instead of a
+single fixed workspace.
+
+The registry maps:
+- project slug
+- display name
+- workspace path
+- optional description
+
+Each Zulip topic can then choose its active project with:
+- `/project list`
+- `/project use <slug>`
+- `/project status`
+- `/project clear`
+
 ## Zulip Model
 
 ### Stream Model
@@ -158,9 +179,10 @@ This keeps the chat surface clean while preserving the internal team structure.
 1. Human posts a request in the software stream.
 2. The bridge identifies the task run for that topic.
 3. The bridge passes the task to the software manager.
-4. The software manager decides whether planner input is needed.
-5. The internal software flow runs against the mounted project workspace.
-6. The software manager posts a summary back into the same topic.
+4. In multi-project mode, the topic resolves its active project from the registry.
+5. The software manager decides whether planner input is needed.
+6. The internal software flow runs against the selected project workspace.
+7. The software manager posts a summary back into the same topic.
 
 ## Human Interaction Model
 
@@ -173,6 +195,7 @@ Supported V1 interaction types:
 - approval
 - follow-up task
 - stop or pause
+- per-topic project selection
 
 The bridge should interpret human replies conservatively.
 
@@ -184,6 +207,7 @@ The mounted project workspace should contain at minimum:
 
 Recommended additional local files:
 - `.agents/`
+- `management/`
 - task output or notes folders if needed
 
 `PROJECT.md` should include:
@@ -195,6 +219,12 @@ Recommended additional local files:
 - key files
 - setup/test/lint/typecheck/run commands
 - risks and open questions
+
+For the multi-project direction after V1:
+- keep the shared runtime generic
+- create one project folder from `project_template/` per project
+- move `PROJECT.md` and `management/` into that project folder
+- add project selection logic in the bridge or control plane
 
 ## Exit Condition for V1
 

@@ -1,7 +1,12 @@
 # Local Workspace Rules
 
 - Keep every project file change inside this repository root.
-- Keep all project-specific context in `PROJECT.md`. Update that file when project goals, commands, constraints, or acceptance criteria change.
+- For the single-project layout, keep project-specific context in `PROJECT.md`.
+- For the multi-project layout, keep project-specific context in each
+  `project_template/`-based project folder and avoid mixing it into the shared
+  control workspace.
+- In the multi-project layout, keep the shared project registry in a local
+  `.agents/project_registry.json` file derived from the example template.
 - Store OpenClaw prompts, scripts, Docker assets, config templates, sandboxes, and runtime state under `.agents/`.
 - Do not write OpenClaw config or runtime state into any global path.
 - Do not edit `.agents/openclaw.json` directly. It is generated from `.agents/openclaw.template.json`.
