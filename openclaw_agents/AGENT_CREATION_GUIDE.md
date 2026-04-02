@@ -2,44 +2,29 @@
 
 ## Overview
 
-This guide describes how to create a reusable local OpenClaw team template that:
-- runs in Docker
-- keeps all OpenClaw assets local to the repository
-- uses a `manager` orchestrator role
-- reads project-specific context from `PROJECT.md`
-- generates machine-specific config from a portable template
+This guide describes how to create or update roles in the current OpenClaw
+template:
+- Docker-backed local roles for the main team
+- one host-backed OpenAI OAuth role for `Neo`
+- one V3 Zulip gateway for all visible roles
+- `project_template/` for real project state
 
-The canonical local template in this repository is `openclaw_agents/`.
+The canonical template in this repository is `openclaw_agents/`.
 
-Related guide:
-- `SETUP_BLUEPRINT.md` for the canonical end-to-end instructions another agent
-  should follow to recreate this OpenClaw, project, bridge, and Zulip setup
-- `ZULIP_SETUP_GUIDE.md` for setting up a self-hosted Zulip UI for human-visible
-  agent discussions, account creation, and intervention workflows
-- `ZULIP_PLAN.md` for the target architecture, rollout phases, and Phase 1
-  sprint plan for the Zulip and bridge integration
-- `ZULIP_SPRINT_1.md` for the concrete Sprint 1 execution checklist and
-  validation path for the initial local Zulip deployment
-- `ZULIP_V1_SOFTWARE_TEAM.md` for the chosen first implementation: one
-  `software` channel, one visible manager bot, and one mounted project workspace
-- `MULTI_PROJECT_PLAN.md` for the next-step split between the shared runtime and
-  per-project folders
-- `project_template/README.md` for the reusable per-project document scaffold
-- `.agents/project_registry.example.json` for the shared multi-project registry
-  shape
-- `.agents/scripts/project_registry.py` for validating and inspecting the shared
-  project registry
-- `persona_bridge_v1/README.md` for a shared multi-bot bridge that makes
-  discussion personas DM-able and stream-visible in Zulip
-- `software_bridge_v1/README.md` for the first working bridge runtime between
-  Zulip and the software team workspace
-- `.agents/scripts/check_template_repo_safety.sh` for template-maintainer checks
-  before committing changes to this repository
+Related guides:
+- `SETUP_BLUEPRINT.md`
+- `AGENT_SYSTEM_V3.md`
+- `ZULIP_SETUP_GUIDE.md`
+- `ZULIP_V3_GATEWAY_SETUP.md`
+- `project_template/README.md`
+- `.agents/project_registry.example.json`
+- `.agents/scripts/project_registry.py`
+- `.agents/scripts/check_template_repo_safety.sh`
 
 ## Template Variables
 
-Committed docs and examples in this repository should use explicit placeholders
-instead of local-machine values.
+Committed docs and examples should use placeholders instead of local-machine
+values.
 
 Use these variables consistently:
 - `YOUR_PROJECT_WORKSPACE`
@@ -49,44 +34,44 @@ Use these variables consistently:
 - `YOUR_ZULIP_EXTERNAL_HOST`
 - `YOUR_ZULIP_SITE_URL`
 - `YOUR_ZULIP_ADMIN_EMAIL`
-- `YOUR_SOFTWARE_STREAM_NAME`
-- `YOUR_SOFTWARE_MANAGER_BOT_EMAIL`
+- `YOUR_NEO_WORKSPACE`
+- `YOUR_OPENAI_OAUTH_PROFILE`
 
 ## Core Principles
 
-- Keep project-specific information in `PROJECT.md`.
-- In multi-project mode, keep the shared project-to-workspace mapping in a local
-  project registry file derived from `.agents/project_registry.example.json`.
+- Keep real project context in `project_template/`-based project folders.
 - Keep reusable agent assets under `.agents/`.
-- Generate local `openclaw.json` from a template instead of committing machine-specific paths.
+- Generate local `openclaw.json` from a template instead of committing
+  machine-specific paths.
 - Keep runtime state and sandbox artifacts out of version control.
-- Use a `manager` role to orchestrate the rest of the team.
-
-If you need one document to hand to another agent so it can recreate this whole
-stack, use `SETUP_BLUEPRINT.md`.
+- Use `run_team.sh` for internal software-team orchestration.
+- Use `zulip_gateway_v3/` for all visible DM-able roles.
 
 ## Template Layout
 
 ```text
 openclaw_agents/
 ├── PROJECT.md
+├── project_template/
+├── zulip_gateway_v3/
 └── .agents/
     ├── AGENTS.md
     ├── README.md
     ├── SKILLS.md
+    ├── COMMUNICATION_CONTRACT.md
     ├── openclaw.template.json
+    ├── project_registry.example.json
     ├── prompts/
-    │   ├── manager.txt
-    │   ├── planner.txt
-    │   ├── coder.txt
-    │   └── tester.txt
     ├── docker/
-    │   └── pytorch-shared-venv/
     ├── scripts/
-    │   ├── render_openclaw_config.sh
-    │   ├── setup_local_team.sh
-    │   └── setup_env_python.sh
     ├── run_agent.sh
+    ├── run_assistant.sh
+    ├── run_neo.sh
+    ├── run_yoda.sh
+    ├── run_projectmanager.sh
+    ├── run_architect.sh
+    ├── run_morpheus.sh
+    ├── run_oracle.sh
     ├── run_manager.sh
     ├── run_planner.sh
     ├── run_coder.sh
@@ -94,99 +79,92 @@ openclaw_agents/
     └── run_team.sh
 ```
 
-## Role Model
+## Current Role Model
 
-Use four roles:
-- `manager`: orchestrates the group, delegates work, and synthesizes results
-- `planner`: produces plans, assumptions, risks, and validation strategy
-- `coder`: edits code
-- `tester`: validates changes and checks regressions
+Visible roles:
+- `AgentSmith`: intake, clarification, and visible routing
+- `Neo`: CTO-style direct execution in a host-backed OAuth runtime
+- `Yoda`: critique and reframing
+- `Niaobe`: project loop and project decisions
+- `Architect`: planning, milestones, stories, and acceptance criteria
+- `Morpheus`: visible software execution entrypoint backed by `run_team.sh`
+- `Oracle`: visible validation and QA role
 
-### Manager Responsibilities
-
-The manager should:
-- read `PROJECT.md` first
-- understand the goal, constraints, and acceptance criteria
-- decide whether planner input is needed
-- assign tightly scoped tasks to planner, coder, and tester
-- produce a concise final summary
-
-The manager should not be the default code editor. Its main job is orchestration.
+Internal software team:
+- `manager`
+- `planner`
+- `coder`
+- `tester`
 
 ## Project Context Contract
 
-For the single-project template, `PROJECT.md` is the primary per-project file.
-For the multi-project direction, instantiate `project_template/` inside each
-project folder and keep the full project document set there.
+For the current model, the root `PROJECT.md` is workspace-level only.
+Real project context belongs in `project_template/`-based folders.
 
-At minimum, include:
+Each project should provide:
 - project summary
-- current goal
-- constraints
-- acceptance criteria
+- scope and constraints
+- success criteria
 - architecture notes
 - key files
 - setup, test, lint, typecheck, and run commands
-- risks and open questions
-
-All role prompts and wrappers should read or inject the current project's
-documents, not a global default project, so the team always works from the
-correct project context.
+- current risks and open questions
 
 ## Config Generation Model
 
 Do not commit a machine-specific `openclaw.json`.
 
-Use this pattern instead:
-1. Commit `.agents/openclaw.template.json` with placeholders such as `__ROOT_DIR__`.
-2. Render `.agents/openclaw.json` locally using a setup script.
+Use this pattern:
+1. Commit `.agents/openclaw.template.json` with placeholders.
+2. Render `.agents/openclaw.json` locally.
 3. Ignore the generated config in version control.
 
-This keeps the template portable while still allowing OpenClaw to receive absolute local paths when needed.
+## Runtime Model
 
-## Docker Runtime Model
-
-Use a Docker sandbox image derived from a shared Python base image.
+Default local roles use the Docker-backed OpenClaw runtime.
 
 Recommended pattern:
 - build the derived image from `.agents/docker/pytorch-shared-venv/`
-- create a shared sandbox virtual environment during sandbox setup
+- create the shared sandbox environment during sandbox setup
 - keep extra Python packages in `requirements-extra.txt`
 - keep runtime state and sandboxes under `.agents/`
 
-The current local template uses a shared sandbox environment created by `.agents/scripts/setup_env_python.sh`.
+Neo is the exception:
+- he uses `.agents/scripts/run_openai_oauth_host_runtime.sh`
+- he runs against a writable host workspace
+- he uses the existing local OpenClaw OAuth login state
 
 ## Orchestration Model
 
-The canonical local template uses an external wrapper for orchestration:
+The canonical local software flow uses external orchestration:
 - `run_manager.sh` runs the manager directly
-- `run_team.sh` asks the manager to assign work
 - `run_team.sh` runs planner if needed
 - `run_team.sh` runs coder
-- `run_team.sh` runs tester with coder output as context
+- `run_team.sh` runs tester
 - `run_team.sh` asks the manager to synthesize the final answer
 
-This model is preferred because embedded local mode may not expose direct in-agent delegation tools consistently.
+This is preferred because embedded local mode does not always expose direct
+in-agent delegation reliably.
 
-## Zulip Bridge Split
+## Zulip Integration Model
 
-Keep discussion personas and execution teams on separate bridge layers.
-
-Recommended split:
-- `persona_bridge_v1/` for DM-able and room-visible personas such as
-  `AgentSmith`, `Yoda`, and `Architect`
-- `software_bridge_v1/` for manager-led execution teams such as `Morpheus`
-
-This avoids mixing human-facing persona chat with execution-team orchestration.
+Recommended default:
+- `zulip_gateway_v3/` for all visible DM-able roles
+- visible wrappers:
+  `run_assistant.sh`, `run_neo.sh`, `run_yoda.sh`,
+  `run_projectmanager.sh`, `run_architect.sh`,
+  `run_morpheus.sh`, `run_oracle.sh`
 
 ## Creating a New Role
 
 When adding a new role:
 1. Add the role prompt under `.agents/prompts/`.
-2. Add the role entry to `.agents/openclaw.template.json`.
-3. Add a role wrapper if direct execution is useful.
-4. Update `.agents/README.md`, `.agents/AGENTS.md`, and `.agents/SKILLS.md`.
-5. Update any orchestration script that needs to route work to the new role.
+2. Add the role entry to `.agents/openclaw.template.json` if it is OpenClaw-backed.
+3. Add the role wrapper under `.agents/`.
+4. If the role should be visible in Zulip, add it to
+   `zulip_gateway_v3/agent_registry.example.json`.
+5. Update `.agents/README.md`, `.agents/AGENTS.md`, and `.agents/SKILLS.md`.
+6. Update any wrapper or setup guide that owns the role’s runtime path.
 
 ## Quick Start
 
@@ -194,7 +172,10 @@ From the template root:
 
 ```bash
 bash .agents/scripts/setup_local_team.sh
-bash .agents/run_manager.sh "Read PROJECT.md and summarize the next best step."
+bash .agents/run_assistant.sh "Review PROJECT.md and tell me the next best move."
+bash .agents/run_neo.sh "Inspect this issue and tell me the result."
+bash .agents/run_projectmanager.sh "Take ownership of the current project and choose the next role."
+bash .agents/run_morpheus.sh "Implement the requested change and validate it."
 bash .agents/run_team.sh "Implement the requested change and validate it."
 ```
 
@@ -207,34 +188,23 @@ bash .agents/scripts/setup_local_team.sh --validate
 
 ## Validation Checklist
 
-- `PROJECT.md` is present and up to date.
-- `.agents/openclaw.json` is rendered from `.agents/openclaw.template.json`.
-- `openclaw agents list` works with the local config env vars.
-- `openclaw sandbox explain --agent local-ollama-qwen-manager` resolves correctly.
-- The manager, planner, coder, and tester prompts all align with the same team model.
-- Runtime state is ignored and not committed.
+- `.agents/openclaw.json` is rendered from `.agents/openclaw.template.json`
+- `openclaw agents list` works with the local config env vars
+- the main visible wrappers work
+- `zulip_gateway_v3/run_gateway.sh --check` succeeds
+- runtime state is ignored and not committed
 
 ## Adapting the Template to a New Project
 
 1. Copy `openclaw_agents/` into the project.
-2. For a single-project setup, update `PROJECT.md`.
-3. For a multi-project setup, create project folders from `project_template/`
-   and keep the shared runtime generic.
-4. In multi-project mode, create a local `.agents/project_registry.json` file
-   from the example template and point the bridge at it.
-5. Adjust `requirements-extra.txt` if the sandbox needs more Python packages.
-6. Run the setup script to render local config.
-7. Build the Docker image if needed.
-8. Validate the team registration and sandbox configuration.
+2. Create real projects from `project_template/`.
+3. Create a local `.agents/project_registry.json` if multiple projects are needed.
+4. Adjust `requirements-extra.txt` if the sandbox needs more Python packages.
+5. Run the setup script to render local config.
+6. Build the Docker image if needed.
+7. Validate the team registration and gateway configuration.
 
 ## Maintenance Rules
 
-- Update the guide, local rules, and skills together.
-- Keep role prompts and wrapper behavior aligned.
-- Prefer portable relative references in committed docs and scripts.
-- Keep host-specific paths out of committed files other than the locally generated config.
-- Before committing template changes, run:
-
-```bash
-bash .agents/scripts/check_template_repo_safety.sh
-```
+- Update the guide, local rules, and skill files together.
+- Keep the template aligned with the current V3-only path.

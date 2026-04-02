@@ -1,6 +1,0 @@
-config.json
-persona_registry.json
-private/*
-!private/.gitkeep
-state/*
-!state/.gitkeep

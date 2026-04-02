@@ -18,8 +18,14 @@ Replace these values for each deployment:
 - `YOUR_SOFTWARE_STREAM_NAME`: software request stream name
 - `YOUR_SOFTWARE_MANAGER_BOT_EMAIL`: email address of the manager bot account
 
-Recommended defaults for the current V1 template:
+Recommended defaults for the current template:
 - `YOUR_SOFTWARE_STREAM_NAME`: `software`
+
+Recommended setup path:
+1. install Zulip with this guide
+2. create the streams and visible bot accounts
+3. continue with `ZULIP_V3_GATEWAY_SETUP.md`
+4. use `zulip_gateway_v3/` as the default runtime integration
 
 ## When to Use This Guide
 
@@ -48,6 +54,13 @@ Later, you can add:
 - Let's Encrypt or a reverse proxy
 - SMTP for invitations and notifications
 - stricter permissions and narrower bot scopes
+
+If you plan to run Zulip as one service behind a broader intranet portal,
+see `ZULIP_INTRANET_HOSTING_PLAN.md`.
+For the concrete hostname, Apache, and bridge rollout sequence, see
+`ZULIP_INTRANET_IMPLEMENTATION.md`.
+For the current recommended host-side agent integration, see
+`ZULIP_V3_GATEWAY_SETUP.md`.
 
 ## High-Level Flow
 
@@ -238,13 +251,15 @@ Use this first human account for:
 
 ## 11. Create Streams
 
-For the current software-team V1, the minimum stream is:
+For the current V3 setup, the minimum streams are:
+- `assistant`
+- `projects`
 - `YOUR_SOFTWARE_STREAM_NAME`
 
 Additional recommended streams for later expansion:
-- `research`
-- `human-feedback`
 - `ops`
+- `validation`
+- `council`
 
 Recommended topic format:
 - `task: <name>`
@@ -259,12 +274,14 @@ For agent identities, create bot users rather than normal human accounts.
 Recommended bot type:
 - `Generic` bot
 
-For the current V1 software flow, create at minimum:
-- one manager bot for the software stream
-
-Recommended defaults:
-- stream: `software`
-- bot display name: `software-manager-bot`
+For the current V3 gateway flow, create at minimum:
+- `agentsmith-bot`
+- `neo-bot`
+- `yoda-bot`
+- `niaobe-bot`
+- `architect-bot`
+- `morpheus-bot`
+- `oracle-bot`
 
 After creating the bot, store its credentials outside git. A private Zulip
 credential file should contain:
@@ -289,6 +306,9 @@ Useful human actions:
 - pause work
 - request a follow-up task
 
+After the server, streams, and bots are ready, continue with
+`ZULIP_V3_GATEWAY_SETUP.md` to wire the host-side gateway.
+
 ## Validation Checklist
 
 - `docker compose pull` succeeds
@@ -303,7 +323,7 @@ Useful human actions:
 
 ## Security Notes
 
-- Keep `.env`, bot `zuliprc` files, and bridge runtime state out of git.
+- Keep `.env`, bot `zuliprc` files, and gateway runtime state out of git.
 - Prefer secure defaults in examples. Only disable TLS verification for short-lived local self-signed testing.
 - Keep human admins separate from bot identities.
 - Do not reuse bot credentials across unrelated environments.

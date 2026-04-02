@@ -10,10 +10,18 @@ fi
 
 USER_TASK="$*"
 SANDBOX_ROOT="/workspace"
+TEAM_SESSION_BASE="${OPENCLAW_SESSION_ID:-morpheus-standalone}"
 
 normalize_for_sandbox() {
   local input_text="$1"
   printf '%s' "${input_text//$ROOT_DIR/$SANDBOX_ROOT}"
+}
+
+team_session_id() {
+  local stage="$1"
+  local raw_session="${TEAM_SESSION_BASE}-${stage}"
+  raw_session="$(printf '%s' "$raw_session" | tr -cs '[:alnum:]._-' '-')"
+  printf '%.120s' "$raw_session"
 }
 
 extract_section() {
@@ -59,7 +67,7 @@ SUCCESS_CRITERIA:
 
 SANDBOX_USER_TASK="$(normalize_for_sandbox "$USER_TASK")"
 
-ASSIGNMENT_OUTPUT="$("$ROOT_DIR/.agents/run_manager.sh" "User task:
+ASSIGNMENT_OUTPUT="$(OPENCLAW_SESSION_ID="$(team_session_id manager-assignment)" "$ROOT_DIR/.agents/run_manager.sh" "User task:
 $SANDBOX_USER_TASK
 
 $ASSIGNMENT_PROMPT")"
@@ -79,7 +87,7 @@ SUCCESS_CRITERIA="$(normalize_for_sandbox "$SUCCESS_CRITERIA")"
 
 PLANNER_OUTPUT="NONE"
 if [[ "$PLANNER_NEEDED" == "yes" && "$PLANNER_TASK" != "NONE" ]]; then
-  PLANNER_OUTPUT="$("$ROOT_DIR/.agents/run_planner.sh" "$PLANNER_TASK")"
+  PLANNER_OUTPUT="$(OPENCLAW_SESSION_ID="$(team_session_id planner)" "$ROOT_DIR/.agents/run_planner.sh" "$PLANNER_TASK")"
   PLANNER_OUTPUT="$(normalize_for_sandbox "$PLANNER_OUTPUT")"
 fi
 
@@ -90,7 +98,7 @@ if [[ "$PLANNER_OUTPUT" != "NONE" ]]; then
   CODER_PROMPT+=$'\n\n'"Planner output:
 $PLANNER_OUTPUT"
 fi
-CODER_OUTPUT="$("$ROOT_DIR/.agents/run_coder.sh" "$CODER_PROMPT")"
+CODER_OUTPUT="$(OPENCLAW_SESSION_ID="$(team_session_id coder)" "$ROOT_DIR/.agents/run_coder.sh" "$CODER_PROMPT")"
 CODER_OUTPUT="$(normalize_for_sandbox "$CODER_OUTPUT")"
 
 TESTER_PROMPT="$TESTER_TASK"$'\n\n'"Manager plan summary:
@@ -102,7 +110,7 @@ $PLANNER_OUTPUT"
 fi
 TESTER_PROMPT+=$'\n\n'"Coder output for context:
 $CODER_OUTPUT"
-TESTER_OUTPUT="$("$ROOT_DIR/.agents/run_tester.sh" "$TESTER_PROMPT")"
+TESTER_OUTPUT="$(OPENCLAW_SESSION_ID="$(team_session_id tester)" "$ROOT_DIR/.agents/run_tester.sh" "$TESTER_PROMPT")"
 TESTER_OUTPUT="$(normalize_for_sandbox "$TESTER_OUTPUT")"
 
 SYNTHESIS_PROMPT="User task:
@@ -123,6 +131,11 @@ $CODER_OUTPUT
 Tester output:
 $TESTER_OUTPUT
 
+Important constraints:
+- The tester output above is from the internal tester role, not the visible Oracle role.
+- Do not claim that visible Oracle validated or approved the work.
+- Summarize these results as internal tester validation only.
+
 Return exactly in this format:
 OUTCOME:
 <short outcome>
@@ -139,4 +152,4 @@ TESTER:
 NEXT_STEPS:
 <follow-up steps or NONE>"
 
-exec "$ROOT_DIR/.agents/run_manager.sh" "$SYNTHESIS_PROMPT"
+exec env OPENCLAW_SESSION_ID="$(team_session_id manager-synthesis)" "$ROOT_DIR/.agents/run_manager.sh" "$SYNTHESIS_PROMPT"

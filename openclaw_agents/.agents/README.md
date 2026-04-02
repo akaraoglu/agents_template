@@ -1,67 +1,92 @@
 # Local OpenClaw Team Template
 
-This folder contains a reusable local OpenClaw team template backed by Docker.
-Project-specific context belongs in `PROJECT.md` for the single-project layout,
-or in `project_template/`-based per-project folders for the multi-project
-direction. Local agent config, prompts, wrappers, generated state, and Docker
-assets live under `.agents/`.
+This folder contains the current reusable OpenClaw runtime template for the
+V3 Zulip-first agent system.
+
+Workspace-level coordination belongs in the root `PROJECT.md`. Project-specific
+context belongs in `project_template/`-based folders such as
+`projects/<slug>/PROJECT.md` and `projects/<slug>/management/`. Local agent
+config, prompts, wrappers, generated state, and Docker assets live under
+`.agents/`.
 
 ## Team Roles
-- `manager`: orchestrates work, delegates scoped tasks, and synthesizes results
-- `planner`: produces implementation plans and identifies risks
-- `coder`: makes code changes
-- `tester`: validates behavior and checks regressions
+
+Visible roles:
+- `assistant` / `AgentSmith`: intake, discussion, and visible routing
+- `neo`: CTO-style direct-execution assistant backed by an OpenAI OAuth host runtime
+- `yoda`: advisory role for critique, reframing, and second opinions
+- `projectmanager` / `Niaobe`: project loop, project decisions, and coordination
+- `architect`: planning, milestones, stories, and acceptance criteria
+- `morpheus`: visible software execution entrypoint backed by `run_team.sh`
+- `oracle`: independent validation and QA voice
+
+Internal software-team roles:
+- `manager`: internal orchestrator for the software team
+- `planner`: implementation planning and risk discovery
+- `coder`: code changes
+- `tester`: validation and regression checks
 
 ## Runtime Model
-- Model family: `ollama/qwen3.5:35b`
-- Sandbox base image: `pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime`
-- Derived runtime image: `openclaw-sandbox:pytorch-shared-venv`
-- Shared sandbox virtual environment: generated during sandbox setup
-- Config file: generated from `.agents/openclaw.template.json` into `.agents/openclaw.json`
+
+- Docker-backed local OpenClaw runtime for the main team roles
+- Shared sandbox image: `openclaw-sandbox:pytorch-shared-venv`
+- Generated config: `.agents/openclaw.json` from `.agents/openclaw.template.json`
 - Local runtime artifacts: `.agents/state/` and `.agents/sandboxes/`
+- Host-backed OpenAI OAuth runtime wrapper for `Neo`:
+  `.agents/scripts/run_openai_oauth_host_runtime.sh`
 
 ## Key Files
-- `PROJECT.md`: project-specific goals, constraints, commands, and acceptance criteria
-- `MULTI_PROJECT_PLAN.md`: plan for splitting the shared runtime from
-  per-project workspaces
-- `SETUP_BLUEPRINT.md`: canonical instructions for recreating the full
-  OpenClaw, project, bridge, and Zulip architecture from this template
-- `project_template/README.md`: reusable scaffold for per-project documents
-- `.agents/project_registry.example.json`: reusable multi-project registry example
-- `ZULIP_SETUP_GUIDE.md`: human-facing Zulip installation, account creation, and UI workflow guide
-- `ZULIP_PLAN.md`: Zulip architecture, rollout phases, and sprint planning guide
-- `ZULIP_SPRINT_1.md`: detailed Sprint 1 execution plan for the first local Zulip deployment
-- `ZULIP_V1_SOFTWARE_TEAM.md`: chosen v1 design for the software-only Zulip bridge flow
-- `persona_bridge_v1/README.md`: reusable shared multi-bot bridge for DM-able
-  and room-visible discussion personas such as `AgentSmith`, `Yoda`, and
-  `Architect`
-- `software_bridge_v1/README.md`: reusable bridge runtime for the chosen v1 design
-- `SOFTWARE_WORKSPACE_README.md`: reusable starting README for the mounted software workspace
+
+- `PROJECT.md`: workspace-level coordination and project-selection guidance
+- `SETUP_BLUEPRINT.md`: canonical instructions for recreating the current setup
+- `AGENT_SYSTEM_V3.md`: current DM-first architecture
+- `ZULIP_SETUP_GUIDE.md`: Zulip installation and organization setup
+- `ZULIP_V3_GATEWAY_SETUP.md`: current gateway deployment guide
+- `SYSTEMD_BRIDGES.md`: systemd setup for the V3 gateway
+- `ZULIP_PLAN.md`: current Zulip architecture summary and rollout outline
+- `ZULIP_PROJECT_WORKFLOW.md`: visible project-loop conventions
+- `AGENT_CREATION_GUIDE.md`: how to add or update roles in this template
+- `NEO_OPENAI_AGENT_PLAN.md`: design and setup guidance for Neo
+- `AGENTIC_SOFTWARE_DEVELOPMENT_PLAN_TEMPLATE.md`: optional project SDP template
+- `project_template/README.md`: reusable per-project scaffold
+- `.agents/project_registry.example.json`: multi-project registry example
+- `.agents/COMMUNICATION_CONTRACT.md`: visible handoff, status, result, and decision format
+- `zulip_gateway_v3/README.md`: multi-bot Zulip gateway runtime
 - `.agents/openclaw.template.json`: portable OpenClaw config template
 - `.agents/prompts/`: role prompts
-- `.agents/docker/pytorch-shared-venv/`: sandbox image build context
-- `.agents/scripts/render_openclaw_config.sh`: generates local config from the template
-- `.agents/scripts/setup_local_team.sh`: prepares the local template and optional validation
-- `.agents/scripts/check_template_repo_safety.sh`: checks that the template repo does not include generated local config, local state, or machine-specific committed values
-- `.agents/scripts/project_registry.py`: validates and inspects a shared multi-project registry
-- `.agents/run_manager.sh`: direct manager entrypoint
-- `.agents/run_team.sh`: manager-led orchestration wrapper
+- `.agents/scripts/render_openclaw_config.sh`: renders `.agents/openclaw.json`
+- `.agents/scripts/setup_local_team.sh`: prepares the local runtime
+- `.agents/scripts/project_registry.py`: validates the project registry
+- `.agents/scripts/check_template_repo_safety.sh`: template safety checks
+- `.agents/run_assistant.sh`, `.agents/run_neo.sh`, `.agents/run_yoda.sh`,
+  `.agents/run_projectmanager.sh`, `.agents/run_architect.sh`,
+  `.agents/run_morpheus.sh`, `.agents/run_oracle.sh`: visible-role wrappers
+- `.agents/run_manager.sh`, `.agents/run_planner.sh`, `.agents/run_coder.sh`,
+  `.agents/run_tester.sh`, `.agents/run_team.sh`: internal software-team wrappers
 
 ## Quick Start
+
 ```bash
 bash .agents/scripts/setup_local_team.sh
-bash .agents/run_manager.sh "Read PROJECT.md and summarize the next best step."
+bash .agents/run_assistant.sh "Review PROJECT.md and tell me the next best move."
+bash .agents/run_neo.sh "Inspect this issue, make the fix, and summarize the result."
+bash .agents/run_yoda.sh "Challenge the current direction and point out hidden risks."
+bash .agents/run_projectmanager.sh "Take ownership of the current milestone."
+bash .agents/run_morpheus.sh "Implement the requested change and validate it."
 bash .agents/run_team.sh "Implement the requested change and validate it."
 ```
 
 ## Notes
-- Edit `PROJECT.md` for single-project use, or instantiate `project_template/`
-  for each project when one runtime needs to serve multiple projects.
-- In multi-project mode, keep a local `.agents/project_registry.json` derived
-  from `.agents/project_registry.example.json` and point the bridge at it.
-- Use `persona_bridge_v1/` for visible discussion personas. Keep manager-led
-  software execution behind `software_bridge_v1/`.
-- Edit `.agents/docker/pytorch-shared-venv/requirements-extra.txt` when the sandbox needs additional Python packages.
-- Do not edit the generated `.agents/openclaw.json` directly; update the template or rendering script instead.
-- The manager is the logical orchestrator. In this local template, `run_team.sh` coordinates the manager, planner, coder, and tester externally because embedded local mode may not expose direct in-agent delegation tools consistently.
-- Template maintainers should run `bash .agents/scripts/check_template_repo_safety.sh` before committing changes in this repository.
+
+- Use `project_template/` for real project work. Keep the shared runtime generic.
+- Keep project-specific planning under `projects/<slug>/management/`, not under
+  a shared root-level `management/` folder.
+- Use `zulip_gateway_v3/` for all visible DM-able roles.
+- Use visible `HANDOFF`, `STATUS`, `RESULT`, and `DECISION` blocks for
+  cross-role work instead of hidden nested spawning.
+- Keep extra sandbox packages in
+  `.agents/docker/pytorch-shared-venv/requirements-extra.txt`.
+- Do not edit the generated `.agents/openclaw.json` directly; update the
+  template or rendering script instead.
+- Template maintainers should run
+  `bash .agents/scripts/check_template_repo_safety.sh` before committing.

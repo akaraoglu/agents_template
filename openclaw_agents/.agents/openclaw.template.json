@@ -54,6 +54,42 @@
     },
     "list": [
       {
+        "id": "local-ollama-qwen-assistant",
+        "name": "AgentSmith",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-assistant/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
+        "id": "local-ollama-qwen-yoda",
+        "name": "Yoda",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-yoda/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
+        "id": "local-ollama-qwen-projectmanager",
+        "name": "Niaobe",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-projectmanager/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
+        "id": "local-ollama-qwen-architect",
+        "name": "Architect",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-architect/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
         "id": "local-ollama-qwen-manager",
         "default": true,
         "name": "Manager",
@@ -85,6 +121,15 @@
         "id": "local-ollama-qwen-tester",
         "name": "Tester",
         "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-tester/agent",
+        "workspace": "__ROOT_DIR__",
+        "model": {
+          "primary": "ollama/qwen3.5:35b"
+        }
+      },
+      {
+        "id": "local-ollama-qwen-oracle",
+        "name": "Oracle",
+        "agentDir": "__ROOT_DIR__/.agents/state/agents/local-ollama-qwen-oracle/agent",
         "workspace": "__ROOT_DIR__",
         "model": {
           "primary": "ollama/qwen3.5:35b"

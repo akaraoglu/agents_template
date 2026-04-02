@@ -1,7 +1,0 @@
-config.json
-__pycache__/
-*.pyc
-private/*
-!private/.gitkeep
-state/*
-!state/.gitkeep

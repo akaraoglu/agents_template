@@ -1,7 +1,7 @@
 # Software Workspace Template
 
-This file is a reusable starting README for the project workspace mounted into
-the Zulip V1 software team.
+This file is a reusable starting README for the project workspace used by the
+current V3 Zulip and OpenClaw system.
 
 ## Recommended Variables
 
@@ -47,7 +47,7 @@ bash .agents/scripts/setup_local_team.sh
 bash .agents/run_manager.sh "Read PROJECT.md and summarize the next best step."
 ```
 
-6. Once the Zulip bridge is configured, let the bridge invoke the team with:
+6. Once the Zulip gateway is configured, let the gateway invoke the team with:
 
 ```bash
 bash .agents/run_team.sh "Implement the requested change and validate it."
