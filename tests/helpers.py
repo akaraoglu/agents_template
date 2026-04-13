@@ -76,7 +76,7 @@ def seed_project(
 
 
 def queue_task(dispatcher: RuntimeDispatcher, task: dict[str, Any], *, target_agent: str | None = None) -> None:
-    reply_stream, reply_topic = dispatcher.router.reply_address_for_task(
+    reply_stream, reply_topic = dispatcher.reply_address_for_task(
         task["project_id"],
         task["task_id"],
         task["task_type"],

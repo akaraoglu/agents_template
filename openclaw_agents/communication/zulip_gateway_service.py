@@ -20,7 +20,7 @@ from openclaw_agents.communication.zulip_client import (
     ZulipCredentials,
     load_zuliprc,
 )
-from openclaw_agents.communication.zulip_gateway import GatewayEvent, GatewayResult, ZulipGateway
+from openclaw_agents.communication.zulip_gateway import DispatchPlan, GatewayEvent, GatewayResult, ZulipGateway
 from openclaw_agents.runtime.dispatcher import RuntimeDispatcher
 
 
@@ -282,6 +282,15 @@ class GatewayService:
             return result.dispatch_plan.target_agent
         return self._default_sender_agent()
 
+    def _assignment_sender_agent(self, candidate: dict[str, Any]) -> str:
+        from_agent = candidate.get("from_agent")
+        if self._is_visible_bot(from_agent):
+            return from_agent
+        to_agent = candidate.get("to_agent")
+        if self._is_visible_bot(to_agent):
+            return to_agent
+        return self._default_sender_agent()
+
     def _control_sender_agent(self, result: GatewayResult) -> str:
         payload = (result.envelope.payload if result.envelope else None) or {}
         for raw_candidate in (payload.get("orchestrator_id"), payload.get("requested_by")):
@@ -364,7 +373,7 @@ class GatewayService:
         if not result.outbound_message or not result.project_id or not result.control_event_id:
             return
         sender_agent = self._control_sender_agent(result)
-        stream_name, topic_name = self.gateway.router.control_event_topic(result.project_id)
+        stream_name, topic_name = self.gateway.control_event_address(result.project_id)
         message_id = self._send_stream_message(sender_agent, stream_name, topic_name, result.outbound_message)
         self.store.update(
             "control_events",
@@ -397,14 +406,91 @@ class GatewayService:
                 print(
                     f"queued task {receipt.task_id} for {receipt.agent_id} via {receipt.runtime_backend} "
                     f"packet={receipt.packet_ref} message_id={dispatch_message_id}"
-                )
+        )
         return result
+
+    def _mirror_visible_dispatches(self) -> list[str]:
+        mirrored: list[str] = []
+        for candidate in self.store.list_dispatch_mirror_candidates():
+            sender_agent = self._assignment_sender_agent(candidate)
+            stream_name, topic_name = self.gateway.reply_address_for_task(
+                candidate["project_id"],
+                candidate["task_id"],
+                candidate["task_type"],
+            )
+            message = self.gateway.build_task_assignment_message(
+                DispatchPlan(
+                    project_id=candidate["project_id"],
+                    task_id=candidate["task_id"],
+                    target_agent=candidate["to_agent"],
+                    task_type=candidate["task_type"],
+                    reply_stream=stream_name,
+                    reply_topic=topic_name,
+                    reason=candidate["goal"],
+                )
+            )
+            message_id = self._send_stream_message(sender_agent, stream_name, topic_name, message)
+            self.gateway.mapping_store.link_message(
+                project_id=candidate["project_id"],
+                zulip_message_id=message_id,
+                stream_name=stream_name,
+                topic_name=topic_name,
+                direction="outbound",
+                message_kind="task_assignment",
+                linked_entity_type="task",
+                linked_entity_id=candidate["task_id"],
+                task_id=candidate["task_id"],
+            )
+            self._mark_processed(message_id)
+            mirrored.append(message_id)
+        return mirrored
+
+    def _mirror_morpheus_progress_updates(self) -> list[str]:
+        mirrored: list[str] = []
+        summaries = {
+            "PLAN_SOFTWARE_TASK": "Morpheus started software planning.",
+            "IMPLEMENT_SOFTWARE_TASK": "Morpheus started implementation.",
+            "TEST_SOFTWARE_TASK": "Morpheus started testing.",
+        }
+        sender_agent = "morpheus" if "morpheus" in self.bots else self._default_sender_agent()
+        for candidate in self.store.list_morpheus_progress_update_candidates():
+            stream_name, topic_name = self.gateway.reply_address_for_task(
+                candidate["project_id"],
+                candidate["parent_task_id"],
+                candidate.get("parent_task_type") or "ORCHESTRATE_SOFTWARE",
+            )
+            message = self.gateway.build_task_result_message(
+                project_id=candidate["project_id"],
+                task_id=candidate["task_id"],
+                task_type=candidate["task_type"],
+                agent="morpheus",
+                status="RUNNING",
+                summary=summaries.get(candidate["task_type"], "Morpheus started the next software phase."),
+                artifacts_out=[],
+                next_action={"type": "WAIT_FOR_EXTERNAL", "target_agent": "morpheus"},
+                kind="status_update",
+            )
+            message_id = self._send_stream_message(sender_agent, stream_name, topic_name, message)
+            self.gateway.mapping_store.link_message(
+                project_id=candidate["project_id"],
+                zulip_message_id=message_id,
+                stream_name=stream_name,
+                topic_name=topic_name,
+                direction="outbound",
+                message_kind="status_update",
+                linked_entity_type="task",
+                linked_entity_id=candidate["task_id"],
+                task_id=candidate["task_id"],
+            )
+            self._mark_processed(message_id)
+            mirrored.append(message_id)
+        return mirrored
 
     def _mirror_completed_results(self) -> list[str]:
         mirrored: list[str] = []
         for candidate in self.store.list_result_mirror_candidates():
             sender_agent = self._result_sender_agent(candidate)
-            stream_name, topic_name = self.gateway.router.reply_address_for_task(
+            stream_name, topic_name = self.gateway.reply_address_for_task(
                 candidate["project_id"],
                 candidate["task_id"],
                 candidate["task_type"],
@@ -412,6 +498,7 @@ class GatewayService:
             message = self.gateway.build_task_result_message(
                 project_id=candidate["project_id"],
                 task_id=candidate["task_id"],
+                task_type=candidate["task_type"],
                 agent=candidate["attempt_agent_id"],
                 status=candidate["status"],
                 summary=candidate.get("attempt_summary") or f"{candidate['task_type']} finished with {candidate['status']}",
@@ -464,6 +551,8 @@ class GatewayService:
                     results.append(result)
                 except Exception as exc:  # pragma: no cover - runtime protection path
                     print(f"gateway event handling failed for message {gateway_event.message_id}: {exc}", file=sys.stderr)
+        self._mirror_visible_dispatches()
+        self._mirror_morpheus_progress_updates()
         self._mirror_completed_results()
         return results
 

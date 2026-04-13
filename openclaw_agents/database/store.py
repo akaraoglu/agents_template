@@ -193,6 +193,48 @@ class ControlPlaneStore:
     def get_project(self, project_id: str, *, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
         return self.fetchone("SELECT * FROM projects WHERE project_id = ?", (project_id,), conn=conn)
 
+    def get_project_feedback_thread(
+        self,
+        project_id: str,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> tuple[str, str] | None:
+        row = self.fetchone(
+            """
+            SELECT stream_name, topic_name
+            FROM zulip_message_links
+            WHERE project_id = ?
+              AND direction = 'inbound'
+            ORDER BY
+              CASE message_kind
+                WHEN 'human_note' THEN 0
+                WHEN 'control_event' THEN 1
+                WHEN 'task_assignment' THEN 2
+                ELSE 3
+              END,
+              created_at ASC
+            LIMIT 1
+            """,
+            (project_id,),
+            conn=conn,
+        )
+        if row:
+            return str(row["stream_name"]), str(row["topic_name"])
+        row = self.fetchone(
+            """
+            SELECT stream_name, topic_name
+            FROM zulip_message_links
+            WHERE project_id = ?
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (project_id,),
+            conn=conn,
+        )
+        if row:
+            return str(row["stream_name"]), str(row["topic_name"])
+        return None
+
     def get_task(self, task_id: str, *, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
         return self.fetchone("SELECT * FROM tasks WHERE task_id = ?", (task_id,), conn=conn)
 
@@ -488,6 +530,82 @@ class ControlPlaneStore:
               AND ta.agent_id NOT IN ('planner', 'implementer', 'tester')
               AND (mirrored.last_mirrored_at IS NULL OR mirrored.last_mirrored_at < t.updated_at)
             ORDER BY t.updated_at ASC
+            """,
+            conn=conn,
+        )
+
+    def list_dispatch_mirror_candidates(
+        self,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.fetchall(
+            """
+            SELECT
+              t.task_id,
+              t.project_id,
+              t.task_type,
+              t.status,
+              t.from_agent,
+              t.to_agent,
+              t.goal,
+              t.priority,
+              t.return_to,
+              t.opened_at,
+              p.current_phase,
+              p.runtime_status,
+              p.next_action_json
+            FROM tasks AS t
+            JOIN projects AS p ON p.project_id = t.project_id
+            LEFT JOIN (
+              SELECT task_id, MAX(created_at) AS last_mirrored_at
+              FROM zulip_message_links
+              WHERE direction = 'outbound'
+                AND message_kind = 'task_assignment'
+              GROUP BY task_id
+            ) AS mirrored
+              ON mirrored.task_id = t.task_id
+            WHERE t.to_agent NOT IN ('planner', 'implementer', 'tester')
+              AND p.project_status NOT IN ('DONE', 'CANCELLED')
+              AND mirrored.last_mirrored_at IS NULL
+            ORDER BY t.opened_at ASC
+            """,
+            conn=conn,
+        )
+
+    def list_morpheus_progress_update_candidates(
+        self,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.fetchall(
+            """
+            SELECT
+              child.task_id,
+              child.parent_task_id,
+              child.project_id,
+              child.task_type,
+              child.status,
+              child.opened_at,
+              parent.task_type AS parent_task_type
+            FROM tasks AS child
+            JOIN tasks AS parent ON parent.task_id = child.parent_task_id
+            JOIN projects AS p ON p.project_id = child.project_id
+            LEFT JOIN (
+              SELECT linked_entity_id AS task_id, MAX(created_at) AS last_mirrored_at
+              FROM zulip_message_links
+              WHERE direction = 'outbound'
+                AND message_kind = 'status_update'
+                AND linked_entity_type = 'task'
+              GROUP BY linked_entity_id
+            ) AS mirrored
+              ON mirrored.task_id = child.task_id
+            WHERE child.to_agent IN ('planner', 'implementer', 'tester')
+              AND child.task_type IN ('PLAN_SOFTWARE_TASK', 'IMPLEMENT_SOFTWARE_TASK', 'TEST_SOFTWARE_TASK')
+              AND parent.to_agent = 'morpheus'
+              AND p.project_status NOT IN ('DONE', 'CANCELLED')
+              AND mirrored.last_mirrored_at IS NULL
+            ORDER BY child.opened_at ASC
             """,
             conn=conn,
         )

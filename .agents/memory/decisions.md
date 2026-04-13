@@ -12,6 +12,12 @@ Record durable repo or process decisions here, especially behavior or tooling up
 ## Entries
 
 - Date: 2026-04-13
+- Decision: Human-facing project feedback should default to one canonical Zulip thread per project, and Morpheus internal software substeps should be surfaced there as Morpheus-owned phase updates rather than as separate child-agent topics.
+- Context: The earlier routing split visible feedback across intake, design, software, verification, and escalation topics, which made project tracking noisy and forced operators to hunt across threads. The software loop also hid too much progress between visible dispatch and visible completion.
+- Consequences: The first inbound human project message defines the canonical feedback thread for that project. Visible task assignments, visible results, control events, and Morpheus planning, implementation, and testing progress summaries all mirror into that thread. Internal planner, implementer, and tester task chatter remains hidden.
+- Status: Accepted
+
+- Date: 2026-04-13
 - Decision: The repo-local Zulip credential directory must be self-contained. `openclaw_agents/state/zuliprc` should contain local regular files, not symlinks into older bridge or gateway repos.
 - Context: After the legacy V3 gateway was removed, the last remaining carryover was that the new repo-specific gateway still loaded bot credentials through symlinks pointing at `/home/alik/workspace/zulip/assistant_bridge` and `/home/alik/workspace/zulip/software_bridge`. That kept the new system operationally dependent on older repos even though the runtime logic had been migrated.
 - Consequences: The local `.zuliprc` files under `openclaw_agents/state/zuliprc` were replaced with regular files and the repo-specific gateway was restarted successfully against those local files. Future cleanup and deployment work should treat the local credential directory as the authoritative runtime input for this scaffold.
@@ -483,4 +489,10 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Decision: The committed OpenClaw systemd unit templates should be user services that read env files from `claw_software_workspace`, and any shell variable used inside `ExecStart` or `ExecStartPre` must be escaped as `$$...`.
 - Context: The cleaned deployment now runs as user services rather than root-level system services, and the first attempt to start the committed worker-supervisor unit failed because systemd expanded `$cmd[@]` and other shell variables before `bash` received them.
 - Consequences: `zulip-gateway.service`, `openclaw-worker-supervisor.service`, and `openclaw-worker@.service` now target `default.target`, read env files from `%h/workspace/claw_software_workspace/.agents/state/openclaw_agents/env/`, and escape shell variables correctly so the array-based startup commands execute under `bash` as intended.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Human-facing feedback for a project should default to one canonical Zulip thread derived from the first inbound project message, while phase-specific topics remain secondary routing detail rather than the primary operator surface.
+- Context: The original integrated spec exposed intake, design, software, verification, and escalation topics, and the first implementation mirrored visible results back to those task-specific destinations. That made the audit trail technically consistent but produced a poor operator experience because one project appeared fragmented across many topics.
+- Consequences: `store.get_project_feedback_thread()` now resolves the canonical operator thread from persisted inbound Zulip links; visible dispatches, visible task results, and control-event mirrors now prefer that thread; and the human-readable summaries for those mirrors now explicitly describe the step, owner, and next step so operators can follow progress in one place.
 - Status: Accepted

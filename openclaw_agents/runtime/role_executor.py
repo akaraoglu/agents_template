@@ -390,7 +390,7 @@ class BuiltinRoleExecutor:
         task_type: str | None = None,
         reason: str | None = None,
     ) -> Any:
-        reply_stream, reply_topic = self.dispatcher.router.reply_address_for_task(
+        reply_stream, reply_topic = self.dispatcher.reply_address_for_task(
             task["project_id"],
             task["task_id"],
             task_type or task["task_type"],

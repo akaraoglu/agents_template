@@ -152,6 +152,12 @@ class RuntimeDispatcher:
         self.artifact_serializer = ArtifactSerializer(self.store)
         self.snapshot_store = snapshot_store or SnapshotStore(self.store)
 
+    def reply_address_for_task(self, project_id: str, task_id: str, task_type: str) -> tuple[str, str]:
+        operator_thread = self.store.get_project_feedback_thread(project_id)
+        if operator_thread:
+            return operator_thread
+        return self.router.reply_address_for_task(project_id, task_id, task_type)
+
     def _model_profile_for_task(self, agent_id: str, task_type: str) -> str:
         overrides = ((self.model_map.get("overrides") or {}).get("by_task_type") or {}).get(task_type) or {}
         if overrides.get("preferred_profile"):
@@ -511,7 +517,7 @@ def main(argv: list[str] | None = None) -> int:
         task = dispatcher.store.get_task(args.task_id)
         if not task:
             raise SystemExit(f"unknown task {args.task_id}")
-        reply_stream, reply_topic = dispatcher.router.reply_address_for_task(
+        reply_stream, reply_topic = dispatcher.reply_address_for_task(
             task["project_id"],
             task["task_id"],
             task["task_type"],

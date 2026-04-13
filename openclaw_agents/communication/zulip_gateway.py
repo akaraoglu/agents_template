@@ -161,6 +161,21 @@ class ZulipGateway:
     """Normalize inbound Zulip messages and produce control-plane actions."""
 
     _YAML_BLOCK_RE = re.compile(r"```yaml\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+    _STEP_LABELS = {
+        "FRAME_PROJECT": (1, 5, "Intake Framing"),
+        "CLARIFY_GOAL": (1, 5, "Clarification"),
+        "ORCHESTRATE_PROJECT": (2, 5, "Project Orchestration"),
+        "DESIGN_ARCHITECTURE": (2, 5, "Architecture"),
+        "REQUEST_ARCHITECTURE_CLARIFICATION": (2, 5, "Architecture Clarification"),
+        "ORCHESTRATE_SOFTWARE": (3, 5, "Software Delivery"),
+        "PLAN_SOFTWARE_TASK": (3, 5, "Software Planning"),
+        "IMPLEMENT_SOFTWARE_TASK": (3, 5, "Implementation"),
+        "TEST_SOFTWARE_TASK": (3, 5, "Software Testing"),
+        "VERIFY_PROJECT": (4, 5, "Verification"),
+        "RESOLVE_ESCALATION": (4, 5, "Escalation Resolution"),
+        "APPROVE_PRIORITY": (4, 5, "Priority Approval"),
+        "CLOSE_PROJECT": (5, 5, "Closure"),
+    }
 
     def __init__(
         self,
@@ -209,6 +224,59 @@ class ZulipGateway:
     def canonicalize_agent(self, value: str) -> str:
         key = self._slugify(value)
         return self.alias_to_agent.get(key, key)
+
+    def agent_display_name(self, agent_id: str) -> str:
+        config = (self.agent_registry.get("agents") or {}).get(agent_id) or {}
+        return str(config.get("display_name") or agent_id)
+
+    def project_feedback_address(self, project_id: str) -> tuple[str, str] | None:
+        return self.store.get_project_feedback_thread(project_id)
+
+    def reply_address_for_task(self, project_id: str, task_id: str, task_type: str) -> tuple[str, str]:
+        feedback_address = self.project_feedback_address(project_id)
+        if feedback_address:
+            return feedback_address
+        return self.router.reply_address_for_task(project_id, task_id, task_type)
+
+    def control_event_address(self, project_id: str) -> tuple[str, str]:
+        feedback_address = self.project_feedback_address(project_id)
+        if feedback_address:
+            return feedback_address
+        return self.router.control_event_topic(project_id)
+
+    def _step_label(self, task_type: str) -> str:
+        index, total, label = self._STEP_LABELS.get(task_type, (0, 0, task_type))
+        return f"[{index}/{total}] {label}" if index and total else label
+
+    def _assignment_next_text(self, task_type: str, target_agent: str) -> str:
+        if task_type == "ORCHESTRATE_SOFTWARE":
+            return "Morpheus will drive plan -> implement -> test inside the software loop."
+        if task_type == "VERIFY_PROJECT":
+            return "Oracle will verify the delivered package and return a pass, fail, or clarification result."
+        if task_type == "DESIGN_ARCHITECTURE":
+            return "Architect will produce an implementable architecture and hand it back to Niobe."
+        if task_type == "FRAME_PROJECT":
+            return "AgentSmith will frame the request into a project charter for Niobe."
+        if task_type == "CLOSE_PROJECT":
+            return "Niobe will finalize the project and return the closure report."
+        return f"{self.agent_display_name(target_agent)} will continue this step and report back."
+
+    def _next_step_text(self, next_action: dict[str, Any]) -> str:
+        action_type = str(next_action.get("type") or "").upper()
+        target_agent = str(next_action.get("target_agent") or "").strip()
+        if action_type == "WAIT_FOR_EXTERNAL":
+            owner = self.agent_display_name(target_agent) if target_agent else "the assigned agent"
+            return f"Waiting for {owner} to finish the active step."
+        if action_type == "RETURN_TO_REQUESTER":
+            owner = self.agent_display_name(target_agent) if target_agent else "the requesting agent"
+            return f"Return to {owner}."
+        if action_type == "CLOSE_PROJECT":
+            return "Niobe will finalize project closure."
+        if target_agent:
+            return f"Next owner: {self.agent_display_name(target_agent)}."
+        if action_type:
+            return f"Next action: {action_type}."
+        return "No next step recorded."
 
     def extract_yaml_payload(self, content: str) -> tuple[str, dict[str, Any] | None]:
         match = self._YAML_BLOCK_RE.search(content)
@@ -401,7 +469,16 @@ class ZulipGateway:
             "reply_stream": plan.reply_stream,
             "reply_topic": plan.reply_topic,
         }
-        summary = f"{plan.target_agent} has been assigned {plan.task_type} for project {plan.project_id}."
+        summary = "\n".join(
+            [
+                f"Step Started: {self._step_label(plan.task_type)}",
+                f"Owner: {self.agent_display_name(plan.target_agent)}",
+                f"Project: {plan.project_id}",
+                "Status: ACTIVE",
+                f"Goal: {plan.reason}",
+                f"Next: {self._assignment_next_text(plan.task_type, plan.target_agent)}",
+            ]
+        )
         return self.build_authoritative_message(summary, payload)
 
     def build_task_result_message(
@@ -409,14 +486,16 @@ class ZulipGateway:
         *,
         project_id: str,
         task_id: str,
+        task_type: str,
         agent: str,
         status: str,
         summary: str,
         artifacts_out: list[str],
         next_action: dict[str, Any],
+        kind: str = "task_result",
     ) -> str:
         payload = {
-            "kind": "task_result",
+            "kind": kind,
             "project_id": project_id,
             "task_id": task_id,
             "agent": agent,
@@ -426,7 +505,17 @@ class ZulipGateway:
             "next_action": next_action,
         }
         self.schema_validator.validate("task_result", payload)
-        return self.build_authoritative_message(summary, payload)
+        human_summary = "\n".join(
+            [
+                f"Step Update: {self._step_label(task_type)}",
+                f"Owner: {self.agent_display_name(agent)}",
+                f"Project: {project_id}",
+                f"Outcome: {status}",
+                f"Summary: {summary}",
+                f"Next: {self._next_step_text(next_action)}",
+            ]
+        )
+        return self.build_authoritative_message(human_summary, payload)
 
     def mirror_control_event(self, result: ControlCommandResult) -> str:
         payload = {
@@ -439,7 +528,15 @@ class ZulipGateway:
             "args": {},
             "result_summary": result.summary,
         }
-        summary = f"{result.command} for {result.project_id}: {result.summary}"
+        summary = "\n".join(
+            [
+                "Project Control Update",
+                f"Project: {result.project_id}",
+                f"Command: {result.command}",
+                f"Outcome: {result.status}",
+                f"Next: {result.summary}",
+            ]
+        )
         return self.build_authoritative_message(summary, payload)
 
     def _handle_freeform_human_request(self, event: GatewayEvent, envelope: InboundEnvelope) -> GatewayResult:
@@ -477,7 +574,7 @@ class ZulipGateway:
             linked_entity_id=task_id,
             task_id=task_id,
         )
-        reply_stream, reply_topic = self.router.reply_address_for_task(project_id, task_id, "FRAME_PROJECT")
+        reply_stream, reply_topic = self.reply_address_for_task(project_id, task_id, "FRAME_PROJECT")
         plan = DispatchPlan(
             project_id=project_id,
             task_id=task_id,
@@ -530,7 +627,7 @@ class ZulipGateway:
             linked_entity_id=task_id,
             task_id=task_id,
         )
-        reply_stream, reply_topic = self.router.reply_address_for_task(project_id, task_id, task_type)
+        reply_stream, reply_topic = self.reply_address_for_task(project_id, task_id, task_type)
         plan = DispatchPlan(
             project_id=project_id,
             task_id=task_id,

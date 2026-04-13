@@ -159,7 +159,7 @@ class MorpheusLoopEngine:
             decision_bounds=parent_task.get("decision_bounds_json") or {},
             return_to="requesting_agent",
         )
-        reply_stream, reply_topic = self.dispatcher.router.reply_address_for_task(
+        reply_stream, reply_topic = self.dispatcher.reply_address_for_task(
             packet["project_id"],
             child_task["task_id"],
             task_type,
@@ -525,7 +525,7 @@ class MorpheusLoopEngine:
             return None
         if self.store.get_active_task_attempt(parent_task["task_id"]):
             return None
-        reply_stream, reply_topic = self.dispatcher.router.reply_address_for_task(
+        reply_stream, reply_topic = self.dispatcher.reply_address_for_task(
             parent_task["project_id"],
             parent_task["task_id"],
             parent_task["task_type"],
