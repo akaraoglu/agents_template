@@ -1,0 +1,216 @@
+schema_version: "1.0.0"
+machine_id: "morpheus_software_loop"
+owner: "morpheus"
+purpose: "Software delivery loop over Planner, Implementer, and Tester until a tested delivery package is ready."
+
+lease_policy:
+  lease_required: true
+  orchestrator_id: "morpheus"
+  max_active_projects: 1
+  lease_ttl_minutes: 60
+  renew_interval_minutes: 10
+
+invariants:
+  - "planner_invocations >= 1 before success"
+  - "implementer_invocations >= 1 before success"
+  - "tester_invocations >= 1 before success"
+  - "if code_changed == true then test_execution_report must exist"
+
+safe_boundaries:
+  - "after planner output is persisted"
+  - "after implementer output is persisted"
+  - "after tester report is persisted"
+  - "after delivery package is persisted"
+  - "after architecture clarification response is persisted"
+
+unsafe_switch_points:
+  - "mid-LLM generation without checkpoint"
+  - "mid-command execution inside a sandbox"
+  - "mid-git mutation with untracked rollback state"
+  - "before test results are recorded when code has already changed"
+
+control_commands:
+  PAUSE_PROJECT:
+    allowed_from:
+      - "RECEIVED"
+      - "PLAN"
+      - "REVIEW_PLAN"
+      - "IMPLEMENT"
+      - "REVIEW_IMPLEMENTATION"
+      - "TEST"
+      - "REVIEW_TESTS"
+      - "DECIDE_RETRY"
+      - "WAITING_ARCHITECT"
+      - "CLARIFY_OR_ESCALATE"
+    actions:
+      - "allow current safe boundary to complete"
+      - "persist final boundary snapshot"
+      - "release morpheus lease"
+    next_state: "PAUSED"
+  RESUME_PROJECT:
+    allowed_from: ["PAUSED"]
+    actions:
+      - "acquire morpheus lease"
+      - "load last_snapshot_id"
+      - "continue from next_action"
+    next_state: "RESTORE_FROM_SNAPSHOT"
+  SWITCH_PROJECT:
+    allowed_from: ["REVIEW_PLAN", "REVIEW_IMPLEMENTATION", "REVIEW_TESTS", "WAITING_ARCHITECT", "CLARIFY_OR_ESCALATE", "PAUSED"]
+    actions:
+      - "validate persisted safe boundary or require FORCE_INTERRUPT"
+      - "persist project snapshot"
+      - "release morpheus lease"
+      - "emit switch audit event"
+  FORCE_INTERRUPT:
+    allowed_from: ["PLAN", "IMPLEMENT", "TEST"]
+    actions:
+      - "mark project_status = PAUSE_REQUESTED or BLOCKED"
+      - "persist interrupted run metadata"
+      - "require workspace recovery before resume"
+
+states:
+  RECEIVED:
+    runtime_status: "ACTIVE"
+    transitions:
+      READY: "PLAN"
+      INCOMPLETE: "CLARIFY_OR_ESCALATE"
+
+  PLAN:
+    runtime_status: "ACTIVE"
+    action: "spawn planner with PLAN_SOFTWARE_TASK"
+    transitions:
+      PLANNER_RETURNED: "REVIEW_PLAN"
+
+  REVIEW_PLAN:
+    runtime_status: "ACTIVE"
+    scheduler_behavior:
+      switch_allowed_after_persisted_boundary: true
+    decision_rules:
+      - when: "planner.status == SUCCESS"
+        action: "store current_plan"
+        next_state: "IMPLEMENT"
+      - when: "planner.status in [NEEDS_CLARIFICATION, BLOCKED, FAILED]"
+        action: "classify cause"
+        next_state: "CLARIFY_OR_ESCALATE"
+
+  IMPLEMENT:
+    runtime_status: "ACTIVE"
+    action: "spawn implementer with IMPLEMENT_SOFTWARE_TASK"
+    transitions:
+      IMPLEMENTER_RETURNED: "REVIEW_IMPLEMENTATION"
+
+  REVIEW_IMPLEMENTATION:
+    runtime_status: "ACTIVE"
+    scheduler_behavior:
+      switch_allowed_after_persisted_boundary: true
+    decision_rules:
+      - when: "implementer.status == SUCCESS"
+        action: "store latest_code_change"
+        next_state: "TEST"
+      - when: "implementer.status in [NEEDS_CLARIFICATION, BLOCKED]"
+        action: "classify cause"
+        next_state: "CLARIFY_OR_ESCALATE"
+      - when: "implementer.status == FAILED"
+        action: "retry implementer or return to planner"
+        next_state: "DECIDE_RETRY"
+
+  TEST:
+    runtime_status: "ACTIVE"
+    action: "spawn tester with TEST_SOFTWARE_TASK"
+    transitions:
+      TESTER_RETURNED: "REVIEW_TESTS"
+
+  REVIEW_TESTS:
+    runtime_status: "ACTIVE"
+    scheduler_behavior:
+      switch_allowed_after_persisted_boundary: true
+      recommended_switch_triggers:
+        - "Tester report persisted and next action requires Niobe or Architect"
+        - "Environment failure persisted and escalated"
+        - "Project paused or preempted at a safe software boundary"
+        - "Higher-priority software request becomes eligible and current project is safely parked"
+    decision_rules:
+      - when: "tester.status == SUCCESS and tester.result == PASS"
+        action: "produce software_delivery_package"
+        next_state: "DONE"
+      - when: "tester.status == SUCCESS and tester.result == FAIL"
+        action: "store latest_test_report"
+        next_state: "DECIDE_RETRY"
+      - when: "tester.status in [NEEDS_CLARIFICATION, BLOCKED]"
+        action: "classify cause"
+        next_state: "CLARIFY_OR_ESCALATE"
+      - when: "tester.status == FAILED"
+        action: "retry tester or escalate"
+        next_state: "DECIDE_RETRY"
+
+  DECIDE_RETRY:
+    runtime_status: "ACTIVE"
+    decision_rules:
+      - when: "failure_cause == BAD_PLAN"
+        action: "spawn planner again"
+        next_state: "PLAN"
+      - when: "failure_cause == IMPLEMENTATION_DEFECT"
+        action: "spawn implementer again"
+        next_state: "IMPLEMENT"
+      - when: "failure_cause == TEST_GAP"
+        action: "spawn tester again"
+        next_state: "TEST"
+      - when: "failure_cause == ARCHITECTURE_GAP"
+        action: "request architect clarification"
+        next_state: "WAITING_ARCHITECT"
+      - when: "failure_cause in [REQUIREMENT_GAP, ENVIRONMENT_FAILURE, UNKNOWN]"
+        action: "return escalation_packet to niobe"
+        next_state: "BLOCKED"
+
+  WAITING_ARCHITECT:
+    runtime_status_map:
+      default: "ACTIVE"
+      waiting_on_external_response: "WAITING_EXTERNAL"
+    scheduler_behavior:
+      switch_allowed_after_persisted_boundary: true
+    transitions:
+      ARCHITECT_RETURNED: "PLAN"
+      ARCHITECT_BLOCKED: "CLARIFY_OR_ESCALATE"
+
+  CLARIFY_OR_ESCALATE:
+    runtime_status_map:
+      requirement_or_environment_blocker: "WAITING_EXTERNAL"
+      default: "ACTIVE"
+    scheduler_behavior:
+      switch_allowed_after_persisted_boundary: true
+    decision_rules:
+      - when: "issue_type == requirement_gap"
+        action: "return escalation_packet to niobe"
+        next_state: "BLOCKED"
+      - when: "issue_type == architecture_gap"
+        action: "request architect clarification"
+        next_state: "WAITING_ARCHITECT"
+      - when: "issue_type == environment_issue"
+        action: "return escalation_packet to niobe"
+        next_state: "BLOCKED"
+      - when: "issue_type == minor_plan_gap"
+        action: "retry planner"
+        next_state: "PLAN"
+
+  PAUSED:
+    runtime_status: "PAUSED"
+    terminal: false
+
+  RESTORE_FROM_SNAPSHOT:
+    runtime_status: "ACTIVE"
+    rule: "Scheduler rehydrates the last persisted software snapshot and resumes from the saved next_action."
+    transitions:
+      SNAPSHOT_LOADED: "PLAN"
+      SNAPSHOT_INVALID: "BLOCKED"
+
+  DONE:
+    runtime_status: "ACTIVE"
+    completion_actions:
+      - "persist software_delivery_package"
+      - "release morpheus lease"
+      - "return delivery package to requesting agent"
+    terminal: true
+
+  BLOCKED:
+    runtime_status: "BLOCKED"
+    terminal: true

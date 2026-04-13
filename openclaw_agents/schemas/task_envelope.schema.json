@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task_envelope.schema.json",
+  "title": "Task Envelope",
+  "description": "Canonical task envelope passed between agents and persisted in the state store.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "project_id",
+    "from_agent",
+    "to_agent",
+    "task_type",
+    "title",
+    "goal",
+    "priority",
+    "context",
+    "expected_output",
+    "decision_bounds",
+    "return_to"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_task_id": {
+      "type": "string"
+    },
+    "from_agent": {
+      "type": "string",
+      "enum": [
+        "human",
+        "control_plane",
+        "master",
+        "neo",
+        "agent_smith",
+        "niobe",
+        "architect",
+        "morpheus",
+        "oracle",
+        "planner",
+        "implementer",
+        "tester"
+      ]
+    },
+    "to_agent": {
+      "type": "string",
+      "enum": [
+        "master",
+        "neo",
+        "agent_smith",
+        "niobe",
+        "architect",
+        "morpheus",
+        "oracle",
+        "planner",
+        "implementer",
+        "tester"
+      ]
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "CLARIFY_GOAL",
+        "FRAME_PROJECT",
+        "APPROVE_PRIORITY",
+        "RESOLVE_ESCALATION",
+        "ORCHESTRATE_PROJECT",
+        "DESIGN_ARCHITECTURE",
+        "REQUEST_ARCHITECTURE_CLARIFICATION",
+        "ORCHESTRATE_SOFTWARE",
+        "PLAN_SOFTWARE_TASK",
+        "IMPLEMENT_SOFTWARE_TASK",
+        "TEST_SOFTWARE_TASK",
+        "VERIFY_PROJECT",
+        "CLOSE_PROJECT"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH", "URGENT"]
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "expected_output": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "decision_bounds": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "return_to": {
+      "type": "string",
+      "enum": [
+        "requesting_agent",
+        "master",
+        "neo",
+        "agent_smith",
+        "niobe",
+        "architect",
+        "morpheus",
+        "oracle",
+        "planner",
+        "implementer",
+        "tester"
+      ]
+    },
+    "artifacts_in": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

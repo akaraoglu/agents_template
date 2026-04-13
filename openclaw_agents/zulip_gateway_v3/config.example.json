@@ -1,9 +1,0 @@
-{
-  "agent_registry_path": "./agent_registry.json",
-  "state_dir": "./state",
-  "verify_tls": true,
-  "poll_timeout_seconds": 15,
-  "history_entry_limit": 20,
-  "send_acknowledgement": true,
-  "send_status_updates": false
-}

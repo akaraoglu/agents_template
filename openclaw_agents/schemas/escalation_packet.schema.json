@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "escalation_packet.schema.json",
+  "title": "Escalation Packet",
+  "description": "Explicit escalation artifact used when an orchestrator or specialist cannot safely proceed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reason",
+    "owner_agent",
+    "blocking_facts",
+    "options_considered",
+    "recommended_action"
+  ],
+  "properties": {
+    "project_id": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_agent": {
+      "type": "string",
+      "enum": [
+        "master",
+        "neo",
+        "agent_smith",
+        "niobe",
+        "architect",
+        "morpheus",
+        "oracle",
+        "planner",
+        "implementer",
+        "tester"
+      ]
+    },
+    "blocking_facts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "options_considered": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "additionalProperties": true
+          }
+        ]
+      }
+    },
+    "recommended_action": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "additionalProperties": true
+        }
+      ]
+    },
+    "to_agent": {
+      "type": "string",
+      "enum": ["master", "neo", "agent_smith", "niobe"]
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

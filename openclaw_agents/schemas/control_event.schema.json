@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "control_event.schema.json",
+  "title": "Control Event",
+  "description": "Immutable control-plane command event for pause, resume, switch, reprioritize, and interruption handling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "project_id",
+    "command",
+    "requested_by",
+    "requested_at",
+    "status",
+    "args"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "orchestrator_id": {
+      "type": "string",
+      "enum": ["niobe", "morpheus"]
+    },
+    "command": {
+      "type": "string",
+      "enum": [
+        "PAUSE_PROJECT",
+        "RESUME_PROJECT",
+        "SWITCH_PROJECT",
+        "CANCEL_PROJECT",
+        "REPRIORITIZE_PROJECT",
+        "FORCE_INTERRUPT",
+        "STATUS_SNAPSHOT"
+      ]
+    },
+    "requested_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "args": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "status": {
+      "type": "string",
+      "enum": ["REQUESTED", "APPLIED", "REJECTED", "FAILED"]
+    },
+    "result_summary": {
+      "type": "string"
+    },
+    "switch_reason": {
+      "type": "string",
+      "enum": [
+        "MANUAL_PRIORITY_CHANGE",
+        "CURRENT_PROJECT_WAITING_EXTERNAL",
+        "CURRENT_PROJECT_BLOCKED",
+        "CURRENT_PROJECT_AT_SAFE_BOUNDARY",
+        "PREEMPTED_BY_URGENT_PROJECT",
+        "OPERATOR_REQUEST",
+        "SYSTEM_RECOVERY"
+      ]
+    },
+    "mirrored_to_zulip": {
+      "type": "boolean"
+    },
+    "mirrored_message_id": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,253 @@
+schema_version: "1.0.0"
+metadata:
+  spec_sources:
+    - "specs/complete_agentic_software_workflow_with_zulip.md"
+    - "specs/supporting/project_scheduling_and_context_switching.md"
+  authoritative_for:
+    - "agent identity"
+    - "task acceptance"
+    - "requester permissions"
+    - "visibility"
+    - "singleton leasing metadata"
+
+defaults:
+  returns_to: "requesting_agent"
+  communication_transport: "zulip_gateway"
+  state_source: "orchestrator_state_store"
+  artifact_source: "artifact_store_and_workspace"
+
+agents:
+  master:
+    display_name: "MASTER"
+    aliases: ["CEO"]
+    role_type: "executive"
+    visibility: "visible"
+    lifecycle: "singleton"
+    scheduling:
+      lease_required: false
+    purpose: "Final authority for priority, risk, and exceptional scope decisions."
+    owns:
+      - "final priority decisions"
+      - "risk acceptance"
+      - "exception approvals"
+    does_not_own:
+      - "project orchestration"
+      - "implementation"
+      - "verification execution"
+    accepts_tasks: ["APPROVE_PRIORITY", "RESOLVE_ESCALATION", "CLOSE_PROJECT"]
+    allowed_requesters: ["neo", "agent_smith", "niobe"]
+    primary_artifact: "executive_decision"
+    prompt_path: "prompts/master.md"
+
+  neo:
+    display_name: "Neo"
+    aliases: ["CTO"]
+    role_type: "executive"
+    visibility: "visible"
+    lifecycle: "singleton"
+    scheduling:
+      lease_required: false
+    purpose: "Clarify goals, expose tradeoffs, and reduce ambiguity."
+    owns:
+      - "goal clarification"
+      - "tradeoff analysis"
+      - "strategic technical direction"
+    does_not_own:
+      - "project routing"
+      - "software execution"
+      - "project verification"
+    accepts_tasks: ["CLARIFY_GOAL", "RESOLVE_ESCALATION"]
+    allowed_requesters: ["master", "agent_smith", "niobe", "architect", "morpheus"]
+    primary_artifact: "clarification_brief"
+    prompt_path: "prompts/neo.md"
+
+  agent_smith:
+    display_name: "AgentSmith"
+    aliases: ["Agent Smith", "General Manager"]
+    role_type: "intake"
+    visibility: "visible"
+    lifecycle: "singleton"
+    scheduling:
+      lease_required: false
+    purpose: "Convert requests into executable project charters and assign project orchestration."
+    owns:
+      - "request intake"
+      - "project framing"
+      - "acceptance criteria definition"
+      - "initial priority assignment"
+    does_not_own:
+      - "deep research"
+      - "project execution"
+      - "software delivery"
+    accepts_tasks: ["FRAME_PROJECT", "RESOLVE_ESCALATION"]
+    allowed_requesters: ["master", "neo", "niobe"]
+    primary_artifact: "project_charter"
+    prompt_path: "prompts/agent_smith.md"
+
+  niobe:
+    display_name: "Niobe"
+    aliases: ["Niaobe", "Project Manager"]
+    role_type: "orchestrator"
+    visibility: "visible"
+    lifecycle: "singleton"
+    scheduling:
+      lease_required: true
+      orchestrator_id: "niobe"
+      max_active_projects: 1
+      lease_ttl_minutes: 30
+      renew_interval_minutes: 5
+    purpose: "Project-level orchestrator that decides what happens next until the project is done or blocked."
+    owns:
+      - "project execution loop"
+      - "next-step routing"
+      - "project status"
+      - "project-level retry and escalation"
+    does_not_own:
+      - "architecture design"
+      - "coding"
+      - "software testing"
+      - "project verification execution"
+    accepts_tasks: ["ORCHESTRATE_PROJECT", "CLOSE_PROJECT", "RESOLVE_ESCALATION"]
+    allowed_requesters: ["agent_smith", "master", "neo"]
+    primary_artifact: "project_status_report"
+    prompt_path: "prompts/niobe.md"
+
+  architect:
+    display_name: "Architect"
+    aliases: ["Project Architect", "Code Architect"]
+    role_type: "specialist"
+    visibility: "visible"
+    lifecycle: "singleton_or_pool"
+    scheduling:
+      lease_required: false
+    purpose: "Design architecture, interfaces, and technical boundaries."
+    owns:
+      - "architecture design"
+      - "component boundaries"
+      - "interface contracts"
+    does_not_own:
+      - "project routing"
+      - "implementation execution"
+      - "project verification"
+    accepts_tasks: ["DESIGN_ARCHITECTURE", "REQUEST_ARCHITECTURE_CLARIFICATION"]
+    allowed_requesters: ["master", "neo", "agent_smith", "niobe", "morpheus"]
+    primary_artifact: "architecture_spec"
+    prompt_path: "prompts/architect.md"
+
+  morpheus:
+    display_name: "Morpheus"
+    aliases: ["Software Manager", "Software Orchestrator"]
+    role_type: "orchestrator"
+    visibility: "visible"
+    lifecycle: "singleton"
+    scheduling:
+      lease_required: true
+      orchestrator_id: "morpheus"
+      max_active_projects: 1
+      lease_ttl_minutes: 60
+      renew_interval_minutes: 10
+    purpose: "Software-delivery orchestrator that runs Planner, Implementer, and Tester until a tested implementation package is ready."
+    owns:
+      - "software delivery loop"
+      - "software subtask sequencing"
+      - "test-required completion of code work"
+      - "integration readiness for project verification"
+    does_not_own:
+      - "project-level acceptance"
+      - "project verification"
+      - "business priority decisions"
+    accepts_tasks: ["ORCHESTRATE_SOFTWARE"]
+    allowed_requesters: ["niobe", "architect", "neo", "master"]
+    primary_artifact: "software_delivery_package"
+    prompt_path: "prompts/morpheus.md"
+
+  oracle:
+    display_name: "Oracle"
+    aliases: ["Project Verifier"]
+    role_type: "specialist"
+    visibility: "visible"
+    lifecycle: "singleton_or_pool"
+    scheduling:
+      lease_required: false
+    purpose: "Project verifier that checks delivered outputs against the project charter and acceptance criteria."
+    owns:
+      - "project-level verification"
+      - "verification reports"
+      - "evidence-based pass or fail judgments"
+    does_not_own:
+      - "software testing loop"
+      - "project routing"
+      - "implementation"
+    accepts_tasks: ["VERIFY_PROJECT"]
+    allowed_requesters: ["niobe", "agent_smith", "neo", "master"]
+    primary_artifact: "verification_report"
+    prompt_path: "prompts/oracle.md"
+
+  planner:
+    display_name: "Planner"
+    aliases: ["Software Planner"]
+    role_type: "specialist"
+    visibility: "internal_only"
+    lifecycle: "task_scoped_spawned_by_morpheus"
+    scheduling:
+      lease_required: false
+      managed_by: "morpheus"
+    purpose: "Translate a software goal into an executable plan and explicit test obligations."
+    owns:
+      - "software task decomposition"
+      - "implementation plan"
+      - "test obligation plan"
+    does_not_own:
+      - "writing production code"
+      - "final test execution"
+      - "project routing"
+    accepts_tasks: ["PLAN_SOFTWARE_TASK"]
+    allowed_requesters: ["morpheus"]
+    primary_artifact: "software_task_plan"
+    prompt_path: "prompts/planner.md"
+
+  implementer:
+    display_name: "Implementer"
+    aliases: ["Software Engineer"]
+    role_type: "specialist"
+    visibility: "internal_only"
+    lifecycle: "task_scoped_spawned_by_morpheus"
+    scheduling:
+      lease_required: false
+      managed_by: "morpheus"
+    purpose: "Produce code changes according to the approved software plan."
+    owns:
+      - "code changes"
+      - "buildability of changed code"
+      - "implementation notes"
+    does_not_own:
+      - "test strategy"
+      - "project verification"
+      - "project routing"
+    accepts_tasks: ["IMPLEMENT_SOFTWARE_TASK"]
+    allowed_requesters: ["morpheus"]
+    primary_artifact: "code_change"
+    prompt_path: "prompts/implementer.md"
+
+  tester:
+    display_name: "Tester"
+    aliases: ["Software Tester", "QA Agent"]
+    role_type: "specialist"
+    visibility: "internal_only"
+    lifecycle: "task_scoped_spawned_by_morpheus"
+    scheduling:
+      lease_required: false
+      managed_by: "morpheus"
+    purpose: "Create or update automated tests, run them, and produce reproducible quality evidence."
+    owns:
+      - "test code changes"
+      - "test execution"
+      - "failure classification for Morpheus"
+    does_not_own:
+      - "project verification"
+      - "project routing"
+      - "business requirement interpretation"
+    accepts_tasks: ["TEST_SOFTWARE_TASK"]
+    allowed_requesters: ["morpheus"]
+    primary_artifact: "test_execution_report"
+    prompt_path: "prompts/tester.md"

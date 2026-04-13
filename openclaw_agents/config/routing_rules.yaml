@@ -1,0 +1,158 @@
+schema_version: "1.0.0"
+metadata:
+  spec_sources:
+    - "specs/complete_agentic_software_workflow_with_zulip.md"
+    - "specs/supporting/project_scheduling_and_context_switching.md"
+
+routing:
+  default_entry_agent: "agent_smith"
+  default_project_orchestrator: "niobe"
+  default_software_orchestrator: "morpheus"
+  route_by_task_type:
+    CLARIFY_GOAL: "neo"
+    FRAME_PROJECT: "agent_smith"
+    APPROVE_PRIORITY: "master"
+    RESOLVE_ESCALATION: "master"
+    ORCHESTRATE_PROJECT: "niobe"
+    DESIGN_ARCHITECTURE: "architect"
+    REQUEST_ARCHITECTURE_CLARIFICATION: "architect"
+    ORCHESTRATE_SOFTWARE: "morpheus"
+    PLAN_SOFTWARE_TASK: "planner"
+    IMPLEMENT_SOFTWARE_TASK: "implementer"
+    TEST_SOFTWARE_TASK: "tester"
+    VERIFY_PROJECT: "oracle"
+    CLOSE_PROJECT: "master"
+  requester_agnostic_specialists:
+    - "architect"
+    - "oracle"
+  internal_only_specialists:
+    planner: "morpheus"
+    implementer: "morpheus"
+    tester: "morpheus"
+  return_rule: "specialists_return_to_requesting_agent"
+  extension_rule: "add_by_capability_registration"
+
+global_invariants:
+  - "Every task has exactly one current owner."
+  - "Every task names exactly one return target."
+  - "Only orchestrators choose next-step routing inside live loops."
+  - "Niobe never directly calls Planner, Implementer, or Tester."
+  - "Morpheus never closes the project."
+  - "Oracle never replaces Tester."
+  - "Project closure requires design evidence, implementation evidence, and Oracle verification evidence."
+  - "Authoritative project state must be recoverable without reading Zulip history."
+
+required_rules:
+  project:
+    design_must_happen: true
+    implementation_must_happen: true
+    oracle_verification_must_happen: true
+    closure_requires_all_three: true
+  morpheus_software_task:
+    planner_must_run: true
+    implementer_must_run: true
+    tester_must_run: true
+    code_change_requires_automated_tests: true
+    success_requires_test_execution_report: true
+
+communication:
+  mode: "zulip_transport_plus_gateway"
+  reply_rule: "reply_in_same_topic_unless_escalation_or_secrecy_requires_otherwise"
+  streams:
+    executive: "exec"
+    projects: "projects"
+    software: "software"
+    verification: "verification"
+    escalations: "escalations"
+    software_internal: "software-internal"
+  topic_conventions:
+    project_intake: "project/{project_id}/intake"
+    project_main: "project/{project_id}"
+    project_decisions: "project/{project_id}/decisions"
+    project_design: "project/{project_id}/design"
+    software_main: "project/{project_id}/software"
+    software_task: "project/{project_id}/software/{task_id}"
+    verification_task: "project/{project_id}/verify/{task_id}"
+    escalation_task: "project/{project_id}/escalate/{task_id}"
+
+human_control_surface:
+  required_commands:
+    - "PAUSE_PROJECT"
+    - "RESUME_PROJECT"
+    - "SWITCH_PROJECT"
+    - "CANCEL_PROJECT"
+    - "REPRIORITIZE_PROJECT"
+    - "FORCE_INTERRUPT"
+    - "STATUS_SNAPSHOT"
+
+scheduler:
+  owner: "control_plane"
+  execution_model: "serial_multi_project_with_context_switching"
+  mode: "priority_queue_with_eligibility_filters"
+  fairness_window_minutes: 240
+  starvation_prevention: true
+  queue_buckets:
+    - "urgent"
+    - "active_recovery"
+    - "normal_ready"
+    - "waiting_external"
+    - "blocked"
+  singleton_orchestrators:
+    niobe:
+      max_active_projects: 1
+      lease_ttl_minutes: 30
+      renew_interval_minutes: 5
+    morpheus:
+      max_active_projects: 1
+      lease_ttl_minutes: 60
+      renew_interval_minutes: 10
+  selection_policy:
+    ordered_rules:
+      - "exclude DONE and CANCELLED projects"
+      - "exclude projects not eligible_for_scheduling"
+      - "exclude projects missing required workspace_ref or state snapshot"
+      - "prefer URGENT over HIGH over MEDIUM over LOW"
+      - "prefer resumed projects that were preempted at safe boundaries"
+      - "prefer older waiting projects over newly created ones within the same priority"
+      - "prefer projects with explicit human resume request over passive backlog items"
+  safe_boundary_types:
+    - "TASK_COMPLETED"
+    - "TASK_RESULT_PERSISTED"
+    - "ESCALATION_PERSISTED"
+    - "ORACLE_REPORT_PERSISTED"
+    - "MORPHEUS_DELIVERY_PERSISTED"
+    - "PROJECT_STATUS_SNAPSHOT_PERSISTED"
+  switch_reasons:
+    - "MANUAL_PRIORITY_CHANGE"
+    - "CURRENT_PROJECT_WAITING_EXTERNAL"
+    - "CURRENT_PROJECT_BLOCKED"
+    - "CURRENT_PROJECT_AT_SAFE_BOUNDARY"
+    - "PREEMPTED_BY_URGENT_PROJECT"
+    - "OPERATOR_REQUEST"
+    - "SYSTEM_RECOVERY"
+  pause_resume_switch:
+    safe_default: "switch_only_after_persisted_safe_boundary"
+    force_interrupt_requires_recovery_assessment: true
+
+workspace:
+  isolation_required: true
+  preferred_strategy: "dedicated_project_workspace_or_git_worktree"
+  acceptable_mvp_strategy: "single_dedicated_workspace_directory_per_project_with_serialized_mutation"
+  forbidden_strategy: "multiple_projects_sharing_one_mutable_working_directory"
+  required_reference_fields:
+    - "workspace_ref"
+    - "repo_root"
+    - "branch_or_worktree_id"
+    - "last_clean_commit_or_checkpoint"
+
+stop_conditions:
+  niobe:
+    max_project_transitions_before_escalation: 20
+  morpheus:
+    max_retry_cycles_per_software_task: 5
+    repeated_same_failure_signature_before_escalation: 2
+  scheduler:
+    refuse_unsafe_switches_without_force_interrupt: true
+  all_agents:
+    timeout_per_run_required: true
+    no_infinite_retry_loops: true
