@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenClaw shared Zulip gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/workspace/claw_software_workspace/.agents/state/openclaw_agents/env/openclaw-zulip-gateway.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/env bash -lc 'cd "$$OPENCLAW_REPO_ROOT" && cmd=(python3 -m openclaw_agents.communication.zulip_gateway_service --config "$$OPENCLAW_GATEWAY_CONFIG"); if [[ "$${OPENCLAW_ZULIP_INSECURE:-0}" == "1" ]]; then cmd+=(--insecure); fi; exec "$${cmd[@]}"'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

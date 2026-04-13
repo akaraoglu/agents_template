@@ -11,6 +11,24 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 
 ## Entries
 
+- Date: 2026-04-13
+- Problem: The first real human Fibonacci request posted from Zulip did not enter the new intake path even after the repo-specific gateway and workers were running.
+- Root cause: Two separate deployment faults overlapped: a legacy system-level `zulip-gateway-v3.service` was still consuming the same bot identities, and the new gateway service misclassified the local human user `master` as a bot because its full name matched a deferred agent id.
+- New rule: Do not consider the new chat workflow cut over until legacy Zulip responders are removed or neutralized and the gateway classifies senders by email before display name. A human account may legally share a display name with an agent id; sender email is the authority.
+- Where it was recorded: `openclaw_agents/communication/zulip_gateway_service.py` and `.agents/memory/changelog.md`
+
+- Date: 2026-04-13
+- Problem: The first live end-to-end smoke targeted the real `openclaw_workspace` software path directly, which made the bring-up look ambiguous when the workspace-backed executor stalled even though the gateway, scheduler, and visible worker loop were already functioning.
+- Root cause: The deployment smoke conflated two different risks: control-plane bring-up and workspace-backed OpenClaw runtime health. The visible builtin path and the real software executor do not fail for the same reasons.
+- New rule: For deployment bring-up, prove the live stack first with a supported visible-path smoke such as `FRAME_PROJECT` or `DESIGN_ARCHITECTURE`, then separately test the workspace-backed `implementer` and `tester` path as its own runtime dependency.
+- Where it was recorded: `.agents/memory/changelog.md`
+
+- Date: 2026-04-13
+- Problem: The first attempt to initialize the fresh smoke workspace ran `git init` and `git checkout -B main` in parallel, so the branch switch raced before the nested repo existed and resolved against the outer template repo instead.
+- Root cause: Repository bootstrap commands for a nested git workspace were parallelized even though they have a hard ordering dependency.
+- New rule: Treat nested workspace git bootstrap as strictly sequential: create the repo first, then configure it, then switch branches, then commit the checkpoint. Do not parallelize `git` setup steps that depend on the previous command having created `.git`.
+- Where it was recorded: `.agents/memory/changelog.md`
+
 - Date: 2026-03-30
 - Problem: The live Niaobe verification run for `projects/fibonacci_niobe_test` stopped after planning instead of reaching Morpheus and Oracle.
 - Root cause: The live `run_assistant_spawn.sh` project-manager flow is implemented as `Niaobe initial pass -> Architect -> Niaobe review` and only emits `MORPHEUS_READY` / `MORPHEUS_TASK`; it never actually invokes `run_team.sh` or any Morpheus path. The live `projectmanager.txt` prompt is also outdated and still tells Niaobe to read `PROJECT.md` from the repository root instead of the selected project's own `PROJECT.md` and `management/`.
@@ -74,3 +92,39 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 - Root cause: The safety script had drifted with the older template layout and still encoded checks for the deleted legacy bridge directories.
 - New rule: When a cleanup removes a whole supported path from the template, update the validation scripts in the same change so they only check the remaining current layout.
 - Where it was recorded: `.agents/memory/decisions.md`
+
+- Date: 2026-04-13
+- Problem: The first test pass for the new runtime adapter assumed `pytest` would be present, but the repo environment did not have it installed.
+- Root cause: The new tests were initially written to the most convenient framework instead of matching the actual current repo environment, which has no committed Python test bootstrap yet.
+- New rule: Before introducing a test framework dependency into this repo, verify it exists in the current environment or commit the bootstrap that provides it. When in doubt, prefer stdlib `unittest` for infrastructure-level coverage.
+- Where it was recorded: `.agents/memory/decisions.md`
+
+- Date: 2026-04-13
+- Problem: The first built-in local Ollama runner implementation used the `ollama run` CLI directly and assumed the stdout payload would be clean JSON.
+- Root cause: In this environment, the Ollama CLI injects terminal-edit control sequences into stdout even when output is captured, which corrupted structured parsing for the prompt-aware runtime path.
+- New rule: Use the local Ollama HTTP API as the default transport for machine-consumed prompt execution. Keep the CLI path only as an explicit fallback or test transport, and harden any parser against stray terminal control sequences.
+- Where it was recorded: `.agents/memory/decisions.md`
+
+- Date: 2026-04-13
+- Problem: The OpenClaw CLI `--json` mode still prints extra log lines around the JSON payload for some commands such as `agents add`.
+- Root cause: The CLI emits operational status lines and auth-profile sync notices to stdout even in `--json` mode, so treating stdout as a pure JSON document is unsafe.
+- New rule: For OpenClaw CLI integration, parse the first valid JSON object or array from stdout instead of assuming the whole stream is clean JSON.
+- Where it was recorded: `.agents/memory/decisions.md`
+
+- Date: 2026-04-13
+- Problem: The first git-backed recovery validator trimmed leading spaces from `git status --porcelain` output and then treated the persisted `is_consistent = false` flag as permanently unrecoverable.
+- Root cause: The helper used `stdout.strip()`, which removed the leading status-space that porcelain output relies on, and the validator appended `workspace_marked_inconsistent` before reevaluating the current workspace state.
+- New rule: Preserve leading spaces when parsing git porcelain output, and treat the persisted inconsistency flag as advisory state that can be cleared by a clean revalidation.
+- Where it was recorded: `openclaw_agents/scheduler/workspace_validator.py`
+
+- Date: 2026-04-13
+- Problem: The first live software smoke through the `openclaw_workspace` executor stalled for minutes even though the gateway, scheduler, and visible worker path were already healthy.
+- Root cause: The local OpenClaw workspace-agent path can block on its own session locking and model-timeout behavior under the current `openclaw-gateway` runtime. A trivial direct probe of the provisioned workspace agent also timed out, and the embedded fallback showed repeated session-lock and model-timeout failures rather than a control-plane bug.
+- New rule: Treat the workspace-backed OpenClaw executor as a separate runtime dependency that needs its own live smoke before trusting it in deployment. Keep its command timeouts bounded, and do not interpret a healthy gateway or builtin-worker smoke as proof that the OpenClaw software path is healthy.
+- Where it was recorded: `openclaw_agents/runtime/worker_config.yaml` and the live deployment notes in `.agents/memory/changelog.md`
+
+- Date: 2026-04-13
+- Problem: The first clean user-service cutover failed even though the env files and code were correct.
+- Root cause: The committed systemd unit templates used shell arrays and `$...` variable expansions inside `ExecStart` and `ExecStartPre`, but systemd expands `$` itself unless it is escaped. That turned `cmd[@]` into an invalid environment expansion before `bash` ever ran.
+- New rule: When a systemd unit shells out through `bash -lc`, escape every shell-side `$` as `$$` in the unit file. Keep environment-driven optional flags such as the Zulip `--insecure` path explicit in the unit or env file instead of depending on a hidden transient-service command line.
+- Where it was recorded: `openclaw_agents/operations/systemd/zulip-gateway.service`, `openclaw_agents/operations/systemd/openclaw-worker-supervisor.service`, and `openclaw_agents/operations/systemd/openclaw-worker@.service`

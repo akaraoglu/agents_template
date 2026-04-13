@@ -10,7 +10,109 @@ history, live credentials, or project-specific task transcripts here.
 - Validation:
 - Outcome:
 
+- Date: 2026-04-13
+- Request: Plan a cleanup commit so `agent_template` keeps only template material and setup instructions, while live Claw runtime files and running-workspace content live in `/home/alik/workspace/claw_software_workspace`.
+- Action: Audited the current `openclaw_agents/` tree, the local `tests/` tree, and the current `/home/alik/workspace/claw_software_workspace` layout to separate reusable template assets from live deployment state, smoke outputs, local secrets, and workspace-runtime artifacts.
+- Validation: Confirmed that `openclaw_agents/` currently mixes template code with live state under `openclaw_agents/state/`, while `/home/alik/workspace/claw_software_workspace` is already the active live workspace surface containing `.agents/`, `.openclaw/`, envs, project workspaces, and other runtime-specific content.
+- Outcome: The cleanup can now be planned as a clean separation: keep only reusable template code, specs, templates, tests, and setup runbooks in `agent_template`; move or externalize runtime state, env files, credential files, smoke workspaces, and per-project workspaces into `claw_software_workspace`; and then commit the template-only tree as the new baseline.
+
+- Date: 2026-04-13
+- Request: Finalize the cleanup so the new system no longer carries even indirect runtime dependencies on older bridge repositories.
+- Action: Replaced the symlinked bot credential files in `openclaw_agents/state/zuliprc` with local regular files copied from the previous targets, confirmed there are no remaining `assistant_bridge` or `software_bridge` path references under `openclaw_agents/`, and restarted the repo-specific Zulip gateway so it reloaded the localized credential files.
+- Validation: Verified `openclaw_agents/state/zuliprc` now contains `600`-permission regular files instead of symlinks, `readlink -f` resolves them to paths inside the repo-local state directory, `rg` found no remaining bridge-path references under `openclaw_agents/`, and `openclaw-agent-template-zulip-gateway.service` restarted successfully with `OPENCLAW_ZULIPRC_DIR=/home/alik/workspace/agent_template/openclaw_agents/state/zuliprc`.
+- Outcome: The new stack is now self-contained with no runtime dependency on the old V3 gateway repo or the older bridge repos. The remaining active components are only the new repo-specific gateway and worker supervisor plus the shared `openclaw-gateway` runtime that the new system intentionally uses.
+
+- Date: 2026-04-13
+- Request: Verify whether the legacy system remnants were fully cleaned and whether only the new stack remains active.
+- Action: Checked for the old `zulip_gateway_v3` directory, inspected the legacy `zulip-gateway-v3.service` status, scanned the process table for legacy and new gateway processes, and verified the new repo-specific gateway and worker supervisor services.
+- Validation: Confirmed `/home/alik/workspace/zulip/zulip_gateway_v3` is missing, `systemctl status zulip-gateway-v3.service` reports unit not found, no `zulip_gateway_v3` process remains in `ps`, and the active repo-specific services are `openclaw-agent-template-zulip-gateway.service` and `openclaw-agent-template-worker-supervisor.service`.
+- Outcome: The legacy V3 gateway remnants are cleaned. The live stack now consists of the new repo-specific gateway and worker supervisor, plus the shared `openclaw-gateway` runtime that the new system still depends on.
+
+- Date: 2026-04-13
+- Request: Provide the exact root-level cleanup commands needed to remove the remaining legacy system service and old V3 gateway files permanently.
+- Action: Identified the remaining legacy residue as the root-owned `zulip-gateway-v3.service` and prepared the ordered cleanup and verification commands without making further machine-level changes from this session.
+- Validation: Confirmed earlier that the new repo-specific gateway and worker services are independent of `/home/alik/workspace/zulip/zulip_gateway_v3` and that the legacy unit is installed at `/etc/systemd/system/zulip-gateway-v3.service`.
+- Outcome: The remaining cleanup is reduced to a short root-command sequence: stop and disable the old unit, remove the old unit file, reload systemd, optionally delete the old V3 workspace directory, and verify that only the new repo-specific stack remains.
+
+- Date: 2026-04-13
+- Request: Permanently remove the old system remnants so only the new stack remains active and clean.
+- Action: Audited the machine-level runtime after the successful Fibonacci end-to-end validation, confirmed that the only active legacy chat remnant is the system-level `zulip-gateway-v3.service` pointing at `/home/alik/workspace/zulip/zulip_gateway_v3`, verified that the new repo-specific services are independent of that directory, and attempted permanent service removal through direct `systemctl`, `sudo systemctl`, and `pkexec`.
+- Validation: Confirmed the new services remain healthy under `openclaw-agent-template-zulip-gateway.service` and `openclaw-agent-template-worker-supervisor.service`, confirmed the legacy unit is installed at `/etc/systemd/system/zulip-gateway-v3.service`, and confirmed this session does not have passwordless root control for stopping or deleting that system-level unit.
+- Outcome: The remaining legacy remnant is precisely identified, but permanent removal of the installed system unit is blocked by root authentication outside the capabilities of this session. The repo and live new-stack code are clean; the unresolved residue is now a machine-level privilege issue rather than an implementation issue.
+
+- Date: 2026-04-13
+- Request: Clean the legacy Zulip responder path, make real human chat intake work without manual workspace setup, and do not return until the live chat-to-closure path is actually working.
+- Action: Identified the conflicting legacy system service `zulip-gateway-v3.service`, neutralized its active process for this session, implemented automatic workspace provisioning for new chat-created projects in `scheduler/workspace_provisioner.py` and `communication/zulip_gateway.py`, fixed the gateway service sender-classification bug so a real human named `master` is treated as human instead of a bot, restarted the repo-specific gateway and worker supervisor, and ran a live Fibonacci project from a real Zulip human account through the full `AgentSmith -> Niobe -> Architect -> Morpheus -> Planner -> Implementer -> Tester -> Oracle -> Niobe` path.
+- Validation: Ran `python3 -m unittest discover -s tests -v` with 22 passing tests after the provisioning change, ran the updated gateway tests after the sender-classification fix, verified the legacy V3 gateway process was suspended, verified the repo-specific user services restarted cleanly, and observed the live project `fibonacci-live-20260413-172847` move from inbound human message `2379` to task assignment `2380`, intake result `2381`, design result `2382`, software result `2383`, verification result `2384`, and final closure result `2385`, ending in `projects.project_status = DONE` and `projects.runtime_status = DONE`.
+- Outcome: Real human chat intake now works on the new stack without manual workspace seeding. A live Fibonacci project was created from chat, auto-provisioned with its own workspace, implemented, tested, verified, and closed successfully. The only remaining operational caveat is that the old system-level `zulip-gateway-v3.service` is still installed and enabled on the machine; I neutralized its current process, but permanent removal still requires system-level authentication outside this session.
+
+- Date: 2026-04-13
+- Request: Ask what should happen next after the live deployment, live software smoke success, and the current deferred `Neo` and `MASTER` scope.
+- Action: Reviewed the current repo state, migration status, recent memory entries, and deployed control-plane status to identify the next highest-value work that remains after the initial plan has been executed.
+- Validation: Confirmed from the latest deployment notes that the gateway, worker supervisor, visible agent loop, Morpheus software loop, and live workspace-backed software execution path are all now working on this machine, while `Neo` and `MASTER` remain intentionally deferred.
+- Outcome: The remaining work is no longer core implementation. The next steps are stabilization, operational cleanup, repeated live acceptance coverage, and then staging or committing the migration before any deferred agent-logic expansion.
+
+- Date: 2026-04-13
+- Request: Provide the exact prompt to send to `AgentSmith` for a sample Fibonacci project so it is initiated, handed to `Niobe`, processed through the loop, finalized, and returned.
+- Action: Reviewed the live Zulip gateway intake behavior, topic routing, `AgentSmith` framing behavior, and `Niobe` closure behavior to derive the correct human-intake message shape and posting location.
+- Validation: Confirmed that plain human intake on Zulip is normalized into a `FRAME_PROJECT` task for `agent_smith`, that `agent_smith` hands successful framing to `niobe`, and that the current builtin `niobe` loop can drive the project to a closure report without requiring live `MASTER` execution.
+- Outcome: The correct operator-facing guidance is to post a plain human request to the `projects` stream using a `project/{project_id}/intake` topic so the project id is explicit and the request enters the live `AgentSmith -> Niobe` path cleanly.
+
+- Date: 2026-04-13
+- Request: Diagnose why `AgentSmith` did not respond correctly and instead returned a context-overflow error after a direct message.
+- Action: Inspected the live worker and gateway configuration, verified the repo-specific gateway and worker supervisor services are active, reviewed the new gateway's free-form intake behavior, and scanned the machine for competing Zulip or gateway processes.
+- Validation: Confirmed that the new `agent_smith` worker is configured as a builtin executor and therefore cannot emit a model context-overflow error, and also confirmed that an old `zulip_gateway_v3` process and the generic `openclaw-gateway` process are still running on the machine alongside the new repo-specific gateway.
+- Outcome: The failing interaction did not go through the new control-plane intake path. It hit an old direct agent or bridge path, likely via direct messaging or a conflicting legacy gateway, so the correct fix is to use the `projects` stream intake topic and remove or isolate the legacy responders before relying on the new workflow.
+
 ## Entries
+
+- Date: 2026-04-13
+- Request: Continue the remaining pre-deployment work by hardening the `openclaw_workspace` software backend, then rerun a real live software smoke through the deployed gateway and worker services.
+- Action: Hardened `openclaw_agents/runtime/openclaw_workspace_executor.py` to shrink the execution context, align worker and backend timeouts, harvest finished session results after CLI timeout, and classify missing-workspace and backend timeout conditions as blocked runtime issues; updated `openclaw_agents/runtime/worker_runner.py`, `openclaw_agents/orchestrators/morpheus_engine.py`, and `openclaw_agents/runtime/worker_config.yaml`; added regression coverage for session harvesting, blocked missing-workspace handling, and Morpheus workspace gating; restarted the live worker supervisor; seeded a fresh git-backed workspace project; posted a real Niobe-authored `ORCHESTRATE_SOFTWARE` task into Zulip; and watched the live `planner -> implementer -> tester -> morpheus` flow complete on the patched stack.
+- Validation: Ran `python3 -m unittest discover -s tests -v` with 22 passing tests, restarted the repo-specific worker supervisor successfully, and verified a live software smoke for `P_live_software_smoke_v2_1776087442` where `T_live_software_smoke_v2_1776087442` and all child software tasks completed with `SUCCESS`. Zulip message links recorded inbound task assignment `2361`, outbound mirrored assignment `2362`, and outbound mirrored result `2363`.
+- Outcome: The workspace-backed software path now completes on the live deployed stack instead of failing at the worker timeout boundary, and missing-workspace projects now block upstream with explicit control-plane evidence instead of crashing inside the implementer worker.
+
+- Date: 2026-04-13
+- Request: Enable the real worker executors, create deployment env files, start the repo-specific gateway and worker services, and run a live end-to-end smoke before deployment.
+- Action: Enabled the live worker fleet in `openclaw_agents/runtime/worker_config.yaml` for the visible builtin roles plus `planner`, `implementer`, and `tester`; created repo-local runtime and gateway env files under `openclaw_agents/state/`; mapped the visible bot ids onto the available Zulip credential files through repo-local symlinks; started transient user `systemd` units for the repo-specific shared gateway and worker supervisor; and ran live Zulip-backed smoke flows for `DESIGN_ARCHITECTURE`, `FRAME_PROJECT`, and `ORCHESTRATE_SOFTWARE`.
+- Validation: Verified worker-supervisor config with `--check`, verified the gateway service against the live Zulip creds with `--check --insecure`, confirmed both transient user services remained active after start, and observed real inbound and outbound Zulip message ids plus persisted task, run, and artifact state in the control-plane database. The visible path succeeded end to end, while the workspace-backed software path exposed an `openclaw_workspace` runtime stall and was explicitly blocked and recorded as a recovery event instead of being treated as a control-plane failure.
+- Outcome: The repo-specific gateway and worker fleet are now live for the supported visible path, with repo-local env files and state directories in place. Deployment is operational for the builtin visible workflow, while the workspace-backed software executor remains the main remaining runtime issue before trusting real software delivery.
+
+- Date: 2026-04-13
+- Request: Replace the placeholder prompt files in `openclaw_agents/prompts/` with real role prompts that match the new orchestration, scheduling, and authority model.
+- Action: Re-read the agent registry, routing rules, and Niobe and Morpheus state machines, then rewrote all ten prompt files as contract-driven role instructions covering accepted tasks, requester boundaries, owned decisions, refusal rules, artifact outputs, and orchestrator-specific pause, switch, lease, and escalation behavior.
+- Validation: Reviewed the resulting prompt files and confirmed the placeholder text was removed from the prompt directory.
+- Outcome: The prompt layer now matches the implemented control-plane contracts instead of leaving role behavior undefined.
+
+- Date: 2026-04-13
+- Request: Continue implementation after the prompt layer by replacing the remaining placeholder workspace templates and runbooks with concrete docs that match the new scheduler and workspace contract.
+- Action: Re-read the integrated workflow, workspace contract, scheduling spec, gateway config, and persistence schema, then rewrote the project workspace template files and the local bootstrap, Zulip bootstrap, and recovery runbooks to use the real required fields, safe-boundary rules, and current implementation surface.
+- Validation: Reviewed the rewritten docs against the committed specs and code, and explicitly documented that the long-running Zulip polling daemon is not yet implemented so the runbooks do not claim an entrypoint that does not exist.
+- Outcome: The template and operations docs are now usable scaffolds tied to the implemented control-plane behavior instead of generic placeholders.
+
+- Date: 2026-04-13
+- Request: Remove the remaining placeholder evaluation plan while continuing the new control-plane implementation.
+- Action: Replaced `openclaw_agents/evaluation/regression_suite.md` with a concrete regression plan covering contract validation, persistence, scheduler behavior, gateway normalization, artifact round-trips, recovery behavior, and one end-to-end smoke path.
+- Validation: Confirmed the placeholder text is gone and the evaluation plan only references implemented code paths plus the explicitly deferred Zulip daemon gap.
+- Outcome: The repo now has a concrete verification target for the current implementation instead of an empty phase marker.
+
+- Date: 2026-04-13
+- Request: Continue implementation by turning the gateway normalization layer into a runnable shared Zulip service and replacing the remaining service placeholder.
+- Action: Added a stdlib Zulip API client and a long-running multi-bot gateway daemon in `openclaw_agents/communication/zulip_client.py` and `openclaw_agents/communication/zulip_gateway_service.py`, extended gateway config with runtime settings, replaced the systemd placeholder with a real service unit, and updated the bootstrap runbooks and README to reference the runnable daemon surface.
+- Validation: Compile-checked the communication modules and ran a fake-client no-network smoke test that consumed a rendered Zulip message, normalized it through the gateway, persisted the project and task state, and posted an outbound authoritative assignment without looping.
+- Outcome: The repository now has a real shared gateway service entrypoint instead of only a normalization library and a placeholder unit file.
+
+- Date: 2026-04-13
+- Request: Continue implementation by wiring dispatch plans into a real runtime adapter and persisting task-result callbacks back into the state store.
+- Action: Added store helpers for tasks, attempts, and agent runs; implemented `openclaw_agents/runtime/dispatcher.py` with queue-backed task packet generation, model and sandbox profile selection, and response-envelope ingestion; wired the Zulip gateway service to queue runtime packets automatically after dispatch; and updated the local bootstrap and README to expose the new runtime entrypoints.
+- Validation: Compile-checked the runtime and gateway modules, ran a local runtime smoke test that dispatched a task and recorded a successful response with artifacts and a snapshot, and reran the fake-client gateway smoke test to verify inbound Zulip events now create runtime packets and lifecycle rows end-to-end.
+- Outcome: Dispatch plans now become persisted runtime submissions, and external runners have a concrete callback path for updating task state, artifacts, runs, and snapshots.
+
+- Date: 2026-04-13
+- Request: Continue implementation by adding the worker side that consumes queued runtime packets and by mirroring completed runtime results back to Zulip.
+- Action: Added `openclaw_agents/runtime/worker_runner.py` and `openclaw_agents/runtime/worker_config.yaml`, implemented `mock` and `subprocess` executors, added pending-run and result-mirror queries to the store, taught the gateway to build authoritative task-result messages, and taught the shared gateway service to mirror completed task results through the correct visible agent identity.
+- Validation: Compile-checked the worker and gateway modules, ran a direct worker-runner smoke test against a queued implementation task, and ran a fake-client end-to-end test that covered authoritative task assignment, runtime packet creation, mock worker execution, response persistence, and outbound mirrored result posting.
+- Outcome: The control plane now has a full queue-backed loop from Zulip task assignment through worker execution to authoritative result mirroring without giving workers their own Zulip clients.
 
 - Date: 2026-03-30
 - Request: Re-architect the template so AgentSmith can reliably start Niaobe and other roles through a standard communication and spawning model instead of ad hoc prompt-only routing.
@@ -689,3 +791,129 @@ history, live credentials, or project-specific task transcripts here.
 - Action: Removed the archived V1/V2 bridge and control-plane files from `openclaw_agents/`, including the old bridge directories, old V2 architecture/runtime documents, obsolete registry/runtime/workflow scripts, stale skill folders, and cached Python artifacts. Rewrote the surviving core docs (`.agents/README.md`, `.agents/AGENTS.md`, `.agents/SKILLS.md`, `SETUP_BLUEPRINT.md`, `AGENT_CREATION_GUIDE.md`, `AGENT_SYSTEM_V3.md`, `ZULIP_PLAN.md`, `ZULIP_SETUP_GUIDE.md`, `ZULIP_V3_GATEWAY_SETUP.md`, `SYSTEMD_BRIDGES.md`, `NEO_OPENAI_AGENT_PLAN.md`, `SOFTWARE_WORKSPACE_README.md`, `ZULIP_PROJECT_WORKFLOW.md`, `ZULIP_INTRANET_IMPLEMENTATION.md`) so they describe only the current V3 gateway-based setup. Also fixed `.agents/scripts/check_template_repo_safety.sh` so it no longer expects deleted legacy directories and updated the V3 gateway config example to default to one acknowledgement line without extra status chatter.
 - Validation: Re-scanned `openclaw_agents/` for old V1/V2 and legacy references, confirmed the remaining tree only contains the current V3 path, ran `bash .agents/scripts/check_template_repo_safety.sh`, ran `bash -n zulip_gateway_v3/run_gateway.sh`, and ran `python3 -m py_compile zulip_gateway_v3/gateway.py`.
 - Outcome: The template repo now presents a single current path: V3 gateway, current visible-role wrappers, current project-template model, and no shipped legacy bridge or V2 control-plane artifacts.
+
+- Date: 2026-04-02
+- Request: Read `openclaw_agents/complete_agentic_software_workflow_with_zulip.md` and rebuild the migration plan around that integrated design instead of the earlier split workflow and Zulip documents.
+- Action: Reviewed the integrated handoff spec, compared it with the current `openclaw_agents/` tree and the existing untracked split spec files, and rebuilt the migration plan around the integrated control-plane model, the Niobe and Morpheus two-loop ownership split, the single Zulip gateway pattern, the authoritative state and artifact stores, and the revised workspace contract.
+- Validation: Read the integrated workflow document in full, checked the current worktree status to avoid clobbering the existing unstaged `SOFTWARE_WORKSPACE_README.md` edit, and mapped the integrated spec's `builder_agent_must_generate` outputs against the current template layout.
+- Outcome: The next migration plan now uses the single-file integrated handoff as the authoritative source and treats the earlier split workflow, Zulip, and workspace docs as supporting or superseded inputs.
+
+- Date: 2026-04-02
+- Request: Execute phase 1 of the migration by cleaning obsolete V3 assets and creating the new control-plane folder structure with placeholder files only.
+- Action: Removed the old V3-era docs, the old `.agents/` runtime wrapper tree, the `zulip_gateway_v3/` implementation, the old `systemd/` service, and the old `project_template/` management scaffold; moved the integrated handoff to `openclaw_agents/specs/` and the supporting workflow, Zulip, and workspace docs to `openclaw_agents/specs/supporting/`; then created the new `config/`, `schemas/`, `orchestrators/`, `prompts/`, `communication/`, `runtime/`, `database/`, `evaluation/`, `operations/`, and `templates/project_workspace/` skeletons with placeholder files only.
+- Validation: Verified the resulting `openclaw_agents/` tree with `find`, confirmed the worktree shows the intended deletions and new scaffold paths, and preserved the existing unstaged workspace-readme content by moving it into the supporting specs area instead of overwriting it.
+- Outcome: The repository now has the new integrated-architecture scaffold in place and the old active V3 structure has been cleared out of the main template tree.
+
+- Date: 2026-04-02
+- Request: Review `openclaw_agents/specs/supporting/project_scheduling_and_context_switching.md` and update the implementation plan around its scheduling and context-switching rules.
+- Action: Read the new scheduling spec, compared its required modules and schemas against the current post-cleanup scaffold, and updated the implementation plan to add a central scheduler layer, orchestrator lease handling, project snapshots, control-event persistence, workspace validation and recovery hooks, and extra scheduling schemas before prompt or gateway implementation work.
+- Validation: Reviewed the full scheduling spec, confirmed it is present under `specs/supporting/`, and mapped its recommended repo layout and builder outputs against the current `openclaw_agents/` structure.
+- Outcome: The migration plan now includes the missing serial multi-project scheduling layer and no longer treats the current scaffold as sufficient for the next implementation phase.
+
+- Date: 2026-04-02
+- Request: Execute the first real foundation pass by adding the scheduler layer and filling the config, schema, database, and orchestrator contract files.
+- Action: Added the new `openclaw_agents/scheduler/` module scaffold; created scheduling schemas for control events, project snapshots, orchestrator leases, and project scheduling records; replaced the placeholder agent registry, model map, routing rules, task/result/escalation/Zulip schemas, database schema, and Niobe/Morpheus state-machine files with spec-based content; and filled the gateway config and Docker sandbox profile YAMLs so the control-plane contracts are now explicit instead of placeholder text.
+- Validation: Ran a local validation pass that successfully parsed all JSON schemas, compiled the Python modules under `scheduler/`, `communication/`, and `runtime/`, and loaded the YAML files under `config/`, `orchestrators/`, `communication/`, and `runtime/`.
+- Outcome: The repository now has a concrete foundation contract layer for routing, persistence, scheduling, leases, snapshots, safe boundaries, and orchestrator flow, while the actual gateway, scheduler, runtime, and prompt implementations remain to be filled.
+
+- Date: 2026-04-13
+- Request: Summarize the current active agent set and then provide the next implementation plan after the foundation layer landed.
+- Action: Reviewed the active agent registry, model map, and prompt inventory to summarize the current roles and then restated the next implementation phase around scheduler code, gateway routing, runtime helpers, prompt content, and template/runbook rewrites.
+- Validation: Read `openclaw_agents/config/agent_registry.yaml`, `openclaw_agents/config/model_map.yaml`, and the current prompt file list under `openclaw_agents/prompts/`.
+- Outcome: The current agent roster and ownership split were clarified from the active registry, and the next implementation work is now staged around scheduler, gateway, runtime, prompt, and template delivery.
+
+- Date: 2026-04-13
+- Request: Continue the implementation by building the persistence-backed scheduler and control-plane command layer.
+- Action: Added `openclaw_agents/database/store.py` plus package exports, implemented SQLite-backed persistence helpers for projects, snapshots, leases, control events, recovery events, and Zulip message links, replaced the scheduler stubs with working queue policy, lease management, snapshot capture, workspace validation, recovery assessment, control-command handling, and project scheduling logic, and turned `communication/message_mapping_store.py` into a real store-backed helper.
+- Validation: Ran local compile and JSON parse checks, then executed a temporary SQLite smoke test that initialized the schema, seeded a sample project, captured a snapshot, acquired a Niobe lease through the scheduler, paused and resumed the project through control commands, and persisted a Zulip message link successfully.
+- Outcome: The repo now has a working minimal control-plane core for persistence, scheduling, leases, snapshots, pause or resume handling, and Zulip message-link storage. The gateway implementation, artifact runtime helpers, prompts, and project template content still remain to be filled.
+
+- Date: 2026-04-13
+- Request: Show the remaining implementation plan before continuing past the scheduler core.
+- Action: Prepared the remaining phased implementation plan covering gateway behavior, runtime artifact helpers, prompt content, template rewrites, and verification work.
+- Validation: Based the plan on the current repo state after the scheduler and persistence layer landed and passed the local smoke test.
+- Outcome: The remaining work is now staged clearly before any further code changes.
+
+- Date: 2026-04-13
+- Request: Continue implementation with the Zulip gateway layer after the scheduler core was in place.
+- Action: Added a real communication package export, implemented `topic_router.py` to resolve configured Zulip streams and topics into project/task context, and replaced the gateway stub in `zulip_gateway.py` with a real normalization and dispatch-planning layer that parses YAML blocks, validates them against the committed schemas, canonicalizes agent ids, persists inbound tasks and control events, routes free-form human intake into `FRAME_PROJECT` work, mirrors control events into authoritative outbound messages, and deduplicates already-processed Zulip message ids through `message_mapping_store.py`.
+- Validation: Ran a local gateway smoke test against a temporary SQLite database that covered free-form human intake, topic parsing, control-command handling, duplicate-message protection, and outbound control-event rendering. Fixed one policy bug during that test so snapshot-requiring commands now reject cleanly when a project still lacks a persisted workspace reference.
+- Outcome: The repository now has a working gateway normalization and dispatch-planning layer between Zulip events and the persistence-backed control plane, without yet implementing actual Zulip network I/O.
+
+- Date: 2026-04-13
+- Request: Continue implementation with artifact serialization and parsing helpers after the gateway pass.
+- Action: Added `runtime/__init__.py`, replaced the artifact runtime stubs with a real `ArtifactSerializer` that can write workspace-backed or inline artifacts and persist their refs in the database, and a real `ArtifactParser` that can load artifacts back from workspace files or inline database payloads.
+- Validation: Ran a local artifact smoke test that wrote a workspace-backed `test_execution_report`, stored an inline `software_task_plan`, parsed both back successfully, and confirmed both artifact records were queryable from the database.
+- Outcome: The repository now has a basic artifact movement layer for workspace files and inline payloads, which the later agent runtime and gateway code can build on.
+
+- Date: 2026-04-13
+- Request: Continue implementation past the worker runner by adding the first real executor backend and the first real orchestrator loop.
+- Action: Added `openclaw_agents/runtime/role_executor.py` with a built-in deterministic executor for `morpheus`, `planner`, `implementer`, and `tester`; added `openclaw_agents/orchestrators/morpheus_engine.py` to run the persisted Morpheus planner -> implementer -> tester loop, create child tasks with `parent_task_id`, requeue the parent software task after each child completion, and finish with either a `software_delivery_package` or `escalation_packet`; extended `database/store.py` with child-task and generic task-record helpers plus stricter active-attempt detection; updated `runtime/worker_runner.py`, `runtime/dispatcher.py`, `runtime/__init__.py`, `README.md`, and `operations/runbooks/local_bootstrap.md` to wire in the new `builtin` executor path and keep internal-only child results out of Zulip mirroring.
+- Validation: Ran `python3 -m py_compile` on the updated runtime, orchestrator, store, and communication modules; ran a happy-path SQLite smoke test that queued one `ORCHESTRATE_SOFTWARE` task and observed `morpheus -> planner -> implementer -> tester -> morpheus` complete with persisted artifacts and a final delivery package; and ran a forced test-failure smoke test that retried through the Morpheus loop and stopped in `BLOCKED` instead of spinning indefinitely.
+- Outcome: The repo now has its first non-mock end-to-end execution path for the software loop, with real child-task lineage, persisted re-entry into Morpheus, and bounded retry behavior.
+
+- Date: 2026-04-13
+- Request: Continue by implementing the next missing loop above Morpheus so the built-in runtime can execute project orchestration instead of only the software subloop.
+- Action: Added `openclaw_agents/orchestrators/niobe_engine.py` for the persisted Niobe project loop, extended `openclaw_agents/runtime/role_executor.py` to support `agent_smith`, `niobe`, `architect`, and `oracle` alongside the existing software roles, added response hooks that convert a successful `FRAME_PROJECT` result into a real `ORCHESTRATE_PROJECT` task and requeue Niobe after `Architect`, `Morpheus`, or `Oracle` child completion, updated `runtime/dispatcher.py` to classify `project_status_report` and `project_closure_report` as explicit project-status safe boundaries, and refreshed the top-level README and local bootstrap runbook to document the broader builtin path.
+- Validation: Ran `python3 -m py_compile` on the updated runtime, orchestrator, dispatcher, store, and communication modules; ran a happy-path SQLite smoke test that completed `agent_smith -> niobe -> architect -> morpheus -> oracle -> niobe` with `project_status_report`, `project_charter`, `architecture_spec`, `software_delivery_package`, `verification_report`, and `project_closure_report` artifacts; and ran a verification-failure branch test that showed Niobe route an Oracle implementation defect back into a second Morpheus task instead of incorrectly closing the project.
+- Outcome: The repo now has a real builtin end-to-end project loop on top of the software loop, so the control plane can validate project framing, project orchestration, specialist handoffs, verification routing, and final closure without an external model backend.
+
+- Date: 2026-04-13
+- Request: Implement the next two steps after the builtin loops: a real external execution adapter behind the current runtime path, and actual automated test coverage for the control-plane flows.
+- Action: Added `openclaw_agents/runtime/external_executor.py` with `ExecutionContextBuilder` and `PromptSubprocessExecutor` so workers can launch prompt-aware subprocess backends with a structured JSON execution context, prompt text, model-profile hints, project/task/workspace state, and artifact inputs; wired `prompt_subprocess` into `openclaw_agents/runtime/worker_runner.py` and exported the new runtime surface from `openclaw_agents/runtime/__init__.py`; added runnable standard-library tests under `tests/` for the prompt-aware external executor path, the builtin Morpheus software loop, the builtin Niobe project-loop reroute path, and Zulip human-intake normalization; and updated `openclaw_agents/README.md` plus `openclaw_agents/operations/runbooks/local_bootstrap.md` to document the new adapter and the test runner.
+- Validation: Ran `python3 -m py_compile` on the new runtime modules and test files, and ran `python3 -m unittest discover -s tests -v`, which passed all four committed tests.
+- Outcome: The repo now has a real external execution contract for runtime workers and a runnable automated regression suite that covers the highest-value control-plane behaviors already implemented.
+
+- Date: 2026-04-13
+- Request: Replace any remaining `qwen3.5:35b` usage with `gemma4:31b` and continue the unfinished execution work.
+- Action: Verified there were no literal `qwen3.5:35b` references left in the repo, pinned all local Ollama model profiles in `openclaw_agents/config/model_map.yaml` to `gemma4:31b`, added `openclaw_agents/runtime/ollama_prompt_runner.py` as a concrete local Ollama backend for the existing `prompt_subprocess` contract, taught `runtime/worker_runner.py` to fall back to that runner when no explicit prompt-subprocess command is configured, extended `runtime/__init__.py`, added deterministic coverage in `tests/test_ollama_prompt_runner.py`, tightened `tests/test_runtime_adapter.py` to assert the new model hint, and updated the README and local bootstrap runbook to describe the gemma-backed local execution path.
+- Validation: Confirmed the installed local `gemma4:31b` model with `ollama list`, ran `python3 -m py_compile` on the updated runtime and test files, ran `python3 -m unittest discover -s tests -v` with seven passing tests, and ran a live outside-the-sandbox smoke of `openclaw_agents.runtime.ollama_prompt_runner.OllamaPromptRunner` against the local Ollama HTTP API.
+- Outcome: The prompt-aware runtime path now has a concrete built-in local backend that resolves to `gemma4:31b` instead of abstract model hints, uses the local Ollama HTTP API by default for clean structured output, and keeps worker execution opt-in at the config level.
+
+- Date: 2026-04-13
+- Request: Continue with the next missing layer after the gemma-backed runtime path, but leave `Neo` and `MASTER` execution logic for last.
+- Action: Added `openclaw_agents/runtime/worker_supervisor.py` to validate worker config, derive enabled agents, and supervise one `worker_runner` child per enabled agent; added `--state-dir` support to `runtime/worker_runner.py`; exported the new supervisor surface from `runtime/__init__.py`; added `tests/test_worker_supervisor.py`; committed new systemd units at `operations/systemd/openclaw-worker-supervisor.service` and `operations/systemd/openclaw-worker@.service`; and updated the README plus the local and Zulip bootstrap runbooks to document the shared worker-supervisor deployment model.
+- Validation: Ran `python3 -m py_compile` on the new runtime and test modules and reran the full `python3 -m unittest discover -s tests -v` suite after the supervisor changes.
+- Outcome: The repo now has an explicit worker supervision layer and deployable systemd units for shared-worker and single-agent worker service patterns, leaving the deeper worktree-recovery hardening and the deferred `Neo` or `MASTER` runtime logic as the next major gaps.
+
+- Date: 2026-04-13
+- Request: Confirm whether the agents or Zulip-related services were restarted and identify what is still needed to make the stack fully in place.
+- Action: Checked the current local process and service state with `openclaw gateway status`, `ps -ef`, and a targeted process scan for `openclaw_agents.communication.zulip_gateway_service`, `openclaw_agents.runtime.worker_supervisor`, and `openclaw_agents.runtime.worker_runner`.
+- Validation: Confirmed the generic local `openclaw-gateway` service is running, but there are no active repo-specific Zulip gateway, worker supervisor, or worker runner processes for this scaffold.
+- Outcome: The code and service units are in place, but the repo-specific runtime stack still needs environment files, worker executor enablement, and service startup before it is actually live.
+
+- Date: 2026-04-13
+- Request: Check what is left in the implementation plan before deployment.
+- Action: Reviewed the current runtime, recovery, evaluation, and worker configuration surfaces to separate hard deployment blockers from deferred work, including the still-disabled worker fleet and the current depth of workspace recovery checks.
+- Validation: Confirmed that the control plane, gateway, worker supervision, and local Ollama prompt runner are implemented, but also confirmed that the current external runner only emits response envelopes and does not yet provide real repo-mutating or test-executing backend behavior.
+- Outcome: The remaining pre-deployment work is now narrowed to deployment configuration, service bring-up, real software-execution backend integration, deeper worktree recovery hardening, and an end-to-end live smoke, while `Neo` and `MASTER` runtime logic remains intentionally deferred.
+
+- Date: 2026-04-13
+- Request: Continue with the next pre-deployment blocker by wiring the first real code-executing backend for `implementer` and `tester`.
+- Action: Added `openclaw_agents/runtime/openclaw_workspace_executor.py`, which provisions a dedicated OpenClaw agent per project workspace and role, runs tasks through `openclaw agent --json`, parses a strict structured reply, and derives changed files from workspace state; wired the new `openclaw_workspace` executor into `runtime/worker_runner.py`, `runtime/worker_supervisor.py`, and `runtime/__init__.py`; added regression coverage in `tests/test_openclaw_workspace_executor.py`; and updated the README, worker config template, and local bootstrap runbook to document the new backend.
+- Validation: Ran `python3 -m py_compile` on the new runtime and test modules and reran `python3 -m unittest discover -s tests -v`, which passed with 12 tests.
+- Outcome: The scaffold now has its first real workspace-backed software execution path for `implementer` and `tester`, leaving deeper recovery hardening, deployment config, and the deferred `Neo` or `MASTER` runtime logic as the main remaining work.
+
+- Date: 2026-04-13
+- Request: Finish the remaining pre-deployment recovery work by hardening resume safety and adding the missing recovery tests, while keeping `Neo` and `MASTER` deferred.
+- Action: Extended `openclaw_agents/scheduler/workspace_validator.py` to inspect real git/worktree state when available, including repo-root drift, branch or worktree mismatch, dirty tracked files, untracked files outside generated paths, and missing checkpoint references; extended `openclaw_agents/scheduler/recovery_manager.py` to persist richer recovery details and to block resume when active leases, active task attempts, or active agent runs still exist; added project-level active-run helpers in `openclaw_agents/database/store.py`; added shared git test helpers in `tests/helpers.py`; added `tests/test_recovery.py`; and updated the recovery runbook plus the regression-suite note to match the real implemented state.
+- Validation: Ran `python3 -m py_compile openclaw_agents/database/store.py openclaw_agents/scheduler/workspace_validator.py openclaw_agents/scheduler/recovery_manager.py tests/helpers.py tests/test_recovery.py` and `python3 -m unittest discover -s tests -v`, which passed with 19 tests.
+- Outcome: Resume safety is now based on persisted state plus real workspace state instead of metadata-only checks, and the recovery acceptance cases from the plan documents are covered by committed tests.
+
+- Date: 2026-04-13
+- Request: Finish the remaining deployment bring-up by enabling real worker executors, wiring env files to real local paths and Zulip credentials, starting the repo-specific services, and running a live smoke.
+- Action: Enabled the live worker mix in `openclaw_agents/runtime/worker_config.yaml` with builtin visible roles plus `openclaw_workspace` for `implementer` and `tester`; disabled live Zulip subscriptions for deferred `master` and `neo` in `openclaw_agents/communication/zulip_gateway_config.yaml`; added local ignored deployment state under `openclaw_agents/state/`; created repo-local gateway and worker env files pointing at the real SQLite DB, state directories, and local Zulip URL; created a repo-local Zulip credential compatibility directory mapping the legacy bot rc filenames to the new agent ids; started `openclaw-agent-template-zulip-gateway.service` and `openclaw-agent-template-worker-supervisor.service` as user transient systemd services; ran a successful live Zulip smoke on the `AgentSmith` intake path (`2356` inbound -> `2357` outbound result, with follow-on automated messages `2358` and `2359`); and also ran a real software-loop smoke that reached the workspace-backed OpenClaw implementer before exposing a backend stall, after which the synthetic smoke project was blocked and cleaned up.
+- Validation: Ran the worker preflight locally, ran the gateway preflight outside the sandbox with `--insecure` against the self-signed local Zulip server, verified both transient user services with `systemctl --user status`, confirmed the live Zulip success path in `zulip_message_links`, and confirmed the software smoke failure mode with a direct OpenClaw probe plus DB inspection.
+- Outcome: The repo-specific gateway and worker services are live on this machine with real env wiring and a verified live Zulip success path. The remaining deployment blocker is the workspace-backed OpenClaw software path, which currently stalls or times out under the local OpenClaw runtime.
+
+- Date: 2026-04-13
+- Request: Clean the template repo so it contains only reusable template assets, move all live OpenClaw runtime state into `/home/alik/workspace/claw_software_workspace`, and leave the new system running from that external state tree.
+- Action: Patched `scheduler/workspace_provisioner.py` so new auto-provisioned workspaces prefer `/home/alik/workspace/claw_software_workspace/projects` instead of falling back into the template repo; updated the README, bootstrap runbooks, and systemd unit templates to treat `agent_template` as template-only and `claw_software_workspace` as the live state root; added committed env examples under `openclaw_agents/operations/examples/`; migrated the live SQLite DB, worker state, gateway state, Zulip credentials, and project workspaces out of `openclaw_agents/state/` into `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/` and `/home/alik/workspace/claw_software_workspace/projects/`; rewrote stored path references in the control-plane DB and moved text artifacts; linked and started clean user services from the committed `zulip-gateway.service` and `openclaw-worker-supervisor.service` unit templates; removed the leftover empty `openclaw_agents/state/` directory and Python cache directories; and added a top-level `.gitignore` for Python caches outside `openclaw_agents/`.
+- Validation: Verified the migrated DB contains no remaining `openclaw_agents/state` references, verified the relocated env files and project workspaces under `claw_software_workspace`, ran the worker-supervisor preflight successfully, ran the gateway preflight successfully with the explicit insecure-TLS flag required by the local self-signed Zulip deployment, and confirmed both `zulip-gateway.service` and `openclaw-worker-supervisor.service` are active as clean user services against the relocated state tree.
+- Outcome: `agent_template` is now template-only, the live runtime state is externalized into `claw_software_workspace`, and the new system is running from the cleaned layout instead of from repo-local state.
+
+- Date: 2026-04-13
+- Request: Plan the commit structure for the cleaned new system so the migration can be committed in an organized way.
+- Action: Reviewed the current working tree with `git status --short`, `git diff --stat`, and `git diff --name-status`, grouped the changes into legacy removals, new template scaffolding and runtime implementation, and template-boundary cleanup, and prepared a recommended staged commit sequence plus commit messages.
+- Validation: Confirmed the working tree is one coherent migration surface: legacy V3 and `.agents` content removed, new `openclaw_agents/` implementation tree added, memory files updated, and no repo-local runtime state left in the template.
+- Outcome: The repo is ready for an organized migration commit plan instead of an unstructured single snapshot.

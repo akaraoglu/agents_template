@@ -11,6 +11,78 @@ Record durable repo or process decisions here, especially behavior or tooling up
 
 ## Entries
 
+- Date: 2026-04-13
+- Decision: The repo-local Zulip credential directory must be self-contained. `openclaw_agents/state/zuliprc` should contain local regular files, not symlinks into older bridge or gateway repos.
+- Context: After the legacy V3 gateway was removed, the last remaining carryover was that the new repo-specific gateway still loaded bot credentials through symlinks pointing at `/home/alik/workspace/zulip/assistant_bridge` and `/home/alik/workspace/zulip/software_bridge`. That kept the new system operationally dependent on older repos even though the runtime logic had been migrated.
+- Consequences: The local `.zuliprc` files under `openclaw_agents/state/zuliprc` were replaced with regular files and the repo-specific gateway was restarted successfully against those local files. Future cleanup and deployment work should treat the local credential directory as the authoritative runtime input for this scaffold.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: New chat-created projects must auto-provision an isolated workspace and register `workspace_states` immediately during intake instead of requiring manual seeding before the first software loop.
+- Context: The new Zulip intake path successfully created and framed human-requested projects, but fresh projects still blocked in `Morpheus` because `workspace_ref` only existed in the manual bootstrap flow. That meant chat ordering worked only for pre-seeded projects, which violated the intended operator experience.
+- Consequences: `zulip_gateway.py` now provisions a project workspace through `scheduler/workspace_provisioner.py` when a new project is created or when an older project is still missing `workspace_ref`. The provisioner copies the committed workspace template, writes initial `PROJECT.md` and `STATUS.md`, records `workspace_states`, and marks the project schedulable for the live software loop.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Zulip sender classification must trust sender email over display name; if a message has an email that is not one of the managed bot emails, it is a human even if the full name matches an agent id such as `master`.
+- Context: The real local human account is named `master`, which collided with the deferred `MASTER` agent id. The original gateway service classified that human user as a bot based on display name alone, so real human chat messages were ignored instead of entering `AgentSmith`.
+- Consequences: `zulip_gateway_service.py` now treats any non-bot sender email as human and only falls back to name-based bot detection when no sender email is available. Live human chat messages from the local `master` account now enter the control-plane intake path correctly.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The `openclaw_workspace` runtime must use a reduced execution context, a longer worker budget than the internal OpenClaw agent timeout, and session-result harvesting as a recovery path when the CLI transport returns late.
+- Context: The first live software smoke showed that the control plane, gateway, and worker path were healthy, but the workspace-backed OpenClaw transport could outlive the worker budget and still finish successfully in its own session files. The full serialized task context also pushed unnecessary bulk into the model prompt.
+- Consequences: `openclaw_workspace_executor.py` now trims artifact and task context before invoking the model, passes an explicit OpenClaw timeout below the worker ceiling, kills the process tree on timeout, and can recover a finished response from the session files when the CLI transport lags. Future changes to this backend should preserve that timeout layering and session-harvest fallback.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: `Morpheus` must refuse to dispatch `IMPLEMENT_SOFTWARE_TASK` when the project has no `workspace_ref`.
+- Context: Before this change, a project without a workspace could still enter the live software loop and only fail once the `implementer` worker reached the workspace-backed executor. That put an orchestration precondition failure in the wrong layer and produced poor operator feedback.
+- Consequences: The Morpheus rule loop now blocks immediately with an escalation packet when no workspace is attached, and the worker-side missing-workspace path is treated as a blocked runtime issue rather than an implementation failure.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Local template bring-up should use repo-local env files and transient user services under `openclaw_agents/state/` until a packaged installer or host-level deployment wrapper exists.
+- Context: The current repository ships runnable service entrypoints and systemd units, but this environment does not yet have a finalized host installation path or managed `/etc` deployment bundle. The user wanted the stack brought up immediately in the repo workspace rather than only documented.
+- Consequences: Local bring-up now uses `openclaw_agents/state/openclaw-zulip-gateway.env`, `openclaw_agents/state/openclaw-runtime-workers.env`, repo-local state directories, and transient `systemd --user` services. The committed `.gitignore` now excludes `openclaw_agents/state/`, and operators should treat this as the default local smoke/development path until a packaged deployment flow is added.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: `Neo` and `MASTER` must remain disabled in the live gateway subscriptions and worker fleet until their execution logic is intentionally implemented.
+- Context: The user explicitly deferred `Neo` and `MASTER` execution logic to the end. During live bring-up, enabling their visible identities or workers would have created routable but unsupported runtime paths.
+- Consequences: The live gateway config subscribes only the supported visible agents, and the live worker config keeps `neo` and `master` disabled. Future deployment changes should not enable those two roles until their execution path, routing behavior, and operational semantics are implemented and tested.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Prompt files in `openclaw_agents/prompts/` must remain contract-driven role instructions derived from the registry, routing rules, and orchestrator state machines rather than becoming a second independent workflow spec.
+- Context: The new control plane now has explicit authority boundaries, scheduling rules, and state-machine behavior in dedicated config files. Leaving prompts as placeholders was not viable, but letting prompts redefine routing or ownership would create drift between implementation and documentation.
+- Consequences: Future behavior changes should be made in the authoritative spec, registry, routing, and state-machine files first, then reflected in prompts as execution guidance. Prompt edits should not silently expand a role's authority beyond the contracts already encoded elsewhere.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Operations docs must only reference runnable entrypoints that exist in the repository; when a deployment wrapper is still missing, the runbook must call out that gap explicitly instead of inventing a command or service.
+- Context: The repository now includes the gateway normalization and dispatch-planning logic but does not yet include a production Zulip polling daemon or service entrypoint. Leaving the runbooks as placeholders was not acceptable, but documenting imaginary commands would create operator confusion and drift.
+- Consequences: The Zulip bootstrap runbook now documents the current boundary honestly, the systemd unit remains a deployment placeholder until a real daemon exists, and future operational docs should distinguish between implemented code paths and intended next wrappers.
+- Status: Superseded
+
+- Date: 2026-04-13
+- Decision: The shared Zulip gateway service should manage one Zulip rc file per visible bot identity inside one process, and it must normalize rendered Zulip HTML back into fenced-text form before schema validation.
+- Context: The integrated spec requires one gateway service to manage visible bot identities rather than per-agent clients, and Zulip event payloads arrive as rendered content instead of the raw markdown that the schema-aware gateway parser expects.
+- Consequences: The daemon now loads `<agent_id>.zuliprc` files from one configured directory, polls all visible bot queues in one service, and converts rendered code blocks back into triple-fenced text so authoritative YAML payloads survive transport and can be validated deterministically.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The default runtime execution backend should be a queue-backed packet contract: dispatch creates a validated task envelope, persists `task_attempts` and `agent_runs`, writes the packet into the workspace or state queue, and completion returns through a validated response-envelope callback.
+- Context: The control plane now had routing and gateway behavior but still lacked a concrete runtime handoff model. Hardcoding live LLM or sandbox launch commands at this stage would have created environment-specific drift, while a queue-backed packet contract gives a stable integration point for external runners and future executors.
+- Consequences: `RuntimeDispatcher` now serves as the canonical handoff surface, runtime packets land in `artifacts/incoming/` when a workspace exists, and response callbacks are responsible for closing attempts, updating runs, persisting artifacts, and capturing safe-boundary snapshots back into the authoritative store.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Worker execution should remain disabled by default in committed config, with opt-in `mock` and `subprocess` executors, and completed runtime results should still be mirrored only through the shared gateway service.
+- Context: The template needs a real worker path now, but auto-running queued tasks by default would be unsafe in a reusable repo. At the same time, letting workers post to Zulip directly would break the single-gateway transport model.
+- Consequences: `runtime/worker_config.yaml` now defaults every agent to `disabled`, local smoke tests can opt into `mock` explicitly, real deployments can opt into `subprocess` per agent, and the shared gateway remains the only component that mirrors authoritative task results back into Zulip.
+- Status: Accepted
+
 - Date: 2026-03-30
 - Decision: The next-generation multi-agent template should standardize dispatch through a shared role registry, a shared communication contract, and an explicit `AgentSmith` dispatcher skill instead of relying on prompt-only spawning conventions.
 - Context: The existing bridges and wrappers already standardize connection layers reasonably well, but visible handoffs between `AgentSmith`, `Niaobe`, `Architect`, `Morpheus`, and `Oracle` remained too ad hoc, which made new-role expansion and deterministic orchestration harder than necessary.
@@ -303,4 +375,112 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Decision: The template repository should ship only the current V3 gateway-based architecture and should not keep retired V1/V2 bridge, dispatcher, runtime, workflow, or supervisor artifacts in the main template tree.
 - Context: The repository had accumulated multiple generations of design and runtime material, which made the default path ambiguous and left setup docs mixed between the current gateway model and older abandoned control-plane and split-bridge designs.
 - Consequences: The shipped template now keeps only the V3 gateway path, current wrappers, current project template, and current docs. Future experiments should either replace the current path cleanly or live outside the default template tree until they become the new supported model.
+- Status: Accepted
+
+- Date: 2026-04-02
+- Decision: `openclaw_agents/complete_agentic_software_workflow_with_zulip.md` is now the primary handoff and planning source for the next architecture migration, superseding the earlier split `agentic_workflow.md`, `zulip_communication_spec.md`, and `SOFTWARE_WORKSPACE_README.md` documents when they conflict.
+- Context: The integrated handoff document combines the workflow model, Zulip communication contract, workspace contract, persistence requirements, implementation order, and builder output list into one authoritative spec, which removes ambiguity that remained when planning from several partially overlapping files.
+- Consequences: Future migration planning should start from the integrated handoff first, the new repo layout should match its builder output structure and two-loop control-plane design, and the older split docs should be treated as supporting references or removed/replaced during the structural migration.
+- Status: Accepted
+
+- Date: 2026-04-02
+- Decision: The active `openclaw_agents/` template layout should now be organized by implementation boundary (`specs`, `config`, `schemas`, `orchestrators`, `prompts`, `communication`, `runtime`, `database`, `evaluation`, `operations`, `templates`) rather than by the old V3 wrapper and gateway folders (`.agents`, `zulip_gateway_v3`, `project_template`, `systemd`).
+- Context: The integrated handoff defines a control-plane-first system with explicit builder outputs and clean boundaries between specs, state machines, communication, runtime, persistence, and workspace templates. The earlier V3 layout encoded a chat-first wrapper system and no longer matched the target architecture.
+- Consequences: New implementation work should land in the new boundary-based directories, supporting legacy docs should live under `specs/supporting/`, and removed V3 wrapper or bridge paths should not be recreated unless the architecture direction changes again.
+- Status: Accepted
+
+- Date: 2026-04-02
+- Decision: The next implementation phase must add a first-class `scheduler/` layer and scheduling-related schemas before gateway, runtime, or prompt implementation proceeds.
+- Context: `project_scheduling_and_context_switching.md` introduces central scheduling, active-project leases for singleton orchestrators, safe-boundary switching, project snapshots, workspace isolation, control-plane commands, and recovery rules. The current scaffold created from the integrated handoff alone does not yet include those modules or schemas.
+- Consequences: The repo layout should grow a `scheduler/` package plus `control_event`, `project_snapshot`, `orchestrator_lease`, and `project_schedule_record` schemas; the database schema must include scheduling and snapshot entities; and implementation order should prioritize scheduling contracts before higher-level execution code.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Scheduler lease acquisition may create a minimal control-plane `agent_runs` record when no explicit runtime-run record exists yet, so lease persistence remains referentially valid before the gateway and runtime layers are fully implemented.
+- Context: The database schema intentionally ties `orchestrator_leases.lease_owner_run_id` to `agent_runs.run_id`, but the first scheduler implementation acquires leases before the gateway or runtime has created any concrete agent run rows. The initial smoke test failed on that foreign key.
+- Consequences: The lease manager now ensures a lightweight `agent_runs` row exists for scheduler-owned work before persisting the lease. Later gateway and runtime code can replace or enrich those rows, but the control plane no longer depends on hand-created run records just to schedule a project.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Snapshot-requiring control commands such as `PAUSE_PROJECT`, `STATUS_SNAPSHOT`, and safe `SWITCH_PROJECT` must reject cleanly when a project does not yet have a persisted `workspace_ref`, rather than creating partial snapshot state or throwing an unhandled exception.
+- Context: The first gateway smoke test tried to pause a project created from a free-form human intake message before any workspace had been assigned. The snapshot store correctly refused to persist a snapshot without `workspace_ref`, but the control-command path initially let that bubble up as an exception.
+- Consequences: The control-command layer now returns explicit rejected control-event results for snapshot-dependent commands when workspace state is still incomplete. This keeps the gateway deterministic and preserves the scheduling rule that safe boundaries require persisted state and artifact references.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The first built-in execution backend should be an opt-in deterministic executor for `morpheus`, `planner`, `implementer`, and `tester`, while the committed worker config remains conservative and disabled by default.
+- Context: The control plane needed a real end-to-end software loop before external model or subprocess integrations were ready. A deterministic built-in backend can validate task lifecycles, parent-child orchestration, artifact persistence, and bounded retries without depending on external runtimes.
+- Consequences: `runtime/worker_runner.py` now accepts `--default-executor builtin`, `runtime/role_executor.py` implements the local execution behavior for the first software-loop roles, and operators can use the builtin path for local smoke tests without changing the default safety posture of `runtime/worker_config.yaml`.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Internal-only `planner`, `implementer`, and `tester` task results should not be mirrored back to Zulip as standalone authoritative result messages.
+- Context: Once Morpheus advances its own child-task loop automatically, mirroring every internal child result would flood the visible Zulip streams and leak internal-only stages that the registry marks as non-visible.
+- Consequences: Result mirroring now excludes internal software-loop child agents, while the visible parent Morpheus task still mirrors the authoritative software-loop outcome back to Zulip.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The builtin deterministic execution path should cover the first full visible project loop (`AgentSmith -> Niobe -> Architect -> Morpheus -> Oracle`) in addition to the nested Morpheus software loop.
+- Context: After the software-loop engine landed, the largest remaining control-plane gap was project orchestration. Without a visible-loop builtin path, the system could not validate intake handoff, project routing, Oracle feedback handling, or project closure without an external runtime.
+- Consequences: `runtime/role_executor.py` now supports the visible project roles, `orchestrators/niobe_engine.py` owns the builtin project-loop logic, successful `FRAME_PROJECT` results automatically materialize real `ORCHESTRATE_PROJECT` tasks, and Niobe is requeued explicitly at persisted child-task boundaries after Architect, Morpheus, and Oracle complete.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: `project_status_report` and `project_closure_report` artifacts produced by Niobe should map to the explicit `PROJECT_STATUS_SNAPSHOT_PERSISTED` safe-boundary type during response recording.
+- Context: Once Niobe started producing persisted status and closure artifacts as part of the builtin project loop, treating them as generic task-result boundaries lost the project-specific safe-boundary semantics required by the scheduling spec.
+- Consequences: Snapshot capture for Niobe status-bearing responses now records the project-status boundary type explicitly, which keeps pause/resume/switch reasoning aligned with the control-plane contracts.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The first real external execution contract should be a prompt-aware subprocess adapter that builds a structured execution context from the prompt files, state store, workspace metadata, and artifact inputs before invoking the backend.
+- Context: The builtin deterministic executor is useful for control-plane validation, but it does not exercise the real boundary where an external runtime consumes prompt text and project state. The older raw `subprocess` path passed only packet-level environment variables and left too much context reconstruction to the child process.
+- Consequences: `runtime/external_executor.py` now writes a JSON execution-context file and exports `OPENCLAW_EXECUTION_CONTEXT` plus prompt and model metadata to `prompt_subprocess` backends. The builtin executor remains available as a fallback, while real integrations can target the richer adapter without coupling themselves to the DB layout.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The committed regression suite should use the Python standard library `unittest` runner instead of assuming `pytest` is available in every local control-plane environment.
+- Context: This repo currently has no committed Python environment bootstrap, and the target machine for this change did not have `pytest` installed. Leaving the new coverage as `pytest`-only would have shipped tests that could not be executed in the repo's actual current environment.
+- Consequences: The first committed automated suite under `tests/` is implemented with `unittest`, and the runbook documents `python3 -m unittest discover -s tests -v` as the supported local command.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The default local Ollama model for the scaffold should be pinned explicitly to `gemma4:31b`, and `prompt_subprocess` should fall back to a built-in Ollama runner when no explicit command is configured.
+- Context: The previous model map still used abstract local model hints, so the new prompt-aware runtime contract existed without a concrete backend path. The installed local model on this machine is `gemma4:31b`, and the next unfinished control-plane gap was the lack of a ready-made local runtime behind `prompt_subprocess`.
+- Consequences: `openclaw_agents/config/model_map.yaml` now resolves all local profiles to `gemma4:31b`, `openclaw_agents/runtime/ollama_prompt_runner.py` provides a concrete local backend for the prompt-aware execution context, the runner uses the local Ollama HTTP API by default for clean structured output and retains a CLI fallback for explicit override or test use, and `runtime/worker_runner.py` can execute `prompt_subprocess` jobs with no custom command as long as the model hint resolves to a valid local Ollama model.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The default deployment pattern for runtime workers should be one shared worker-supervisor service that runs one child worker process per enabled agent, with a templated single-agent systemd unit kept only for explicit pinning or debugging.
+- Context: The runtime layer already had queue consumers, but no explicit operational model for long-running worker processes. Running every role through one multiplexing worker process would hide agent-specific failures and block concurrent role execution, while managing many ad hoc commands manually would not be operationally stable.
+- Consequences: `openclaw_agents/runtime/worker_supervisor.py` now validates `worker_config.yaml`, supervises one `worker_runner` child per enabled agent, and supports a `--check` mode for service preflight. The systemd folder now includes `openclaw-worker-supervisor.service` as the recommended default and `openclaw-worker@.service` as the optional single-agent template.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The first real code-executing software backend should use workspace-scoped OpenClaw agents for `implementer` and `tester`, with one dedicated OpenClaw agent id derived from the project workspace and role.
+- Context: The control plane needed a real backend that can mutate the actual project workspace and execute validation commands, but the generic Ollama prompt runner only produces structured responses and cannot safely edit a repo by itself. The local OpenClaw runtime is already installed and supports isolated agents with explicit workspace bindings.
+- Consequences: `openclaw_agents/runtime/openclaw_workspace_executor.py` now provisions per-project OpenClaw agents on demand, binds them to the project workspace, invokes them through `openclaw agent --json`, and normalizes their visible structured reply into `code_change` or `test_execution_report` artifacts. `implementer` and `tester` can now be deployed with `executor: openclaw_workspace` once the operator enables them in `worker_config.yaml`.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: Pre-deployment resume validation must combine persisted control-plane state with live git/worktree inspection, and generated runtime paths must not be treated as recovery blockers by themselves.
+- Context: The original recovery layer only checked stored workspace metadata and path existence. That was not enough to detect the actual unsafe states called out in the scheduling spec, such as dirty tracked files, branch drift, stale active leases, or interrupted runs that still looked alive. At the same time, the runtime legitimately writes untracked packets and reports under `artifacts/` and optional `.agents/`.
+- Consequences: `workspace_validator.py` now checks git root, branch or worktree identity, dirty tracked files, untracked non-generated files, and checkpoint-reference validity when the workspace is a git repo. `recovery_manager.py` now blocks resume on active leases, active task attempts, or active agent runs and persists richer details into `recovery_events`. Generated runtime paths under `artifacts/` and `.agents/` are ignored for resume safety unless they correspond to tracked-file mutations elsewhere.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The first live deployment on this machine should run the repo-specific gateway and worker supervisor as user-level transient systemd units backed by repo-local env files and a repo-local Zulip rc compatibility directory, while `master` and `neo` stay out of the live Zulip subscription surface.
+- Context: The committed unit files assume `/etc` env files and a system-level deployment, but the local OpenClaw workspace backend needs to run as `alik`, and this machine already has the relevant Zulip bot credentials under legacy filenames in sibling repos. The same deployment also intentionally defers `Neo` and `MASTER` runtime logic, so loading their Zulip identities into the live gateway would add unimplemented surface area.
+- Consequences: Live bring-up now uses repo-local env files under `openclaw_agents/state/`, a repo-local `zuliprc/` compatibility directory that maps the old bot filenames onto the new agent ids, and transient user services named `openclaw-agent-template-zulip-gateway.service` and `openclaw-agent-template-worker-supervisor.service`. The gateway uses `--insecure` on this machine because the local Zulip deployment presents a self-signed certificate, and `master` plus `neo` have empty live subscriptions until their runtime logic exists.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: `agent_template` must remain template-only, and all live OpenClaw state for this system must live under `/home/alik/workspace/claw_software_workspace`.
+- Context: The earlier bring-up used repo-local state under `openclaw_agents/state/` for convenience, but that polluted the template repository with the live SQLite DB, Zulip credentials, runtime queues, and generated project workspaces. The requested target boundary is a reusable template repo plus an external live workspace.
+- Consequences: The committed docs and examples now point runtime state at `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/` and `/home/alik/workspace/claw_software_workspace/projects/`; `ProjectWorkspaceProvisioner` no longer falls back into the template repo; the live services now read env files from the external workspace; and the template repo should not contain `openclaw_agents/state/` in normal operation.
+- Status: Accepted
+
+- Date: 2026-04-13
+- Decision: The committed OpenClaw systemd unit templates should be user services that read env files from `claw_software_workspace`, and any shell variable used inside `ExecStart` or `ExecStartPre` must be escaped as `$$...`.
+- Context: The cleaned deployment now runs as user services rather than root-level system services, and the first attempt to start the committed worker-supervisor unit failed because systemd expanded `$cmd[@]` and other shell variables before `bash` received them.
+- Consequences: `zulip-gateway.service`, `openclaw-worker-supervisor.service`, and `openclaw-worker@.service` now target `default.target`, read env files from `%h/workspace/claw_software_workspace/.agents/state/openclaw_agents/env/`, and escape shell variables correctly so the array-based startup commands execute under `bash` as intended.
 - Status: Accepted
