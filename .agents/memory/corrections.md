@@ -30,7 +30,7 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 - Where it was recorded: `.agents/memory/changelog.md`
 
 - Date: 2026-03-30
-- Problem: The live Niaobe verification run for `projects/fibonacci_niobe_test` stopped after planning instead of reaching Morpheus and Oracle.
+- Problem: The live Niaobe verification run for `projects/fibonacci_niaobe_test` stopped after planning instead of reaching Morpheus and Oracle.
 - Root cause: The live `run_assistant_spawn.sh` project-manager flow is implemented as `Niaobe initial pass -> Architect -> Niaobe review` and only emits `MORPHEUS_READY` / `MORPHEUS_TASK`; it never actually invokes `run_team.sh` or any Morpheus path. The live `projectmanager.txt` prompt is also outdated and still tells Niaobe to read `PROJECT.md` from the repository root instead of the selected project's own `PROJECT.md` and `management/`.
 - New rule: Treat the current Niaobe flow as planning-only until the runner actually executes the Morpheus handoff and the Niaobe prompt is updated to project-local instructions. Do not assume `MORPHEUS_READY: yes` means the software loop has started unless a real software-topic handoff or `run_team.sh` invocation is visible.
 - Where it was recorded: `.agents/memory/changelog.md`
@@ -185,6 +185,12 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 
 - Date: 2026-04-14
 - Problem: The first orchestrator spelling-correction rollout still left the live gateway broken after restart.
-- Root cause: Existing SQLite databases still carried legacy `niobe` check constraints and row values, especially in `orchestrator_leases`, so startup lease seeding crashed before the gateway could even load bots.
-- New rule: Treat runtime identity renames as a data-migration problem as well as a code/config rename; verify service startup against existing live databases before considering the rollout complete.
-- Where it was recorded: `openclaw_agents/database/store.py`, `tests/test_store_migrations.py`
+- Root cause: Existing SQLite databases still encoded the previous orchestrator spelling, so the runtime failed when the canonical schema stopped accepting the older values.
+- New rule: If the goal is a clean break with no legacy compatibility, discard old rollout databases and restart from a fresh canonical schema instead of preserving translation logic in the runtime.
+- Where it was recorded: `openclaw_agents/database/store.py`
+
+- Date: 2026-04-14
+- Problem: Temporary compatibility code for a deliberate clean-break rename can linger past its useful life and pollute both the repo and the live runtime.
+- Root cause: The earlier rollout optimized for preserving old operational state instead of honoring the later requirement to start fresh with no compatibility paths or historical databases.
+- New rule: When the requirement changes to "start fresh", remove the compatibility layer from the codebase and wipe the live operational state instead of carrying transitional support indefinitely.
+- Where it was recorded: `openclaw_agents/database/store.py`, `.agents/memory/changelog.md`

@@ -434,7 +434,7 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Date: 2026-04-13
 - Decision: The builtin deterministic execution path should cover the first full visible project loop (`AgentSmith -> Niaobe -> Architect -> Morpheus -> Oracle`) in addition to the nested Morpheus software loop.
 - Context: After the software-loop engine landed, the largest remaining control-plane gap was project orchestration. Without a visible-loop builtin path, the system could not validate intake handoff, project routing, Oracle feedback handling, or project closure without an external runtime.
-- Consequences: `runtime/role_executor.py` now supports the visible project roles, `orchestrators/niobe_engine.py` owns the builtin project-loop logic, successful `FRAME_PROJECT` results automatically materialize real `ORCHESTRATE_PROJECT` tasks, and Niaobe is requeued explicitly at persisted child-task boundaries after Architect, Morpheus, and Oracle complete.
+- Consequences: `runtime/role_executor.py` now supports the visible project roles, `orchestrators/niaobe_engine.py` owns the builtin project-loop logic, successful `FRAME_PROJECT` results automatically materialize real `ORCHESTRATE_PROJECT` tasks, and Niaobe is requeued explicitly at persisted child-task boundaries after Architect, Morpheus, and Oracle complete.
 - Status: Accepted
 
 - Date: 2026-04-13
@@ -570,7 +570,13 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Status: Accepted
 
 - Date: 2026-04-14
-- Decision: `ControlPlaneStore` startup must self-migrate legacy `niobe` database schema/value state to `niaobe`.
-- Context: The canonical rename in code/config was not enough for the live gateway because existing shared SQLite files still had `orchestrator_leases`, `projects`, `control_events`, and `recovery_events` schemas constrained to `niobe`, which caused the repo-specific Zulip gateway to crash during startup lease initialization.
-- Consequences: Store initialization now rebuilds legacy constrained tables and rewrites persisted structured values so both the shared scheduler DB and older project-local DBs can boot against the canonical `niaobe` runtime identity without manual database cleanup.
+- Decision: When the orchestrator spelling correction is finalized, the runtime should prefer a hard reset of live state over carrying transitional compatibility code.
+- Context: The codebase is now canonically `niaobe` throughout, and the user explicitly requested a fresh start with no legacy compatibility paths or preserved historical databases.
+- Consequences: Live control-plane databases are treated as disposable rollout state; the runtime boots on the canonical schema only, and old transitional compatibility code is removed instead of preserved.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: The live runtime should be reset rather than migrated when old rollout data conflicts with a deliberate clean-break rename or schema simplification.
+- Context: The user explicitly requested a fresh start with no retained compatibility layers or historical databases after the orchestrator spelling correction.
+- Consequences: Transitional migration code is not kept in the steady-state runtime; when a clean break is required, the operational procedure is stop services, wipe live DB/state, and restart from the canonical schema.
 - Status: Accepted
