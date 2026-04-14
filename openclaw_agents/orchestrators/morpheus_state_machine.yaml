@@ -125,7 +125,7 @@ states:
     scheduler_behavior:
       switch_allowed_after_persisted_boundary: true
       recommended_switch_triggers:
-        - "Tester report persisted and next action requires Niobe or Architect"
+        - "Tester report persisted and next action requires Niaobe or Architect"
         - "Environment failure persisted and escalated"
         - "Project paused or preempted at a safe software boundary"
         - "Higher-priority software request becomes eligible and current project is safely parked"
@@ -159,7 +159,7 @@ states:
         action: "request architect clarification"
         next_state: "WAITING_ARCHITECT"
       - when: "failure_cause in [REQUIREMENT_GAP, ENVIRONMENT_FAILURE, UNKNOWN]"
-        action: "return escalation_packet to niobe"
+        action: "return escalation_packet to niaobe"
         next_state: "BLOCKED"
 
   WAITING_ARCHITECT:
@@ -180,13 +180,13 @@ states:
       switch_allowed_after_persisted_boundary: true
     decision_rules:
       - when: "issue_type == requirement_gap"
-        action: "return escalation_packet to niobe"
+        action: "return escalation_packet to niaobe"
         next_state: "BLOCKED"
       - when: "issue_type == architecture_gap"
         action: "request architect clarification"
         next_state: "WAITING_ARCHITECT"
       - when: "issue_type == environment_issue"
-        action: "return escalation_packet to niobe"
+        action: "return escalation_packet to niaobe"
         next_state: "BLOCKED"
       - when: "issue_type == minor_plan_gap"
         action: "retry planner"

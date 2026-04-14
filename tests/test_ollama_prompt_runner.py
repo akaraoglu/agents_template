@@ -83,7 +83,7 @@ class OllamaPromptRunnerTests(unittest.TestCase):
                             "task_type": "DESIGN_ARCHITECTURE",
                             "goal": "Design the project architecture",
                             "priority": "MEDIUM",
-                            "from_agent": "niobe",
+                            "from_agent": "niaobe",
                             "expected_output": {"artifact_type": "architecture_spec"},
                             "context": {},
                         },
@@ -103,7 +103,7 @@ class OllamaPromptRunnerTests(unittest.TestCase):
                     "task_envelope": {
                         "task_id": "task_1",
                         "project_id": "project_1",
-                        "from_agent": "niobe",
+                        "from_agent": "niaobe",
                         "to_agent": "architect",
                         "task_type": "DESIGN_ARCHITECTURE",
                         "title": "Design the project",
@@ -141,7 +141,7 @@ class OllamaPromptRunnerTests(unittest.TestCase):
         self.assertEqual(response["trace"]["run_id"], "run_1")
         self.assertEqual(response["artifacts_out"][0]["artifact_type"], "architecture_spec")
         self.assertEqual(response["next_action"]["type"], "RETURN_TO_REQUESTER")
-        self.assertEqual(response["next_action"]["target_agent"], "niobe")
+        self.assertEqual(response["next_action"]["target_agent"], "niaobe")
         persisted = yaml.safe_load(response_path.read_text())
         self.assertEqual(persisted["summary"], response["summary"])
 
@@ -162,7 +162,7 @@ class OllamaPromptRunnerTests(unittest.TestCase):
             project_id="P_worker_prompt",
             goal="Design a project with the default prompt runner",
             current_phase="project_design",
-            current_owner_agent="niobe",
+            current_owner_agent="niaobe",
             next_action={"type": "DESIGN_ARCHITECTURE", "target_agent": "architect"},
             workspace_ref=str(workspace_ref),
         )
@@ -180,7 +180,7 @@ class OllamaPromptRunnerTests(unittest.TestCase):
         )
         task = store.record_task(
             project_id="P_worker_prompt",
-            from_agent="niobe",
+            from_agent="niaobe",
             to_agent="architect",
             task_type="DESIGN_ARCHITECTURE",
             title="Design the project",

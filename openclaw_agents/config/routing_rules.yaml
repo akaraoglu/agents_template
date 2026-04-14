@@ -6,14 +6,14 @@ metadata:
 
 routing:
   default_entry_agent: "agent_smith"
-  default_project_orchestrator: "niobe"
+  default_project_orchestrator: "niaobe"
   default_software_orchestrator: "morpheus"
   route_by_task_type:
     CLARIFY_GOAL: "neo"
     FRAME_PROJECT: "agent_smith"
     APPROVE_PRIORITY: "master"
     RESOLVE_ESCALATION: "master"
-    ORCHESTRATE_PROJECT: "niobe"
+    ORCHESTRATE_PROJECT: "niaobe"
     DESIGN_ARCHITECTURE: "architect"
     REQUEST_ARCHITECTURE_CLARIFICATION: "architect"
     ORCHESTRATE_SOFTWARE: "morpheus"
@@ -36,7 +36,7 @@ global_invariants:
   - "Every task has exactly one current owner."
   - "Every task names exactly one return target."
   - "Only orchestrators choose next-step routing inside live loops."
-  - "Niobe never directly calls Planner, Implementer, or Tester."
+  - "Niaobe never directly calls Planner, Implementer, or Tester."
   - "Morpheus never closes the project."
   - "Oracle never replaces Tester."
   - "Project closure requires design evidence, implementation evidence, and Oracle verification evidence."
@@ -98,7 +98,7 @@ scheduler:
     - "waiting_external"
     - "blocked"
   singleton_orchestrators:
-    niobe:
+    niaobe:
       max_active_projects: 1
       lease_ttl_minutes: 30
       renew_interval_minutes: 5
@@ -146,7 +146,7 @@ workspace:
     - "last_clean_commit_or_checkpoint"
 
 stop_conditions:
-  niobe:
+  niaobe:
     max_project_transitions_before_escalation: 20
   morpheus:
     max_retry_cycles_per_software_task: 5

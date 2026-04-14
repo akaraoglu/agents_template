@@ -4,7 +4,7 @@ Use milestones for operator-visible checkpoints, not for every small task.
 
 | Milestone ID | Outcome | Owner | Status | Evidence Required To Close | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `M1` | `[replace_me]` | `Niobe` | `planned` | `[artifact or report]` | `[notes]` |
+| `M1` | `[replace_me]` | `Niaobe` | `planned` | `[artifact or report]` | `[notes]` |
 | `M2` | `[replace_me]` | `Morpheus` | `planned` | `[artifact or report]` | `[notes]` |
 | `M3` | `[replace_me]` | `Oracle` | `planned` | `verification_report` | `[notes]` |
 

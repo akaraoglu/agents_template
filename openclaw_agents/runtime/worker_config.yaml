@@ -30,7 +30,7 @@ agents:
     executor: "disabled"
   agent_smith:
     executor: "builtin"
-  niobe:
+  niaobe:
     executor: "builtin"
   architect:
     executor: "builtin"

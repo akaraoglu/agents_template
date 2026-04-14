@@ -28,7 +28,7 @@ assignments:
     profile: "external_or_override"
   agent_smith:
     profile: "ollama_reasoning"
-  niobe:
+  niaobe:
     profile: "ollama_reasoning"
   architect:
     profile: "ollama_reasoning"

@@ -16,7 +16,7 @@
   "properties": {
     "orchestrator_id": {
       "type": "string",
-      "enum": ["niobe", "morpheus"]
+      "enum": ["niaobe", "morpheus"]
     },
     "lease_status": {
       "type": "string",

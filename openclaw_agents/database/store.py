@@ -39,6 +39,8 @@ PROJECT_LOCAL_TABLES = {
 }
 ALL_TABLES = SHARED_ONLY_TABLES | PROJECT_LOCAL_TABLES | {"projects"}
 TABLE_NAME_RE = re.compile(r"\b(?:FROM|JOIN|UPDATE|INTO)\s+([a-z_][a-z0-9_]*)\b", re.IGNORECASE)
+NIAOBE_RENAME_MIGRATION = "2026-04-14-rename-niobe-to-niaobe"
+LEGACY_NIOBE_TABLES = ("projects", "orchestrator_leases", "control_events", "recovery_events")
 
 
 def utc_now() -> str:
@@ -141,6 +143,251 @@ class ControlPlaneStore:
     def _initialize_db(self, db_path: str | Path) -> None:
         with self._connect(db_path) as conn:
             conn.executescript(self.schema_path.read_text())
+            self._apply_schema_migrations(conn)
+
+    def _apply_schema_migrations(self, conn: sqlite3.Connection) -> None:
+        self._migrate_legacy_niobe_schema(conn)
+
+    def _migration_applied(self, conn: sqlite3.Connection, version: str) -> bool:
+        row = conn.execute("SELECT 1 FROM schema_migrations WHERE version = ? LIMIT 1", (version,)).fetchone()
+        return row is not None
+
+    def _record_migration(self, conn: sqlite3.Connection, version: str) -> None:
+        conn.execute("INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)", (version,))
+
+    def _create_table_statement(self, table_name: str) -> str:
+        schema_text = self.schema_path.read_text()
+        pattern = re.compile(
+            rf"CREATE TABLE IF NOT EXISTS {re.escape(table_name)}\s*\(.*?\);",
+            re.DOTALL,
+        )
+        match = pattern.search(schema_text)
+        if not match:
+            raise ValueError(f"table definition for {table_name} not found in schema.sql")
+        return match.group(0)
+
+    def _table_uses_legacy_niobe(self, conn: sqlite3.Connection, table_name: str) -> bool:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table_name,),
+        ).fetchone()
+        sql = row["sql"] if row and row["sql"] else ""
+        return "niobe" in sql and "niaobe" not in sql
+
+    def _copy_legacy_niobe_table(
+        self,
+        conn: sqlite3.Connection,
+        table_name: str,
+        legacy_table_name: str,
+    ) -> None:
+        if table_name == "projects":
+            conn.execute(
+                f"""
+                INSERT INTO projects (
+                  project_id,
+                  goal,
+                  project_status,
+                  runtime_status,
+                  priority,
+                  current_phase,
+                  current_owner_agent,
+                  assigned_project_orchestrator,
+                  assigned_software_orchestrator,
+                  next_action_json,
+                  workspace_ref,
+                  last_snapshot_id,
+                  last_activity_at,
+                  created_at,
+                  updated_at
+                )
+                SELECT
+                  project_id,
+                  goal,
+                  project_status,
+                  runtime_status,
+                  priority,
+                  current_phase,
+                  CASE current_owner_agent WHEN 'niobe' THEN 'niaobe' ELSE current_owner_agent END,
+                  CASE assigned_project_orchestrator WHEN 'niobe' THEN 'niaobe' ELSE assigned_project_orchestrator END,
+                  assigned_software_orchestrator,
+                  REPLACE(next_action_json, '"niobe"', '"niaobe"'),
+                  workspace_ref,
+                  last_snapshot_id,
+                  last_activity_at,
+                  created_at,
+                  updated_at
+                FROM {legacy_table_name}
+                """
+            )
+            return
+
+        if table_name == "orchestrator_leases":
+            conn.execute(
+                f"""
+                INSERT INTO orchestrator_leases (
+                  orchestrator_id,
+                  lease_status,
+                  active_project_id,
+                  lease_owner_run_id,
+                  lease_acquired_at,
+                  lease_expires_at,
+                  released_at,
+                  release_reason,
+                  renew_count
+                )
+                SELECT
+                  CASE orchestrator_id WHEN 'niobe' THEN 'niaobe' ELSE orchestrator_id END,
+                  lease_status,
+                  active_project_id,
+                  lease_owner_run_id,
+                  lease_acquired_at,
+                  lease_expires_at,
+                  released_at,
+                  release_reason,
+                  renew_count
+                FROM {legacy_table_name}
+                """
+            )
+            return
+
+        if table_name == "control_events":
+            conn.execute(
+                f"""
+                INSERT INTO control_events (
+                  event_id,
+                  project_id,
+                  orchestrator_id,
+                  command,
+                  requested_by,
+                  requested_at,
+                  args_json,
+                  reason,
+                  status,
+                  result_summary,
+                  mirrored_to_zulip,
+                  mirrored_message_id
+                )
+                SELECT
+                  event_id,
+                  project_id,
+                  CASE orchestrator_id WHEN 'niobe' THEN 'niaobe' ELSE orchestrator_id END,
+                  command,
+                  requested_by,
+                  requested_at,
+                  REPLACE(args_json, '"niobe"', '"niaobe"'),
+                  reason,
+                  status,
+                  result_summary,
+                  mirrored_to_zulip,
+                  mirrored_message_id
+                FROM {legacy_table_name}
+                """
+            )
+            return
+
+        if table_name == "recovery_events":
+            conn.execute(
+                f"""
+                INSERT INTO recovery_events (
+                  recovery_id,
+                  project_id,
+                  orchestrator_id,
+                  workspace_ref,
+                  failure_mode,
+                  action_taken,
+                  status,
+                  details_json,
+                  created_at,
+                  completed_at
+                )
+                SELECT
+                  recovery_id,
+                  project_id,
+                  CASE orchestrator_id WHEN 'niobe' THEN 'niaobe' ELSE orchestrator_id END,
+                  workspace_ref,
+                  failure_mode,
+                  action_taken,
+                  status,
+                  REPLACE(details_json, '"niobe"', '"niaobe"'),
+                  created_at,
+                  completed_at
+                FROM {legacy_table_name}
+                """
+            )
+            return
+
+        raise ValueError(f"unsupported legacy table migration: {table_name}")
+
+    def _rewrite_legacy_niobe_values(self, conn: sqlite3.Connection) -> None:
+        conn.execute("UPDATE projects SET current_owner_agent = 'niaobe' WHERE current_owner_agent = 'niobe'")
+        conn.execute(
+            "UPDATE projects SET assigned_project_orchestrator = 'niaobe' "
+            "WHERE assigned_project_orchestrator = 'niobe'"
+        )
+        conn.execute(
+            "UPDATE projects SET next_action_json = REPLACE(next_action_json, '\"niobe\"', '\"niaobe\"') "
+            "WHERE INSTR(next_action_json, '\"niobe\"') > 0"
+        )
+
+        conn.execute(
+            "UPDATE tasks SET from_agent = 'niaobe' WHERE from_agent = 'niobe'"
+        )
+        conn.execute("UPDATE tasks SET to_agent = 'niaobe' WHERE to_agent = 'niobe'")
+        conn.execute(
+            "UPDATE tasks SET current_owner_agent = 'niaobe' WHERE current_owner_agent = 'niobe'"
+        )
+        conn.execute("UPDATE tasks SET return_to = 'niaobe' WHERE return_to = 'niobe'")
+        for column in ("context_json", "expected_output_json", "decision_bounds_json"):
+            conn.execute(
+                f"UPDATE tasks SET {column} = REPLACE({column}, '\"niobe\"', '\"niaobe\"') "
+                f"WHERE INSTR({column}, '\"niobe\"') > 0"
+            )
+
+        conn.execute("UPDATE task_attempts SET agent_id = 'niaobe' WHERE agent_id = 'niobe'")
+        conn.execute("UPDATE agent_runs SET agent_id = 'niaobe' WHERE agent_id = 'niobe'")
+        conn.execute("UPDATE artifacts SET produced_by_agent = 'niaobe' WHERE produced_by_agent = 'niobe'")
+        conn.execute("UPDATE decisions SET decided_by = 'niaobe' WHERE decided_by = 'niobe'")
+        conn.execute("UPDATE decisions SET next_owner = 'niaobe' WHERE next_owner = 'niobe'")
+        conn.execute("UPDATE escalations SET owner_agent = 'niaobe' WHERE owner_agent = 'niobe'")
+        conn.execute("UPDATE project_snapshots SET captured_by = 'niaobe' WHERE captured_by = 'niobe'")
+        conn.execute(
+            "UPDATE project_snapshots SET current_owner_agent = 'niaobe' WHERE current_owner_agent = 'niobe'"
+        )
+        for table_name, columns in (
+            ("project_snapshots", ("open_tasks_json", "next_action_json")),
+            ("control_events", ("args_json",)),
+            ("recovery_events", ("details_json",)),
+            ("decisions", ("constraints_json",)),
+            ("escalations", ("blocking_facts_json", "options_considered_json", "recommended_action_json")),
+        ):
+            for column in columns:
+                conn.execute(
+                    f"UPDATE {table_name} SET {column} = REPLACE({column}, '\"niobe\"', '\"niaobe\"') "
+                    f"WHERE INSTR({column}, '\"niobe\"') > 0"
+                )
+
+    def _migrate_legacy_niobe_schema(self, conn: sqlite3.Connection) -> None:
+        if self._migration_applied(conn, NIAOBE_RENAME_MIGRATION):
+            return
+
+        legacy_tables = [table for table in LEGACY_NIOBE_TABLES if self._table_uses_legacy_niobe(conn, table)]
+        if legacy_tables:
+            conn.commit()
+            conn.execute("PRAGMA foreign_keys = OFF")
+            try:
+                for table_name in legacy_tables:
+                    conn.execute(f"ALTER TABLE {table_name} RENAME TO {table_name}__legacy_niobe")
+                for table_name in legacy_tables:
+                    conn.execute(self._create_table_statement(table_name))
+                    self._copy_legacy_niobe_table(conn, table_name, f"{table_name}__legacy_niobe")
+                    conn.execute(f"DROP TABLE {table_name}__legacy_niobe")
+                conn.executescript(self.schema_path.read_text())
+                conn.commit()
+            finally:
+                conn.execute("PRAGMA foreign_keys = ON")
+
+        self._rewrite_legacy_niobe_values(conn)
+        self._record_migration(conn, NIAOBE_RENAME_MIGRATION)
 
     def _normalize_params(self, params: Iterable[Any]) -> tuple[Any, ...]:
         return tuple(_normalize_value(value) for value in params)
@@ -560,7 +807,7 @@ class ControlPlaneStore:
 
     def ensure_orchestrator_leases(self) -> None:
         with self.transaction() as conn:
-            for orchestrator_id in ("niobe", "morpheus"):
+            for orchestrator_id in ("niaobe", "morpheus"):
                 conn.execute(
                     """
                     INSERT INTO orchestrator_leases (
@@ -1222,7 +1469,7 @@ class ControlPlaneStore:
         conn: sqlite3.Connection | None = None,
     ) -> list[dict[str, Any]]:
         orchestrator_column = (
-            "assigned_project_orchestrator" if orchestrator_id == "niobe" else "assigned_software_orchestrator"
+            "assigned_project_orchestrator" if orchestrator_id == "niaobe" else "assigned_software_orchestrator"
         )
         shared_rows = self._fetchall_db(
             self.shared_db_path,

@@ -32,7 +32,7 @@ project_id = "replace_me"
 print("project:", store.get_project(project_id))
 print("schedule:", store.get_scheduling_record(project_id))
 print("snapshot:", store.get_latest_snapshot(project_id))
-print("niobe lease:", store.get_lease("niobe"))
+print("niaobe lease:", store.get_lease("niaobe"))
 print("morpheus lease:", store.get_lease("morpheus"))
 PY
 ```
@@ -46,7 +46,7 @@ from openclaw_agents.scheduler.recovery_manager import RecoveryManager
 
 store = ControlPlaneStore()
 project_id = "replace_me"
-print(RecoveryManager(store).assess_resume(project_id, orchestrator_id="niobe"))
+print(RecoveryManager(store).assess_resume(project_id, orchestrator_id="niaobe"))
 PY
 ```
 
@@ -102,7 +102,7 @@ from openclaw_agents.scheduler.lease_manager import LeaseManager
 
 store = ControlPlaneStore()
 lease_manager = LeaseManager(store)
-print(lease_manager.release("niobe", release_reason="operator-recovery"))
+print(lease_manager.release("niaobe", release_reason="operator-recovery"))
 PY
 ```
 

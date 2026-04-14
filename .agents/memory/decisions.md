@@ -432,15 +432,15 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Status: Accepted
 
 - Date: 2026-04-13
-- Decision: The builtin deterministic execution path should cover the first full visible project loop (`AgentSmith -> Niobe -> Architect -> Morpheus -> Oracle`) in addition to the nested Morpheus software loop.
+- Decision: The builtin deterministic execution path should cover the first full visible project loop (`AgentSmith -> Niaobe -> Architect -> Morpheus -> Oracle`) in addition to the nested Morpheus software loop.
 - Context: After the software-loop engine landed, the largest remaining control-plane gap was project orchestration. Without a visible-loop builtin path, the system could not validate intake handoff, project routing, Oracle feedback handling, or project closure without an external runtime.
-- Consequences: `runtime/role_executor.py` now supports the visible project roles, `orchestrators/niobe_engine.py` owns the builtin project-loop logic, successful `FRAME_PROJECT` results automatically materialize real `ORCHESTRATE_PROJECT` tasks, and Niobe is requeued explicitly at persisted child-task boundaries after Architect, Morpheus, and Oracle complete.
+- Consequences: `runtime/role_executor.py` now supports the visible project roles, `orchestrators/niobe_engine.py` owns the builtin project-loop logic, successful `FRAME_PROJECT` results automatically materialize real `ORCHESTRATE_PROJECT` tasks, and Niaobe is requeued explicitly at persisted child-task boundaries after Architect, Morpheus, and Oracle complete.
 - Status: Accepted
 
 - Date: 2026-04-13
-- Decision: `project_status_report` and `project_closure_report` artifacts produced by Niobe should map to the explicit `PROJECT_STATUS_SNAPSHOT_PERSISTED` safe-boundary type during response recording.
-- Context: Once Niobe started producing persisted status and closure artifacts as part of the builtin project loop, treating them as generic task-result boundaries lost the project-specific safe-boundary semantics required by the scheduling spec.
-- Consequences: Snapshot capture for Niobe status-bearing responses now records the project-status boundary type explicitly, which keeps pause/resume/switch reasoning aligned with the control-plane contracts.
+- Decision: `project_status_report` and `project_closure_report` artifacts produced by Niaobe should map to the explicit `PROJECT_STATUS_SNAPSHOT_PERSISTED` safe-boundary type during response recording.
+- Context: Once Niaobe started producing persisted status and closure artifacts as part of the builtin project loop, treating them as generic task-result boundaries lost the project-specific safe-boundary semantics required by the scheduling spec.
+- Consequences: Snapshot capture for Niaobe status-bearing responses now records the project-status boundary type explicitly, which keeps pause/resume/switch reasoning aligned with the control-plane contracts.
 - Status: Accepted
 
 - Date: 2026-04-13
@@ -511,19 +511,19 @@ Record durable repo or process decisions here, especially behavior or tooling up
 
 - Date: 2026-04-14
 - Decision: Non-terminal task queries in the control plane must treat only `PENDING` and `RUNNING` tasks as active; `BLOCKED`, `NEEDS_CLARIFICATION`, `FAILED`, `SUCCESS`, and `CANCELLED` are all terminal for orchestration wait logic.
-- Context: Niobe stayed stuck in `WAIT_FOR_EXTERNAL` on a completed Morpheus retry because the store-layer child-task query still surfaced an older blocked Morpheus child as “active”, so Niobe never advanced to Oracle even though a newer software-delivery task had already succeeded.
-- Consequences: `ControlPlaneStore.list_open_tasks()` and `ControlPlaneStore.list_child_tasks(..., include_terminal=False)` now filter to `PENDING` and `RUNNING` only. Niobe and Morpheus therefore wait only on truly active child tasks and can correctly ignore earlier blocked retries when a later child has already delivered the required artifact.
+- Context: Niaobe stayed stuck in `WAIT_FOR_EXTERNAL` on a completed Morpheus retry because the store-layer child-task query still surfaced an older blocked Morpheus child as “active”, so Niaobe never advanced to Oracle even though a newer software-delivery task had already succeeded.
+- Consequences: `ControlPlaneStore.list_open_tasks()` and `ControlPlaneStore.list_child_tasks(..., include_terminal=False)` now filter to `PENDING` and `RUNNING` only. Niaobe and Morpheus therefore wait only on truly active child tasks and can correctly ignore earlier blocked retries when a later child has already delivered the required artifact.
 - Status: Accepted
 
 - Date: 2026-04-14
 - Decision: Runtime execution context must be built through exactly two generic builders: `build_project_context(...)` for workspace-root and project-scope roles, and `build_task_context(...)` for task-scope roles.
-- Context: The earlier external and workspace executors had started to diverge in how they assembled prompt context, which risked leaking broader state back into the software roles and made the system harder to extend when new roles are added. The requested policy is intentionally simple: `master`/`neo`/`agent_smith` get workspace-root scope, `niobe`/`architect`/`oracle` get project scope, and `morpheus` plus the internal software team get task scope.
+- Context: The earlier external and workspace executors had started to diverge in how they assembled prompt context, which risked leaking broader state back into the software roles and made the system harder to extend when new roles are added. The requested policy is intentionally simple: `master`/`neo`/`agent_smith` get workspace-root scope, `niaobe`/`architect`/`oracle` get project scope, and `morpheus` plus the internal software team get task scope.
 - Consequences: `ExecutionContextBuilder` in `openclaw_agents/runtime/external_executor.py` now owns scope selection and routes all runtime packets through only `build_project_context(...)` or `build_task_context(...)`. `openclaw_workspace_executor.py` and `ollama_prompt_runner.py` now consume the normalized `context_payload` directly rather than reconstructing their own broader prompt context. Software roles therefore stay bounded to project-folder task context, while future visible roles can reuse the same generic scope model without another builder explosion.
 - Status: Accepted
 
 - Date: 2026-04-14
 - Decision: A response envelope with task `status` of `PENDING` or `RUNNING` keeps the parent task open, but it still finalizes the specific task attempt and agent run that produced the response.
-- Context: Orchestration roles such as `Niobe` and `Morpheus` legitimately emit `status=\"RUNNING\"` when they hand work off to a child and leave the parent task in `WAITING_EXTERNAL`. The earlier dispatcher persisted that same `RUNNING` state onto `task_attempts` and `agent_runs` even while also setting `finished_at` / `ended_at`, which created ghost live rows and distorted queue introspection.
+- Context: Orchestration roles such as `Niaobe` and `Morpheus` legitimately emit `status=\"RUNNING\"` when they hand work off to a child and leave the parent task in `WAITING_EXTERNAL`. The earlier dispatcher persisted that same `RUNNING` state onto `task_attempts` and `agent_runs` even while also setting `finished_at` / `ended_at`, which created ghost live rows and distorted queue introspection.
 - Consequences: `RuntimeDispatcher.record_response()` now maps handoff responses (`PENDING` / `RUNNING`) to terminal lifecycle status `SUCCESS` for `task_attempts` and `agent_runs`, while preserving the parent task’s own `status` as `PENDING` or `RUNNING`. Queue and recovery logic can therefore trust open attempts/runs as truly active instead of historical handoff records.
 - Status: Accepted
 
@@ -555,4 +555,22 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Decision: After live migration, the shared control-plane DB should be treated as scheduler-summary-only and should not retain project-local history rows.
 - Context: The Phase 3 migration moved legacy workspace-backed projects from the shared SQLite database into per-project `.agents/project.db` files. Live verification after the migration showed the shared DB can operate with zero rows in project-local tables while still retaining `projects` summary rows and running the gateway/worker services normally.
 - Consequences: Operational checks should now expect `tasks`, `task_attempts`, `agent_runs`, `artifacts`, `decisions`, `escalations`, `control_events`, `project_snapshots`, `zulip_message_links`, `workspace_states`, and `recovery_events` to live only in project-local DBs. The shared DB remains the scheduler registry and lease store, not a fallback archive for completed project history.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: The project orchestrator is canonically named `Niaobe`, and runtime-facing compatibility aliases for the previous spelling should be removed once live credentials are renamed.
+- Context: The first rename pass needed a temporary bridge because the live Zulip credential filename still used the older spelling, but that bridge should not remain in the steady-state runtime.
+- Consequences: Active runtime/config/schema paths use `niaobe` as the project orchestrator id and `Niaobe` as the display name. The live credential file is now `niaobe.zuliprc`, and the gateway no longer carries a runtime fallback for the previous spelling.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: Large structured projects should be represented as a `project_delivery_plan` and executed by Niaobe one work item at a time.
+- Context: The previous project loop treated software delivery as one monolithic `ORCHESTRATE_SOFTWARE` step, which could not express milestone gating, milestone-specific backlog tracking, or sequential verification before advancing to the next requested task.
+- Consequences: AgentSmith framing now emits a `delivery_plan_seed` when milestone structure is present in the intake. Niaobe materializes that into a `project_delivery_plan`, dispatches one work item at a time to Morpheus, requires Oracle verification for each work item before advancing, and management files project milestone/backlog status from that plan plus the live task/report state.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: `ControlPlaneStore` startup must self-migrate legacy `niobe` database schema/value state to `niaobe`.
+- Context: The canonical rename in code/config was not enough for the live gateway because existing shared SQLite files still had `orchestrator_leases`, `projects`, `control_events`, and `recovery_events` schemas constrained to `niobe`, which caused the repo-specific Zulip gateway to crash during startup lease initialization.
+- Consequences: Store initialization now rebuilds legacy constrained tables and rewrites persisted structured values so both the shared scheduler DB and older project-local DBs can boot against the canonical `niaobe` runtime identity without manual database cleanup.
 - Status: Accepted

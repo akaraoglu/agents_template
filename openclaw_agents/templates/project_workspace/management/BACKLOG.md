@@ -1,6 +1,6 @@
 # BACKLOG
 
-Backlog items should be specific enough that `AgentSmith`, `Niobe`, or `Morpheus` can decide whether they are ready, blocked, or out of scope.
+Backlog items should be specific enough that `AgentSmith`, `Niaobe`, or `Morpheus` can decide whether they are ready, blocked, or out of scope.
 
 | Item ID | Summary | Priority | Ready | Depends On | Target Phase | Requested By | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |

@@ -35,7 +35,7 @@ agents:
       - "implementation"
       - "verification execution"
     accepts_tasks: ["APPROVE_PRIORITY", "RESOLVE_ESCALATION", "CLOSE_PROJECT"]
-    allowed_requesters: ["neo", "agent_smith", "niobe"]
+    allowed_requesters: ["neo", "agent_smith", "niaobe"]
     primary_artifact: "executive_decision"
     prompt_path: "prompts/master.md"
 
@@ -57,7 +57,7 @@ agents:
       - "software execution"
       - "project verification"
     accepts_tasks: ["CLARIFY_GOAL", "RESOLVE_ESCALATION"]
-    allowed_requesters: ["master", "agent_smith", "niobe", "architect", "morpheus"]
+    allowed_requesters: ["master", "agent_smith", "niaobe", "architect", "morpheus"]
     primary_artifact: "clarification_brief"
     prompt_path: "prompts/neo.md"
 
@@ -80,19 +80,19 @@ agents:
       - "project execution"
       - "software delivery"
     accepts_tasks: ["FRAME_PROJECT", "RESOLVE_ESCALATION"]
-    allowed_requesters: ["master", "neo", "niobe"]
+    allowed_requesters: ["master", "neo", "niaobe"]
     primary_artifact: "project_charter"
     prompt_path: "prompts/agent_smith.md"
 
-  niobe:
-    display_name: "Niobe"
+  niaobe:
+    display_name: "Niaobe"
     aliases: ["Niaobe", "Project Manager"]
     role_type: "orchestrator"
     visibility: "visible"
     lifecycle: "singleton"
     scheduling:
       lease_required: true
-      orchestrator_id: "niobe"
+      orchestrator_id: "niaobe"
       max_active_projects: 1
       lease_ttl_minutes: 30
       renew_interval_minutes: 5
@@ -110,7 +110,7 @@ agents:
     accepts_tasks: ["ORCHESTRATE_PROJECT", "CLOSE_PROJECT", "RESOLVE_ESCALATION"]
     allowed_requesters: ["agent_smith", "master", "neo"]
     primary_artifact: "project_status_report"
-    prompt_path: "prompts/niobe.md"
+    prompt_path: "prompts/niaobe.md"
 
   architect:
     display_name: "Architect"
@@ -130,7 +130,7 @@ agents:
       - "implementation execution"
       - "project verification"
     accepts_tasks: ["DESIGN_ARCHITECTURE", "REQUEST_ARCHITECTURE_CLARIFICATION"]
-    allowed_requesters: ["master", "neo", "agent_smith", "niobe", "morpheus"]
+    allowed_requesters: ["master", "neo", "agent_smith", "niaobe", "morpheus"]
     primary_artifact: "architecture_spec"
     prompt_path: "prompts/architect.md"
 
@@ -157,7 +157,7 @@ agents:
       - "project verification"
       - "business priority decisions"
     accepts_tasks: ["ORCHESTRATE_SOFTWARE"]
-    allowed_requesters: ["niobe", "architect", "neo", "master"]
+    allowed_requesters: ["niaobe", "architect", "neo", "master"]
     primary_artifact: "software_delivery_package"
     prompt_path: "prompts/morpheus.md"
 
@@ -179,7 +179,7 @@ agents:
       - "project routing"
       - "implementation"
     accepts_tasks: ["VERIFY_PROJECT"]
-    allowed_requesters: ["niobe", "agent_smith", "neo", "master"]
+    allowed_requesters: ["niaobe", "agent_smith", "neo", "master"]
     primary_artifact: "verification_report"
     prompt_path: "prompts/oracle.md"
 

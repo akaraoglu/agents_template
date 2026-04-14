@@ -33,7 +33,7 @@ class PromptSubprocessExecutorTests(unittest.TestCase):
             project_id="P_prompt_subprocess",
             goal="Design a project with external executor context",
             current_phase="project_design",
-            current_owner_agent="niobe",
+            current_owner_agent="niaobe",
             next_action={"type": "DESIGN_ARCHITECTURE", "target_agent": "architect"},
             workspace_ref=str(workspace_ref),
         )
@@ -64,7 +64,7 @@ class PromptSubprocessExecutorTests(unittest.TestCase):
         )
         task = store.record_task(
             project_id="P_prompt_subprocess",
-            from_agent="niobe",
+            from_agent="niaobe",
             to_agent="architect",
             task_type="DESIGN_ARCHITECTURE",
             title="Design the project",
@@ -109,7 +109,7 @@ response = {
         }
     ],
     "findings": ["external executor used prompt and context"],
-    "next_action": {"type": "RETURN_TO_REQUESTER", "reason": "architecture complete", "target_agent": "niobe"},
+    "next_action": {"type": "RETURN_TO_REQUESTER", "reason": "architecture complete", "target_agent": "niaobe"},
     "risks": [],
     "trace": {"run_id": context["task_envelope"]["metadata"]["run_id"]},
 }
@@ -172,7 +172,7 @@ Path(os.environ["OPENCLAW_RESPONSE_FILE"]).write_text(yaml.safe_dump(response, s
         self.assertEqual(persisted_task["status"], "SUCCESS")
         persisted_project = store.get_project("P_prompt_subprocess")
         assert persisted_project is not None
-        self.assertEqual(persisted_project["current_owner_agent"], "niobe")
+        self.assertEqual(persisted_project["current_owner_agent"], "niaobe")
 
     def test_running_handoff_closes_attempt_and_run_but_keeps_parent_task_open(self) -> None:
         store = self.harness.store
@@ -183,14 +183,14 @@ Path(os.environ["OPENCLAW_RESPONSE_FILE"]).write_text(yaml.safe_dump(response, s
             project_id="P_running_handoff",
             goal="Keep the parent task open while closing the handoff attempt",
             current_phase="project_orchestration",
-            current_owner_agent="niobe",
-            next_action={"type": "ORCHESTRATE_PROJECT", "target_agent": "niobe"},
+            current_owner_agent="niaobe",
+            next_action={"type": "ORCHESTRATE_PROJECT", "target_agent": "niaobe"},
             workspace_ref=str(workspace_ref),
         )
         task = store.record_task(
             project_id="P_running_handoff",
             from_agent="agent_smith",
-            to_agent="niobe",
+            to_agent="niaobe",
             task_type="ORCHESTRATE_PROJECT",
             title="Advance the project",
             goal="Keep the parent task open while closing the handoff attempt",
@@ -219,18 +219,18 @@ Path(os.environ["OPENCLAW_RESPONSE_FILE"]).write_text(yaml.safe_dump(response, s
         response = {
             "task_id": task["task_id"],
             "project_id": task["project_id"],
-            "agent": "niobe",
+            "agent": "niaobe",
             "status": "RUNNING",
-            "summary": "Niobe queued Architect and is waiting for the design result.",
+            "summary": "Niaobe queued Architect and is waiting for the design result.",
             "artifacts_out": [
                 {
                     "artifact_type": "project_status_report",
-                    "ref": "inline://niobe-status-running-handoff",
+                    "ref": "inline://niaobe-status-running-handoff",
                     "payload": {
                         "project_id": task["project_id"],
                         "task_id": task["task_id"],
                         "state": "WAITING_RESULT",
-                        "summary": "Niobe queued Architect and is waiting for the design result.",
+                        "summary": "Niaobe queued Architect and is waiting for the design result.",
                         "evidence_received": [],
                         "next_action": {
                             "type": "WAIT_FOR_EXTERNAL",
@@ -343,7 +343,7 @@ Path(os.environ["OPENCLAW_RESPONSE_FILE"]).write_text(yaml.safe_dump(response, s
         )
         parent_task = store.record_task(
             project_id="P_task_scope",
-            from_agent="niobe",
+            from_agent="niaobe",
             to_agent="morpheus",
             task_type="ORCHESTRATE_SOFTWARE",
             title="Drive software delivery",

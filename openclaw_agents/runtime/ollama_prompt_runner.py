@@ -31,7 +31,7 @@ VISIBLE_TARGETS = {
     "master",
     "neo",
     "agent_smith",
-    "niobe",
+    "niaobe",
     "architect",
     "morpheus",
     "oracle",

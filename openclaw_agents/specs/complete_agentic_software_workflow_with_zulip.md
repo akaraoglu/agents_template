@@ -65,7 +65,7 @@ core_decisions:
     - "master"
     - "neo"
     - "agent_smith"
-    - "niobe"
+    - "niaobe"
     - "morpheus"
     - "architect"
     - "oracle"
@@ -87,8 +87,8 @@ naming:
     agent_smith:
       display_name: "AgentSmith"
       aliases: ["Agent Smith", "General Manager"]
-    niobe:
-      display_name: "Niobe"
+    niaobe:
+      display_name: "Niaobe"
       aliases: ["Niaobe", "Project Manager"]
     architect:
       display_name: "Architect"
@@ -114,7 +114,7 @@ principles:
   - "Only orchestrators decide what runs next inside active loops."
   - "Every task has exactly one current owner and exactly one return target."
   - "Specialists return to the requesting agent, not to a globally assumed manager."
-  - "Niobe owns project flow. Morpheus owns software flow."
+  - "Niaobe owns project flow. Morpheus owns software flow."
   - "Oracle verifies projects. Tester verifies software tasks."
   - "Every code-changing software task must produce or update automated tests and a test execution report."
   - "Zulip carries communication and audit history, but authoritative state must be recoverable without reading Zulip history."
@@ -170,7 +170,7 @@ agent_registry:
     owns: ["final priority decisions", "risk acceptance", "exception approvals"]
     does_not_own: ["project orchestration", "implementation", "verification execution"]
     accepts_tasks: ["APPROVE_PRIORITY", "RESOLVE_ESCALATION", "CLOSE_PROJECT"]
-    allowed_requesters: ["neo", "agent_smith", "niobe"]
+    allowed_requesters: ["neo", "agent_smith", "niaobe"]
     returns_to: "requesting_agent"
 
   neo:
@@ -180,7 +180,7 @@ agent_registry:
     owns: ["goal clarification", "tradeoff analysis", "strategic technical direction"]
     does_not_own: ["project routing", "software execution", "project verification"]
     accepts_tasks: ["CLARIFY_GOAL", "RESOLVE_ESCALATION"]
-    allowed_requesters: ["master", "agent_smith", "niobe", "architect", "morpheus"]
+    allowed_requesters: ["master", "agent_smith", "niaobe", "architect", "morpheus"]
     returns_to: "requesting_agent"
 
   agent_smith:
@@ -190,10 +190,10 @@ agent_registry:
     owns: ["request intake", "project framing", "acceptance criteria definition", "initial priority assignment"]
     does_not_own: ["deep research", "project execution", "software delivery"]
     accepts_tasks: ["FRAME_PROJECT", "RESOLVE_ESCALATION"]
-    allowed_requesters: ["master", "neo", "niobe"]
+    allowed_requesters: ["master", "neo", "niaobe"]
     returns_to: "requesting_agent"
 
-  niobe:
+  niaobe:
     role_type: "orchestrator"
     lifecycle: "singleton"
     purpose: "Project-level orchestrator that decides what happens next until the project is done or blocked."
@@ -210,7 +210,7 @@ agent_registry:
     owns: ["architecture design", "component boundaries", "interface contracts"]
     does_not_own: ["project routing", "implementation execution", "project verification"]
     accepts_tasks: ["DESIGN_ARCHITECTURE", "REQUEST_ARCHITECTURE_CLARIFICATION"]
-    allowed_requesters: ["master", "neo", "agent_smith", "niobe", "morpheus"]
+    allowed_requesters: ["master", "neo", "agent_smith", "niaobe", "morpheus"]
     returns_to: "requesting_agent"
 
   morpheus:
@@ -220,7 +220,7 @@ agent_registry:
     owns: ["software delivery loop", "software subtask sequencing", "test-required completion of code work", "integration readiness for project verification"]
     does_not_own: ["project-level acceptance", "project verification", "business priority decisions"]
     accepts_tasks: ["ORCHESTRATE_SOFTWARE"]
-    allowed_requesters: ["niobe", "architect", "neo", "master"]
+    allowed_requesters: ["niaobe", "architect", "neo", "master"]
     returns_to: "requesting_agent"
 
   oracle:
@@ -230,7 +230,7 @@ agent_registry:
     owns: ["project-level verification", "verification reports", "evidence-based pass/fail judgments"]
     does_not_own: ["software testing loop", "project routing", "implementation"]
     accepts_tasks: ["VERIFY_PROJECT"]
-    allowed_requesters: ["niobe", "agent_smith", "neo", "master"]
+    allowed_requesters: ["niaobe", "agent_smith", "neo", "master"]
     returns_to: "requesting_agent"
 
   planner:
@@ -265,14 +265,14 @@ agent_registry:
 
 routing:
   default_entry_agent: "agent_smith"
-  default_project_orchestrator: "niobe"
+  default_project_orchestrator: "niaobe"
   default_software_orchestrator: "morpheus"
   route_by_task_type:
     CLARIFY_GOAL: "neo"
     FRAME_PROJECT: "agent_smith"
     APPROVE_PRIORITY: "master"
     RESOLVE_ESCALATION: "master"
-    ORCHESTRATE_PROJECT: "niobe"
+    ORCHESTRATE_PROJECT: "niaobe"
     DESIGN_ARCHITECTURE: "architect"
     REQUEST_ARCHITECTURE_CLARIFICATION: "architect"
     ORCHESTRATE_SOFTWARE: "morpheus"
@@ -292,7 +292,7 @@ global_invariants:
   - "Every task has exactly one current owner."
   - "Every task names exactly one return target."
   - "Only orchestrators choose next-step routing inside live loops."
-  - "Niobe never directly calls Planner, Implementer, or Tester."
+  - "Niaobe never directly calls Planner, Implementer, or Tester."
   - "Morpheus never closes the project."
   - "Oracle never replaces Tester."
   - "Project closure requires design evidence, implementation evidence, and Oracle verification evidence."
@@ -313,7 +313,7 @@ required_rules:
 
 state_machines:
   niobe_project_loop:
-    owner: "niobe"
+    owner: "niaobe"
     purpose: "Adaptive project orchestration"
     states:
       RECEIVED:
@@ -321,7 +321,7 @@ state_machines:
           CHARTER_INCOMPLETE: "CLARIFY"
           CHARTER_VALID: "DECIDE_NEXT"
       CLARIFY:
-        rule: "Niobe requests clarification from Neo or AgentSmith. She does not silently invent missing requirements."
+        rule: "Niaobe requests clarification from Neo or AgentSmith. She does not silently invent missing requirements."
         transitions:
           CLARIFIED: "DECIDE_NEXT"
           BLOCKED: "ESCALATE"
@@ -369,7 +369,7 @@ state_machines:
             action: "decide next best step based on latest evidence"
             next_state: "DECIDE_NEXT"
       ESCALATE:
-        rule: "Niobe must send an explicit escalation packet with a recommended action."
+        rule: "Niaobe must send an explicit escalation packet with a recommended action."
         transitions:
           ESCALATION_RESOLVED: "DECIDE_NEXT"
           ESCALATION_REJECTED: "BLOCKED"
@@ -451,7 +451,7 @@ state_machines:
             action: "request architect clarification"
             next_state: "WAITING_ARCHITECT"
           - when: "failure_cause in [REQUIREMENT_GAP, ENVIRONMENT_FAILURE, UNKNOWN]"
-            action: "return escalation_packet to niobe"
+            action: "return escalation_packet to niaobe"
             next_state: "BLOCKED"
       WAITING_ARCHITECT:
         transitions:
@@ -460,13 +460,13 @@ state_machines:
       CLARIFY_OR_ESCALATE:
         decision_rules:
           - when: "issue_type == requirement_gap"
-            action: "return escalation_packet to niobe"
+            action: "return escalation_packet to niaobe"
             next_state: "BLOCKED"
           - when: "issue_type == architecture_gap"
             action: "request architect clarification"
             next_state: "WAITING_ARCHITECT"
           - when: "issue_type == environment_issue"
-            action: "return escalation_packet to niobe"
+            action: "return escalation_packet to niaobe"
             next_state: "BLOCKED"
           - when: "issue_type == minor_plan_gap"
             action: "retry planner"
@@ -594,7 +594,7 @@ sandbox:
     - "sandbox must support isolated task attempts"
 
 stop_conditions:
-  niobe:
+  niaobe:
     max_project_transitions_before_escalation: 20
   morpheus:
     max_retry_cycles_per_software_task: 5
@@ -661,20 +661,20 @@ schemas:
 default_flow:
   happy_path:
     - "Human or MASTER request -> AgentSmith"
-    - "AgentSmith frames project -> Niobe"
-    - "Niobe requests architecture -> Architect"
-    - "Niobe requests software delivery -> Morpheus"
+    - "AgentSmith frames project -> Niaobe"
+    - "Niaobe requests architecture -> Architect"
+    - "Niaobe requests software delivery -> Morpheus"
     - "Morpheus loops Planner -> Implementer -> Tester until a software delivery package is ready"
-    - "Niobe requests project verification -> Oracle"
-    - "Niobe closes or reroutes based on Oracle report"
+    - "Niaobe requests project verification -> Oracle"
+    - "Niaobe closes or reroutes based on Oracle report"
   allowed_variations:
     - "Neo may clarify before or during execution"
     - "Architect may be recalled after Oracle failure or during Morpheus architecture gaps"
-    - "Morpheus may ask Architect for clarification without bypassing Niobe on project-level decisions"
+    - "Morpheus may ask Architect for clarification without bypassing Niaobe on project-level decisions"
   prohibited_paths:
     - "Oracle replacing Tester inside the software loop"
     - "Morpheus closing a project"
-    - "Niobe directly calling Planner, Implementer, or Tester"
+    - "Niaobe directly calling Planner, Implementer, or Tester"
     - "Any specialist changing project scope without escalation"
 
 human_controls:
@@ -713,7 +713,7 @@ implementation_order:
     - "Create Zulip gateway service"
     - "Create sandbox runner contract"
   phase_2_core_execution:
-    - "Implement Niobe state machine"
+    - "Implement Niaobe state machine"
     - "Implement Morpheus state machine"
     - "Implement Planner prompt and runner"
     - "Implement Implementer prompt and runner"
@@ -745,7 +745,7 @@ builder_agent_must_generate:
   - "prompts/master.md"
   - "prompts/neo.md"
   - "prompts/agent_smith.md"
-  - "prompts/niobe.md"
+  - "prompts/niaobe.md"
   - "prompts/architect.md"
   - "prompts/morpheus.md"
   - "prompts/oracle.md"
@@ -763,10 +763,10 @@ builder_agent_must_generate:
 
 acceptance_criteria_for_builder_agent:
   - "All agents can be instantiated from registry data without handwritten special cases except model overrides."
-  - "Niobe can read an Oracle verification report and choose reroute, retry, escalate, or close."
+  - "Niaobe can read an Oracle verification report and choose reroute, retry, escalate, or close."
   - "Morpheus always spawns Planner, Implementer, and Tester individually."
   - "Every Morpheus success path includes a test_execution_report."
-  - "Planner, Implementer, and Tester are not directly callable by Niobe."
+  - "Planner, Implementer, and Tester are not directly callable by Niaobe."
   - "Architect and Oracle can return to the requesting agent."
   - "A new specialist agent can be registered without rewriting the project flow contract."
   - "Zulip can be restarted or lose queue state without losing authoritative workflow state."
@@ -780,7 +780,7 @@ acceptance_criteria_for_builder_agent:
 ## 1. The whole shape in one sentence
 
 This is a **two-loop system**:
-- **Niobe** runs the **project loop**.
+- **Niaobe** runs the **project loop**.
 - **Morpheus** runs the **software loop**.
 
 Everything else exists to either frame work, perform bounded work, or verify results.
@@ -790,10 +790,10 @@ Everything else exists to either frame work, perform bounded work, or verify res
 ### Executive and intake layer
 - **MASTER**: final authority for priority, risk, and exceptional overrides.
 - **Neo**: clarifies goals, constraints, and tradeoffs.
-- **AgentSmith**: turns requests into project charters and hands the project to Niobe.
+- **AgentSmith**: turns requests into project charters and hands the project to Niaobe.
 
 ### Orchestration layer
-- **Niobe**: decides project-level next steps.
+- **Niaobe**: decides project-level next steps.
 - **Morpheus**: decides software-level next steps.
 
 ### Specialist layer
@@ -878,13 +878,13 @@ If Zulip and workspace state disagree, fix the workspace first, then publish the
 
 1. Human or MASTER makes a request.
 2. AgentSmith frames it into a project charter.
-3. Niobe takes ownership of project orchestration.
-4. Niobe gets architecture from Architect.
-5. Niobe assigns software delivery to Morpheus.
+3. Niaobe takes ownership of project orchestration.
+4. Niaobe gets architecture from Architect.
+5. Niaobe assigns software delivery to Morpheus.
 6. Morpheus runs Planner -> Implementer -> Tester until the software package is good enough.
-7. Niobe sends the result to Oracle.
+7. Niaobe sends the result to Oracle.
 8. Oracle returns a verification report.
-9. Niobe closes, reroutes, retries, or escalates.
+9. Niaobe closes, reroutes, retries, or escalates.
 
 ## 8. The intended MVP boundary
 

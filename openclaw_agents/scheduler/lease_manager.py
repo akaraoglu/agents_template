@@ -23,7 +23,7 @@ class LeaseDecision:
 class LeaseManager:
     """Manage singleton orchestrator leases backed by the control-plane store."""
 
-    DEFAULT_TTLS = {"niobe": 30, "morpheus": 60}
+    DEFAULT_TTLS = {"niaobe": 30, "morpheus": 60}
 
     def __init__(self, store: ControlPlaneStore | None = None) -> None:
         self.store = store or ControlPlaneStore()
@@ -198,7 +198,7 @@ class LeaseManager:
         return LeaseDecision(orchestrator_id, None, "FREE", None)
 
     def release_project_leases(self, project_id: str, *, release_reason: str) -> None:
-        for orchestrator_id in ("niobe", "morpheus"):
+        for orchestrator_id in ("niaobe", "morpheus"):
             lease = self.get_lease(orchestrator_id)
             if lease and lease.get("active_project_id") == project_id:
                 self.release(orchestrator_id, release_reason=release_reason, expected_project_id=project_id)
@@ -206,7 +206,7 @@ class LeaseManager:
     def expire_stale_leases(self, *, now: str | None = None) -> list[dict]:
         now = now or utc_now()
         expired: list[dict] = []
-        for orchestrator_id in ("niobe", "morpheus"):
+        for orchestrator_id in ("niaobe", "morpheus"):
             lease = self.get_lease(orchestrator_id)
             if self.lease_is_expired(lease, now=now):
                 expired.append(lease or {})

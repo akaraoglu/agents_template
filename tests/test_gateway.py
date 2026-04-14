@@ -116,7 +116,7 @@ class GatewayTests(unittest.TestCase):
         service = GatewayService(gateway=gateway)
         service.bots = {
             "agent_smith": SimpleNamespace(),
-            "niobe": SimpleNamespace(),
+            "niaobe": SimpleNamespace(),
             "architect": SimpleNamespace(),
             "morpheus": SimpleNamespace(),
             "oracle": SimpleNamespace(),
@@ -154,7 +154,7 @@ class GatewayTests(unittest.TestCase):
             {
                 "next_action_json": {
                     "type": "RETURN_TO_REQUESTER",
-                    "target_agent": "niobe",
+                    "target_agent": "niaobe",
                 }
             },
             where_clause="project_id = ?",
@@ -193,10 +193,10 @@ class GatewayTests(unittest.TestCase):
                 "task_id": parent_task_id,
                 "project_id": result.project_id,
                 "parent_task_id": None,
-                "from_agent": "niobe",
+                "from_agent": "niaobe",
                 "to_agent": "morpheus",
                 "current_owner_agent": "morpheus",
-                "return_to": "niobe",
+                "return_to": "niaobe",
                 "task_type": "ORCHESTRATE_SOFTWARE",
                 "title": "Deliver software",
                 "goal": "Implement the requested software change.",
@@ -244,7 +244,7 @@ class GatewayTests(unittest.TestCase):
         service = GatewayService(gateway=gateway)
         service.bots = {
             "agent_smith": SimpleNamespace(),
-            "niobe": SimpleNamespace(),
+            "niaobe": SimpleNamespace(),
             "architect": SimpleNamespace(),
             "morpheus": SimpleNamespace(),
             "oracle": SimpleNamespace(),

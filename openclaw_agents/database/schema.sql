@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS projects (
       'master',
       'neo',
       'agent_smith',
-      'niobe',
+      'niaobe',
       'architect',
       'morpheus',
       'oracle',
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS projects (
       'tester'
     )
   ),
-  assigned_project_orchestrator TEXT NOT NULL CHECK (assigned_project_orchestrator = 'niobe'),
+  assigned_project_orchestrator TEXT NOT NULL CHECK (assigned_project_orchestrator = 'niaobe'),
   assigned_software_orchestrator TEXT NOT NULL CHECK (assigned_software_orchestrator = 'morpheus'),
   next_action_json TEXT NOT NULL DEFAULT '{}',
   workspace_ref TEXT,
@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
     artifact_type IN (
       'clarification_brief',
       'project_charter',
+      'project_delivery_plan',
       'project_status_report',
       'architecture_spec',
       'software_task_plan',
@@ -245,13 +246,14 @@ CREATE TABLE IF NOT EXISTS scheduling_records (
       'ESCALATION_PERSISTED',
       'ORACLE_REPORT_PERSISTED',
       'MORPHEUS_DELIVERY_PERSISTED',
+      'PROJECT_PLAN_PERSISTED',
       'PROJECT_STATUS_SNAPSHOT_PERSISTED'
     )
   )
 );
 
 CREATE TABLE IF NOT EXISTS orchestrator_leases (
-  orchestrator_id TEXT PRIMARY KEY CHECK (orchestrator_id IN ('niobe', 'morpheus')),
+  orchestrator_id TEXT PRIMARY KEY CHECK (orchestrator_id IN ('niaobe', 'morpheus')),
   lease_status TEXT NOT NULL CHECK (lease_status IN ('FREE', 'HELD', 'EXPIRED', 'RELEASING')),
   active_project_id TEXT REFERENCES projects(project_id) ON DELETE SET NULL,
   lease_owner_run_id TEXT REFERENCES agent_runs(run_id) ON DELETE SET NULL,
@@ -295,6 +297,7 @@ CREATE TABLE IF NOT EXISTS project_snapshots (
       'ESCALATION_PERSISTED',
       'ORACLE_REPORT_PERSISTED',
       'MORPHEUS_DELIVERY_PERSISTED',
+      'PROJECT_PLAN_PERSISTED',
       'PROJECT_STATUS_SNAPSHOT_PERSISTED'
     )
   ),
@@ -305,7 +308,7 @@ CREATE TABLE IF NOT EXISTS project_snapshots (
 CREATE TABLE IF NOT EXISTS control_events (
   event_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-  orchestrator_id TEXT CHECK (orchestrator_id IN ('niobe', 'morpheus')),
+  orchestrator_id TEXT CHECK (orchestrator_id IN ('niaobe', 'morpheus')),
   command TEXT NOT NULL CHECK (
     command IN (
       'PAUSE_PROJECT',
@@ -341,7 +344,7 @@ CREATE TABLE IF NOT EXISTS workspace_states (
 CREATE TABLE IF NOT EXISTS recovery_events (
   recovery_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-  orchestrator_id TEXT CHECK (orchestrator_id IN ('niobe', 'morpheus')),
+  orchestrator_id TEXT CHECK (orchestrator_id IN ('niaobe', 'morpheus')),
   workspace_ref TEXT REFERENCES workspace_states(workspace_ref) ON DELETE SET NULL,
   failure_mode TEXT NOT NULL,
   action_taken TEXT NOT NULL,

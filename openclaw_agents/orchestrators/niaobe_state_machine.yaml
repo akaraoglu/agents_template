@@ -1,11 +1,11 @@
 schema_version: "1.0.0"
-machine_id: "niobe_project_loop"
-owner: "niobe"
+machine_id: "niaobe_project_loop"
+owner: "niaobe"
 purpose: "Adaptive project orchestration from project charter to verified closure."
 
 lease_policy:
   lease_required: true
-  orchestrator_id: "niobe"
+  orchestrator_id: "niaobe"
   max_active_projects: 1
   lease_ttl_minutes: 30
   renew_interval_minutes: 5
@@ -24,12 +24,12 @@ control_commands:
     actions:
       - "mark pause_requested = true"
       - "persist final boundary snapshot"
-      - "release niobe lease"
+      - "release niaobe lease"
     next_state: "PAUSED"
   RESUME_PROJECT:
     allowed_from: ["PAUSED"]
     actions:
-      - "acquire niobe lease"
+      - "acquire niaobe lease"
       - "load last_snapshot_id"
       - "continue from next_action"
     next_state: "RESTORE_FROM_SNAPSHOT"
@@ -38,7 +38,7 @@ control_commands:
     actions:
       - "validate safe boundary or require FORCE_INTERRUPT"
       - "persist project snapshot"
-      - "release niobe lease"
+      - "release niaobe lease"
       - "emit switch audit event"
   FORCE_INTERRUPT:
     allowed_from: ["RECEIVED", "CLARIFY", "DECIDE_NEXT", "WAITING_RESULT", "REVIEW_RESULT", "ESCALATE"]
@@ -56,7 +56,7 @@ states:
 
   CLARIFY:
     runtime_status: "ACTIVE"
-    rule: "Niobe requests clarification from Neo or AgentSmith. She does not silently invent missing requirements."
+    rule: "Niaobe requests clarification from Neo or AgentSmith. She does not silently invent missing requirements."
     transitions:
       CLARIFIED: "DECIDE_NEXT"
       BLOCKED: "ESCALATE"
@@ -87,7 +87,7 @@ states:
       recommended_switch_triggers:
         - "Oracle verification in progress"
         - "Escalation pending human decision"
-        - "Morpheus task in progress and Niobe has no immediate local action"
+        - "Morpheus task in progress and Niaobe has no immediate local action"
         - "Project explicitly paused"
         - "Higher-priority eligible project arrives"
     transitions:
@@ -125,7 +125,7 @@ states:
     runtime_status_map:
       awaiting_human_or_executive_decision: "WAITING_EXTERNAL"
       unresolved_blocker: "BLOCKED"
-    rule: "Niobe must send an explicit escalation packet with a recommended action."
+    rule: "Niaobe must send an explicit escalation packet with a recommended action."
     scheduler_behavior:
       switch_allowed_after_persisted_boundary: true
     transitions:

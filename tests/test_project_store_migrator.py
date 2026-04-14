@@ -32,7 +32,7 @@ class ProjectStoreMigratorTests(unittest.TestCase):
                   current_owner_agent, assigned_project_orchestrator, assigned_software_orchestrator,
                   next_action_json, workspace_ref, last_snapshot_id, last_activity_at, created_at, updated_at
                 ) VALUES (?, ?, 'ACTIVE', 'WAITING_EXTERNAL', 'MEDIUM', 'software_implementation',
-                          'implementer', 'niobe', 'morpheus', '{}', ?, NULL, ?, ?, ?)
+                          'implementer', 'niaobe', 'morpheus', '{}', ?, NULL, ?, ?, ?)
                 """,
                 (project_id, "Legacy project", str(workspace), now, now, now),
             )

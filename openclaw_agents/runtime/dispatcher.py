@@ -381,6 +381,8 @@ class RuntimeDispatcher:
             return "ORACLE_REPORT_PERSISTED"
         if "software_delivery_package" in artifact_types:
             return "MORPHEUS_DELIVERY_PERSISTED"
+        if "project_delivery_plan" in artifact_types:
+            return "PROJECT_PLAN_PERSISTED"
         if "project_status_report" in artifact_types or "project_closure_report" in artifact_types:
             return "PROJECT_STATUS_SNAPSHOT_PERSISTED"
         if "escalation_packet" in artifact_types:

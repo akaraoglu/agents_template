@@ -9,7 +9,7 @@ This file is the workspace-level project charter and execution contract. Keep it
 - Priority: `LOW | MEDIUM | HIGH | URGENT`
 - Project status: `NEW | ACTIVE | VERIFICATION_PENDING | DONE | BLOCKED | CANCELLED`
 - Runtime status: `NEW | READY | ACTIVE | PAUSE_REQUESTED | PAUSED | WAITING_EXTERNAL | WAITING_VERIFICATION | BLOCKED | DONE | CANCELLED`
-- Assigned project orchestrator: `Niobe`
+- Assigned project orchestrator: `Niaobe`
 - Assigned software orchestrator: `Morpheus`
 - Workspace ref: `[absolute_workspace_path]`
 - Repo root: `[absolute_repo_root]`

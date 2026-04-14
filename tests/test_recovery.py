@@ -34,7 +34,7 @@ class RecoveryTests(unittest.TestCase):
             project_id=self.project_id,
             goal="Validate recovery behavior",
             current_phase="software_orchestration",
-            current_owner_agent="niobe",
+            current_owner_agent="niaobe",
             workspace_ref=str(self.workspace),
             next_action={"type": "ORCHESTRATE_SOFTWARE", "target_agent": "morpheus"},
         )
@@ -54,7 +54,7 @@ class RecoveryTests(unittest.TestCase):
     def _capture_snapshot(self) -> dict:
         return SnapshotStore(self.harness.store).capture_project_snapshot(
             self.project_id,
-            captured_by="niobe",
+            captured_by="niaobe",
             latest_human_summary="safe boundary",
         )
 
@@ -93,7 +93,7 @@ class RecoveryTests(unittest.TestCase):
     def test_missing_snapshot_blocks_resume_and_persists_recovery_event(self) -> None:
         manager = RecoveryManager(self.harness.store)
 
-        assessment = manager.assess_resume(self.project_id, orchestrator_id="niobe")
+        assessment = manager.assess_resume(self.project_id, orchestrator_id="niaobe")
 
         self.assertFalse(assessment.ok)
         self.assertIn("missing_snapshot", assessment.issues)
@@ -106,7 +106,7 @@ class RecoveryTests(unittest.TestCase):
         self._capture_snapshot()
         (self.workspace / "README.md").write_text("seed\nbroken change\n")
 
-        assessment = RecoveryManager(self.harness.store).assess_resume(self.project_id, orchestrator_id="niobe")
+        assessment = RecoveryManager(self.harness.store).assess_resume(self.project_id, orchestrator_id="niaobe")
 
         self.assertFalse(assessment.ok)
         self.assertIn("workspace_dirty_tracked_files", assessment.issues)
@@ -129,7 +129,7 @@ class RecoveryTests(unittest.TestCase):
         self._capture_snapshot()
         (self.workspace / "README.md").write_text("seed\nbroken change\n")
         recovery_manager = RecoveryManager(self.harness.store)
-        first = recovery_manager.assess_resume(self.project_id, orchestrator_id="niobe")
+        first = recovery_manager.assess_resume(self.project_id, orchestrator_id="niaobe")
         self.assertFalse(first.ok)
 
         run_git(self.workspace, "checkout", "--", "README.md")
@@ -140,7 +140,7 @@ class RecoveryTests(unittest.TestCase):
         result = ControlCommandService(self.harness.store).resume_project(
             self.project_id,
             requested_by="operator",
-            orchestrator_id="niobe",
+            orchestrator_id="niaobe",
         )
 
         self.assertEqual(result.status, "APPLIED")
@@ -154,14 +154,14 @@ class RecoveryTests(unittest.TestCase):
 
     def test_recovery_assessment_rejects_active_lease_and_running_run(self) -> None:
         self._capture_snapshot()
-        LeaseManager(self.harness.store).acquire("niobe", self.project_id, run_id="run_live")
+        LeaseManager(self.harness.store).acquire("niaobe", self.project_id, run_id="run_live")
 
-        assessment = RecoveryManager(self.harness.store).assess_resume(self.project_id, orchestrator_id="niobe")
+        assessment = RecoveryManager(self.harness.store).assess_resume(self.project_id, orchestrator_id="niaobe")
 
         self.assertFalse(assessment.ok)
         self.assertIn("active_orchestrator_lease_present", assessment.issues)
         self.assertIn("active_agent_runs_present", assessment.issues)
-        self.assertEqual(assessment.details["active_leases"][0]["orchestrator_id"], "niobe")
+        self.assertEqual(assessment.details["active_leases"][0]["orchestrator_id"], "niaobe")
         self.assertEqual(assessment.details["active_agent_runs"][0]["run_id"], "run_live")
 
     def test_forced_interrupt_records_latest_snapshot_reference(self) -> None:
@@ -169,7 +169,7 @@ class RecoveryTests(unittest.TestCase):
 
         event = RecoveryManager(self.harness.store).record_forced_interrupt(
             self.project_id,
-            orchestrator_id="niobe",
+            orchestrator_id="niaobe",
             reason="operator forced switch",
         )
 

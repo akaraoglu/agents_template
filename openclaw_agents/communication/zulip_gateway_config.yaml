@@ -19,7 +19,7 @@ zulip:
     master: []
     neo: []
     agent_smith: ["exec", "projects", "escalations"]
-    niobe: ["projects", "software", "verification", "escalations"]
+    niaobe: ["projects", "software", "verification", "escalations"]
     morpheus: ["projects", "software", "escalations"]
     architect: ["projects", "software"]
     oracle: ["verification", "projects", "escalations"]

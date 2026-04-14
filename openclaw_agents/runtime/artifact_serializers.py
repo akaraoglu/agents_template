@@ -13,6 +13,7 @@ from openclaw_agents.database.store import ControlPlaneStore, utc_now
 ARTIFACT_TYPES = {
     "clarification_brief",
     "project_charter",
+    "project_delivery_plan",
     "project_status_report",
     "architecture_spec",
     "software_task_plan",

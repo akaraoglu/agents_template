@@ -19,6 +19,7 @@ WORKSPACE_ROOT_SCOPE_AGENTS = {"master", "neo", "agent_smith"}
 TASK_SCOPE_VISIBLE_AGENTS = {"morpheus"}
 PROJECT_CONTEXT_ARTIFACT_TYPES = (
     "project_charter",
+    "project_delivery_plan",
     "architecture_spec",
     "software_delivery_package",
     "verification_report",
@@ -101,6 +102,11 @@ class ExecutionContextBuilder:
         for key in (
             "software_goal",
             "project_goal",
+            "milestone_id",
+            "milestone_title",
+            "work_item_id",
+            "work_item_title",
+            "sequence_index",
             "retry_reason",
             "plan_task_id",
             "implementer_task_id",
@@ -177,11 +183,31 @@ class ExecutionContextBuilder:
             return payload
         if artifact_type == "project_charter":
             return {
+                "project_title": payload.get("project_title"),
                 "problem_statement": payload.get("problem_statement"),
                 "goals": (payload.get("goals") or [])[:5],
                 "acceptance_criteria": (payload.get("acceptance_criteria") or [])[:5],
                 "constraints": (payload.get("constraints") or [])[:5],
                 "open_questions": (payload.get("open_questions") or [])[:5],
+            }
+        if artifact_type == "project_delivery_plan":
+            return {
+                "summary": payload.get("summary"),
+                "delivery_shape": payload.get("delivery_shape"),
+                "milestones": [
+                    {
+                        "milestone_id": milestone.get("milestone_id"),
+                        "title": milestone.get("title"),
+                        "work_items": [
+                            {
+                                "work_item_id": work_item.get("work_item_id"),
+                                "title": work_item.get("title"),
+                            }
+                            for work_item in (milestone.get("work_items") or [])[:5]
+                        ],
+                    }
+                    for milestone in (payload.get("milestones") or [])[:5]
+                ],
             }
         if artifact_type == "architecture_spec":
             return {

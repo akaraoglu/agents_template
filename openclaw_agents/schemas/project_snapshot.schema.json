@@ -60,7 +60,7 @@
         "master",
         "neo",
         "agent_smith",
-        "niobe",
+        "niaobe",
         "architect",
         "morpheus",
         "oracle",
@@ -103,6 +103,7 @@
         "ESCALATION_PERSISTED",
         "ORACLE_REPORT_PERSISTED",
         "MORPHEUS_DELIVERY_PERSISTED",
+        "PROJECT_PLAN_PERSISTED",
         "PROJECT_STATUS_SNAPSHOT_PERSISTED"
       ]
     }

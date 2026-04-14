@@ -20,7 +20,7 @@ Run on every change to config, schemas, prompts, or state-machine files.
 - YAML config files load
 - prompt files exist for every agent in `agent_registry.yaml`
 - every task type in routing rules maps to a registered agent
-- Niobe and Morpheus state machines preserve the required invariants
+- Niaobe and Morpheus state machines preserve the required invariants
 
 ### 2. Persistence And Store Tests
 
@@ -29,7 +29,7 @@ Exercise `openclaw_agents/database/store.py` against a temporary SQLite database
 - schema initialization is idempotent
 - project, scheduling, workspace, lease, snapshot, and control-event records round-trip
 - JSON fields are normalized and reloaded correctly
-- orchestrator lease rows are auto-created for `niobe` and `morpheus`
+- orchestrator lease rows are auto-created for `niaobe` and `morpheus`
 
 ### 3. Scheduler Tests
 
@@ -80,7 +80,7 @@ Keep one scriptable path that proves the intended MVP still works:
 1. seed a project and workspace
 2. send a free-form intake message
 3. let `AgentSmith` frame the project
-4. let `Niobe` choose the next step
+4. let `Niaobe` choose the next step
 5. persist a design artifact
 6. persist a software delivery artifact
 7. persist a verification report

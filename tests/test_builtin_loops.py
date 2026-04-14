@@ -25,13 +25,13 @@ class BuiltinLoopTests(unittest.TestCase):
             project_id="P_morpheus_loop",
             goal="Deliver a deterministic software package",
             current_phase="software_orchestration",
-            current_owner_agent="niobe",
+            current_owner_agent="niaobe",
             next_action={"type": "ORCHESTRATE_SOFTWARE", "target_agent": "morpheus"},
             workspace_ref=str(workspace),
         )
         task = store.record_task(
             project_id="P_morpheus_loop",
-            from_agent="niobe",
+            from_agent="niaobe",
             to_agent="morpheus",
             task_type="ORCHESTRATE_SOFTWARE",
             title="Run the software loop",
@@ -102,12 +102,12 @@ class BuiltinLoopTests(unittest.TestCase):
 
         morpheus_tasks = store.list_tasks_for_project("P_project_verification_failure", to_agent="morpheus")
         oracle_tasks = store.list_tasks_for_project("P_project_verification_failure", to_agent="oracle")
-        niobe_tasks = store.list_tasks_for_project("P_project_verification_failure", to_agent="niobe")
+        niaobe_tasks = store.list_tasks_for_project("P_project_verification_failure", to_agent="niaobe")
         project = store.get_project("P_project_verification_failure")
 
         self.assertGreaterEqual(len(morpheus_tasks), 2)
         self.assertGreaterEqual(len(oracle_tasks), 1)
-        self.assertEqual(len(niobe_tasks), 1)
+        self.assertEqual(len(niaobe_tasks), 1)
         assert project is not None
         self.assertEqual(project["project_status"], "ACTIVE")
         self.assertIn(project["current_phase"], {"project_implementation", "software_orchestration"})
@@ -121,12 +121,12 @@ class BuiltinLoopTests(unittest.TestCase):
             project_id="P_morpheus_missing_workspace",
             goal="Do not dispatch implementation without a workspace",
             current_phase="software_orchestration",
-            current_owner_agent="niobe",
+            current_owner_agent="niaobe",
             next_action={"type": "ORCHESTRATE_SOFTWARE", "target_agent": "morpheus"},
         )
         task = store.record_task(
             project_id="P_morpheus_missing_workspace",
-            from_agent="niobe",
+            from_agent="niaobe",
             to_agent="morpheus",
             task_type="ORCHESTRATE_SOFTWARE",
             title="Run the software loop without a workspace",
@@ -149,24 +149,24 @@ class BuiltinLoopTests(unittest.TestCase):
         escalation = store.list_project_artifacts("P_morpheus_missing_workspace", task_id=task["task_id"])
         self.assertIn("escalation_packet", [item["artifact_type"] for item in escalation])
 
-    def test_niobe_ignores_older_blocked_software_child_when_later_retry_succeeds(self) -> None:
+    def test_niaobe_ignores_older_blocked_software_child_when_later_retry_succeeds(self) -> None:
         store = self.harness.store
-        workspace = self.harness.tmp_path / "P_niobe_retry_resume"
+        workspace = self.harness.tmp_path / "P_niaobe_retry_resume"
         workspace.mkdir(parents=True, exist_ok=True)
         seed_project(
             store,
-            project_id="P_niobe_retry_resume",
+            project_id="P_niaobe_retry_resume",
             goal="Resume verification after a successful Morpheus retry",
             current_phase="project_orchestration",
-            current_owner_agent="niobe",
-            next_action={"type": "ORCHESTRATE_PROJECT", "target_agent": "niobe"},
+            current_owner_agent="niaobe",
+            next_action={"type": "ORCHESTRATE_PROJECT", "target_agent": "niaobe"},
             workspace_ref=str(workspace),
         )
         now = utc_now()
-        niobe_task = store.record_task(
-            project_id="P_niobe_retry_resume",
+        niaobe_task = store.record_task(
+            project_id="P_niaobe_retry_resume",
             from_agent="agent_smith",
-            to_agent="niobe",
+            to_agent="niaobe",
             task_type="ORCHESTRATE_PROJECT",
             title="Resume the project loop",
             goal="Resume verification after a successful Morpheus retry",
@@ -177,9 +177,9 @@ class BuiltinLoopTests(unittest.TestCase):
             status="PENDING",
         )
         architecture_task = store.record_task(
-            project_id="P_niobe_retry_resume",
-            parent_task_id=niobe_task["task_id"],
-            from_agent="niobe",
+            project_id="P_niaobe_retry_resume",
+            parent_task_id=niaobe_task["task_id"],
+            from_agent="niaobe",
             to_agent="architect",
             task_type="DESIGN_ARCHITECTURE",
             title="Architecture",
@@ -191,9 +191,9 @@ class BuiltinLoopTests(unittest.TestCase):
             closed_at=now,
         )
         blocked_software_task = store.record_task(
-            project_id="P_niobe_retry_resume",
-            parent_task_id=niobe_task["task_id"],
-            from_agent="niobe",
+            project_id="P_niaobe_retry_resume",
+            parent_task_id=niaobe_task["task_id"],
+            from_agent="niaobe",
             to_agent="morpheus",
             task_type="ORCHESTRATE_SOFTWARE",
             title="Software attempt 1",
@@ -205,9 +205,9 @@ class BuiltinLoopTests(unittest.TestCase):
             closed_at=now,
         )
         successful_software_task = store.record_task(
-            project_id="P_niobe_retry_resume",
-            parent_task_id=niobe_task["task_id"],
-            from_agent="niobe",
+            project_id="P_niaobe_retry_resume",
+            parent_task_id=niaobe_task["task_id"],
+            from_agent="niaobe",
             to_agent="morpheus",
             task_type="ORCHESTRATE_SOFTWARE",
             title="Software attempt 2",
@@ -220,7 +220,7 @@ class BuiltinLoopTests(unittest.TestCase):
         )
         for task_id, artifact_type, payload in [
             (
-                niobe_task["task_id"],
+                niaobe_task["task_id"],
                 "project_charter",
                 {"acceptance_criteria": ["deliver the project"], "summary": "charter"},
             ),
@@ -240,7 +240,7 @@ class BuiltinLoopTests(unittest.TestCase):
                 "artifacts",
                 {
                     "artifact_id": artifact_id,
-                    "project_id": "P_niobe_retry_resume",
+                    "project_id": "P_niaobe_retry_resume",
                     "task_id": task_id,
                     "produced_by_agent": "test",
                     "artifact_type": artifact_type,
@@ -254,20 +254,92 @@ class BuiltinLoopTests(unittest.TestCase):
             )
 
         dispatcher = RuntimeDispatcher(store, state_dir=self.harness.state_dir)
-        queue_task(dispatcher, niobe_task)
+        queue_task(dispatcher, niaobe_task)
         worker = RuntimeWorker(store, state_dir=self.harness.state_dir, default_executor="builtin")
 
-        result = worker.process_once(agent_id="niobe")
+        result = worker.process_once(agent_id="niaobe")
 
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.status, "RUNNING")
-        oracle_tasks = store.list_tasks_for_project("P_niobe_retry_resume", to_agent="oracle")
+        oracle_tasks = store.list_tasks_for_project("P_niaobe_retry_resume", to_agent="oracle")
         self.assertEqual(len(oracle_tasks), 1)
-        project = store.get_project("P_niobe_retry_resume")
+        project = store.get_project("P_niaobe_retry_resume")
         assert project is not None
         self.assertEqual(project["current_owner_agent"], "oracle")
-        self.assertIn("Niobe queued Oracle", result.summary)
+        self.assertIn("Niaobe queued Oracle", result.summary)
+
+    def test_niaobe_processes_multi_milestone_delivery_plan_sequentially(self) -> None:
+        store = self.harness.store
+        workspace = self.harness.tmp_path / "P_multi_milestone"
+        workspace.mkdir(parents=True, exist_ok=True)
+        seed_project(
+            store,
+            project_id="P_multi_milestone",
+            goal="Deliver two milestones in sequence",
+            current_phase="intake",
+            current_owner_agent="agent_smith",
+            project_status="NEW",
+            next_action={"type": "FRAME_PROJECT", "target_agent": "agent_smith"},
+            workspace_ref=str(workspace),
+        )
+        frame_task = store.record_task(
+            project_id="P_multi_milestone",
+            from_agent="human",
+            to_agent="agent_smith",
+            task_type="FRAME_PROJECT",
+            title="Frame a multi-milestone project",
+            goal="Deliver two milestones in sequence",
+            priority="MEDIUM",
+            context={
+                "project_goal": "Deliver two milestones in sequence",
+                "milestones": [
+                    {
+                        "milestone_id": "M1",
+                        "title": "Core CLI",
+                        "goal": "Deliver the core CLI flows",
+                        "requirements": ["add command", "list command"],
+                        "acceptance_criteria": ["core CLI flows work"],
+                    },
+                    {
+                        "milestone_id": "M2",
+                        "title": "Persistence",
+                        "goal": "Persist tasks to disk",
+                        "requirements": ["save tasks", "load tasks"],
+                        "acceptance_criteria": ["tasks persist across runs"],
+                    },
+                ],
+            },
+            expected_output={"artifact_type": "project_charter"},
+            return_to="requesting_agent",
+        )
+        dispatcher = RuntimeDispatcher(store, state_dir=self.harness.state_dir)
+        queue_task(dispatcher, frame_task)
+
+        worker = RuntimeWorker(store, state_dir=self.harness.state_dir, default_executor="builtin")
+        seen = drain_worker(worker, limit=36)
+
+        project = store.get_project("P_multi_milestone")
+        assert project is not None
+        self.assertEqual(project["project_status"], "DONE")
+        self.assertEqual(project["runtime_status"], "DONE")
+
+        software_tasks = store.list_tasks_for_project("P_multi_milestone", to_agent="morpheus")
+        verification_tasks = store.list_tasks_for_project("P_multi_milestone", to_agent="oracle")
+        self.assertEqual(len(software_tasks), 2)
+        self.assertEqual(len(verification_tasks), 2)
+        self.assertEqual(
+            [task.get("context_json", {}).get("work_item_id") for task in software_tasks],
+            ["M1-W1", "M2-W1"],
+        )
+        self.assertEqual(
+            [task.get("context_json", {}).get("work_item_id") for task in verification_tasks],
+            ["M1-W1", "M2-W1"],
+        )
+        artifact_types = [item["artifact_type"] for item in store.list_project_artifacts("P_multi_milestone")]
+        self.assertIn("project_delivery_plan", artifact_types)
+        self.assertIn("project_closure_report", artifact_types)
+        self.assertTrue(any(item["agent_id"] == "niaobe" and item["status"] == "SUCCESS" for item in seen))
 
 
 if __name__ == "__main__":  # pragma: no cover

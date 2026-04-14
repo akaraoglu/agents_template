@@ -42,7 +42,7 @@ Use one isolated workspace per project. The workspace is the operational surface
 
 ## Working Agreement
 
-- `Niobe` owns project routing.
+- `Niaobe` owns project routing.
 - `Morpheus` owns the software loop.
 - `Planner`, `Implementer`, and `Tester` remain internal by default.
 - `Oracle` verifies the project against the charter and acceptance evidence.

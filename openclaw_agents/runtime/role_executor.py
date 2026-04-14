@@ -10,7 +10,7 @@ import yaml
 from openclaw_agents.communication.zulip_gateway import DispatchPlan
 from openclaw_agents.database.store import ControlPlaneStore
 from openclaw_agents.orchestrators.morpheus_engine import MorpheusLoopEngine
-from openclaw_agents.orchestrators.niobe_engine import NiobeLoopEngine
+from openclaw_agents.orchestrators.niaobe_engine import NiaobeLoopEngine
 from openclaw_agents.runtime.artifact_parsers import ArtifactParser
 
 
@@ -37,7 +37,7 @@ class BuiltinRoleExecutor:
             dispatcher=self.dispatcher,
             artifact_parser=self.artifact_parser,
         )
-        self.niobe_engine = NiobeLoopEngine(
+        self.niaobe_engine = NiaobeLoopEngine(
             store=self.store,
             dispatcher=self.dispatcher,
             artifact_parser=self.artifact_parser,
@@ -102,6 +102,10 @@ class BuiltinRoleExecutor:
             requirements.append(context["project_goal"])
         plan = {
             "summary": f"Plan for {software_goal}",
+            "milestone_id": context.get("milestone_id"),
+            "milestone_title": context.get("milestone_title"),
+            "work_item_id": context.get("work_item_id"),
+            "work_item_title": context.get("work_item_title"),
             "task_breakdown": [software_goal],
             "implementation_steps": [
                 "Inspect the current project workspace and relevant files.",
@@ -133,6 +137,45 @@ class BuiltinRoleExecutor:
             target_agent=packet["from_agent"],
         )
 
+    @staticmethod
+    def _delivery_plan_seed(context: dict[str, Any], goal: str, acceptance_criteria: list[str]) -> list[dict[str, Any]]:
+        milestones = list(context.get("milestones") or [])
+        if not milestones:
+            return [
+                {
+                    "milestone_id": "M1",
+                    "title": "Software Delivery",
+                    "goal": goal,
+                    "requirements": list(context.get("requirements") or [goal]),
+                    "acceptance_criteria": acceptance_criteria,
+                }
+            ]
+        normalized: list[dict[str, Any]] = []
+        for index, milestone in enumerate(milestones, start=1):
+            if not isinstance(milestone, dict):
+                continue
+            title = str(milestone.get("title") or milestone.get("goal") or f"Milestone {index}").strip()
+            normalized.append(
+                {
+                    "milestone_id": str(milestone.get("milestone_id") or f"M{index}"),
+                    "title": title,
+                    "goal": str(milestone.get("goal") or title),
+                    "requirements": list(milestone.get("requirements") or milestone.get("notes") or [title]),
+                    "acceptance_criteria": list(milestone.get("acceptance_criteria") or acceptance_criteria),
+                    "constraints": list(milestone.get("constraints") or []),
+                    "dependencies": list(milestone.get("dependencies") or []),
+                }
+            )
+        return normalized or [
+            {
+                "milestone_id": "M1",
+                "title": "Software Delivery",
+                "goal": goal,
+                "requirements": list(context.get("requirements") or [goal]),
+                "acceptance_criteria": acceptance_criteria,
+            }
+        ]
+
     def _agent_smith_response(self, packet: dict[str, Any]) -> dict[str, Any]:
         context = packet.get("context") or {}
         goal = packet["goal"].strip()
@@ -142,18 +185,22 @@ class BuiltinRoleExecutor:
                 f"Provide a clear design and implementation path for: {goal}",
                 "Produce verification evidence that the delivered result satisfies the framed scope.",
             ]
+        delivery_plan_seed = self._delivery_plan_seed(context, goal, acceptance_criteria)
         charter = {
+            "project_title": context.get("project_title"),
             "problem_statement": goal,
             "goals": [goal],
             "non_goals": list(context.get("non_goals") or []),
-            "constraints": list(context.get("constraints") or []),
+            "constraints": list(context.get("constraints") or []) + list(context.get("project_constraints") or []),
             "acceptance_criteria": acceptance_criteria,
             "initial_priority": packet["priority"],
             "dependencies": list(context.get("dependencies") or []),
             "open_questions": list(context.get("open_questions") or []),
+            "delivery_shape": "multi_milestone" if len(delivery_plan_seed) > 1 else "single_delivery",
+            "delivery_plan_seed": delivery_plan_seed,
             "recommended_next_handoff": {
                 "task_type": "ORCHESTRATE_PROJECT",
-                "target_agent": "niobe",
+                "target_agent": "niaobe",
             },
         }
         return self._response(
@@ -169,8 +216,8 @@ class BuiltinRoleExecutor:
                 }
             ],
             findings=charter["acceptance_criteria"],
-            next_action_reason="Project charter is ready for Niobe orchestration.",
-            target_agent="niobe",
+            next_action_reason="Project charter is ready for Niaobe orchestration.",
+            target_agent="niaobe",
         )
 
     def _architect_response(self, packet: dict[str, Any]) -> dict[str, Any]:
@@ -194,10 +241,10 @@ class BuiltinRoleExecutor:
         requirements = context.get("requirements") or charter_payload.get("acceptance_criteria") or []
         architecture = {
             "summary": f"Reference architecture for {packet['project_id']}",
-            "system_shape": "Niobe-managed delivery with a bounded implementation loop and explicit verification.",
+            "system_shape": "Niaobe-managed delivery with a bounded implementation loop and explicit verification.",
             "responsibilities": {
                 "agent_smith": "frames the project charter",
-                "niobe": "routes project stages",
+                "niaobe": "routes project stages",
                 "morpheus": "delivers the software package",
                 "oracle": "verifies the delivered result",
             },
@@ -256,6 +303,10 @@ class BuiltinRoleExecutor:
             changed_files = ["src/implementation_placeholder.py", "tests/test_placeholder.py"]
         code_change = {
             "summary": f"Prepared implementation package for {packet['goal']}.",
+            "milestone_id": context.get("milestone_id"),
+            "milestone_title": context.get("milestone_title"),
+            "work_item_id": context.get("work_item_id"),
+            "work_item_title": context.get("work_item_title"),
             "changed_files": changed_files,
             "build_notes": "Builtin executor prepared the code-change handoff without mutating a real project repo.",
             "known_limitations": ["No real repository mutation was performed by the builtin executor."],
@@ -301,6 +352,10 @@ class BuiltinRoleExecutor:
         result = forced_result or "PASS"
         report = {
             "summary": f"Builtin validation report for {packet['goal']}.",
+            "milestone_id": context.get("milestone_id"),
+            "milestone_title": context.get("milestone_title"),
+            "work_item_id": context.get("work_item_id"),
+            "work_item_title": context.get("work_item_title"),
             "test_changes": ["No repo mutation; validation based on handoff artifact consistency."],
             "commands_run": ["builtin:validate_software_package"],
             "result": result,
@@ -351,15 +406,22 @@ class BuiltinRoleExecutor:
         if verification_result != "PASS":
             defect_category = context.get("verification_defect_category") or "implementation"
             findings.append(f"verification failed with defect category {defect_category}")
+        verification_scope = context.get("verification_scope") or "project"
+        acceptance_criteria = list(context.get("acceptance_criteria") or charter_payload.get("acceptance_criteria") or [])
         report = {
             "summary": f"Verification report for project {packet['project_id']}",
+            "scope": verification_scope,
+            "milestone_id": context.get("milestone_id"),
+            "milestone_title": context.get("milestone_title"),
+            "work_item_id": context.get("work_item_id"),
+            "work_item_title": context.get("work_item_title"),
             "result": verification_result,
             "evidence": [
                 "project_charter",
                 "architecture_spec",
                 "software_delivery_package",
             ],
-            "acceptance_criteria_coverage": charter_payload.get("acceptance_criteria") or [],
+            "acceptance_criteria_coverage": acceptance_criteria,
             "defect_category": defect_category,
             "findings": findings,
             "recommended_next_action": "return_to_requester",
@@ -378,7 +440,7 @@ class BuiltinRoleExecutor:
             ],
             findings=report["evidence"],
             risks=report["findings"],
-            next_action_reason="Oracle completed verification and returned the report to Niobe.",
+            next_action_reason="Oracle completed verification and returned the report to Niaobe.",
             target_agent=packet["from_agent"],
         )
 
@@ -407,15 +469,15 @@ class BuiltinRoleExecutor:
             )
         )
 
-    def _queue_niobe_task_from_frame(self, task: dict[str, Any]) -> None:
+    def _queue_niaobe_task_from_frame(self, task: dict[str, Any]) -> None:
         existing = self.store.get_latest_child_task(task["task_id"], task_type="ORCHESTRATE_PROJECT")
         if existing:
             return
-        niobe_task = self.store.record_task(
+        niaobe_task = self.store.record_task(
             project_id=task["project_id"],
             parent_task_id=task["task_id"],
             from_agent="agent_smith",
-            to_agent="niobe",
+            to_agent="niaobe",
             task_type="ORCHESTRATE_PROJECT",
             title=f"ORCHESTRATE_PROJECT for {task['project_id']}",
             goal=task["goal"],
@@ -431,13 +493,13 @@ class BuiltinRoleExecutor:
                 "current_phase": "project_orchestration",
                 "project_status": "ACTIVE",
                 "runtime_status": "READY",
-                "current_owner_agent": "niobe",
-                "updated_at": niobe_task["updated_at"],
+                "current_owner_agent": "niaobe",
+                "updated_at": niaobe_task["updated_at"],
             },
             where_clause="project_id = ?",
             where_params=[task["project_id"]],
         )
-        self._dispatch_from_task(task=niobe_task, target_agent="niobe", task_type="ORCHESTRATE_PROJECT")
+        self._dispatch_from_task(task=niaobe_task, target_agent="niaobe", task_type="ORCHESTRATE_PROJECT")
 
     def _handle_terminal_project_state(self, task: dict[str, Any], response: dict[str, Any]) -> None:
         artifact_types = {
@@ -445,7 +507,7 @@ class BuiltinRoleExecutor:
             for item in response.get("artifacts_out", [])
             if isinstance(item, dict) and item.get("artifact_type")
         }
-        if task["to_agent"] == "niobe" and "project_closure_report" in artifact_types and response["status"] == "SUCCESS":
+        if task["to_agent"] == "niaobe" and "project_closure_report" in artifact_types and response["status"] == "SUCCESS":
             self.store.update(
                 "projects",
                 {
@@ -457,7 +519,7 @@ class BuiltinRoleExecutor:
                 where_params=[task["project_id"]],
             )
             return
-        if task["to_agent"] == "niobe" and response["status"] == "BLOCKED":
+        if task["to_agent"] == "niaobe" and response["status"] == "BLOCKED":
             self.store.update(
                 "projects",
                 {
@@ -469,7 +531,7 @@ class BuiltinRoleExecutor:
                 where_params=[task["project_id"]],
             )
             return
-        if task["to_agent"] == "niobe" and response["status"] == "NEEDS_CLARIFICATION":
+        if task["to_agent"] == "niaobe" and response["status"] == "NEEDS_CLARIFICATION":
             self.store.update(
                 "projects",
                 {
@@ -484,8 +546,8 @@ class BuiltinRoleExecutor:
         agent_id = packet["to_agent"]
         if agent_id == "agent_smith":
             return self._agent_smith_response(packet)
-        if agent_id == "niobe":
-            return self.niobe_engine.execute(packet)
+        if agent_id == "niaobe":
+            return self.niaobe_engine.execute(packet)
         if agent_id == "architect":
             return self._architect_response(packet)
         if agent_id == "morpheus":
@@ -508,7 +570,7 @@ class BuiltinRoleExecutor:
             return
         self._handle_terminal_project_state(task, response)
         if task["to_agent"] == "agent_smith" and task["task_type"] == "FRAME_PROJECT" and response["status"] == "SUCCESS":
-            self._queue_niobe_task_from_frame(task)
+            self._queue_niaobe_task_from_frame(task)
             return
         if not task.get("parent_task_id"):
             return
@@ -516,4 +578,4 @@ class BuiltinRoleExecutor:
             self.morpheus_engine.handle_child_completion(task["task_id"])
             return
         if task["to_agent"] in {"architect", "morpheus", "oracle"}:
-            self.niobe_engine.handle_child_completion(task["task_id"])
+            self.niaobe_engine.handle_child_completion(task["task_id"])

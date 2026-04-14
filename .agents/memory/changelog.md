@@ -42,7 +42,7 @@ history, live credentials, or project-specific task transcripts here.
 
 - Date: 2026-04-13
 - Request: Clean the legacy Zulip responder path, make real human chat intake work without manual workspace setup, and do not return until the live chat-to-closure path is actually working.
-- Action: Identified the conflicting legacy system service `zulip-gateway-v3.service`, neutralized its active process for this session, implemented automatic workspace provisioning for new chat-created projects in `scheduler/workspace_provisioner.py` and `communication/zulip_gateway.py`, fixed the gateway service sender-classification bug so a real human named `master` is treated as human instead of a bot, restarted the repo-specific gateway and worker supervisor, and ran a live Fibonacci project from a real Zulip human account through the full `AgentSmith -> Niobe -> Architect -> Morpheus -> Planner -> Implementer -> Tester -> Oracle -> Niobe` path.
+- Action: Identified the conflicting legacy system service `zulip-gateway-v3.service`, neutralized its active process for this session, implemented automatic workspace provisioning for new chat-created projects in `scheduler/workspace_provisioner.py` and `communication/zulip_gateway.py`, fixed the gateway service sender-classification bug so a real human named `master` is treated as human instead of a bot, restarted the repo-specific gateway and worker supervisor, and ran a live Fibonacci project from a real Zulip human account through the full `AgentSmith -> Niaobe -> Architect -> Morpheus -> Planner -> Implementer -> Tester -> Oracle -> Niaobe` path.
 - Validation: Ran `python3 -m unittest discover -s tests -v` with 22 passing tests after the provisioning change, ran the updated gateway tests after the sender-classification fix, verified the legacy V3 gateway process was suspended, verified the repo-specific user services restarted cleanly, and observed the live project `fibonacci-live-20260413-172847` move from inbound human message `2379` to task assignment `2380`, intake result `2381`, design result `2382`, software result `2383`, verification result `2384`, and final closure result `2385`, ending in `projects.project_status = DONE` and `projects.runtime_status = DONE`.
 - Outcome: Real human chat intake now works on the new stack without manual workspace seeding. A live Fibonacci project was created from chat, auto-provisioned with its own workspace, implemented, tested, verified, and closed successfully. The only remaining operational caveat is that the old system-level `zulip-gateway-v3.service` is still installed and enabled on the machine; I neutralized its current process, but permanent removal still requires system-level authentication outside this session.
 
@@ -53,10 +53,10 @@ history, live credentials, or project-specific task transcripts here.
 - Outcome: The remaining work is no longer core implementation. The next steps are stabilization, operational cleanup, repeated live acceptance coverage, and then staging or committing the migration before any deferred agent-logic expansion.
 
 - Date: 2026-04-13
-- Request: Provide the exact prompt to send to `AgentSmith` for a sample Fibonacci project so it is initiated, handed to `Niobe`, processed through the loop, finalized, and returned.
-- Action: Reviewed the live Zulip gateway intake behavior, topic routing, `AgentSmith` framing behavior, and `Niobe` closure behavior to derive the correct human-intake message shape and posting location.
-- Validation: Confirmed that plain human intake on Zulip is normalized into a `FRAME_PROJECT` task for `agent_smith`, that `agent_smith` hands successful framing to `niobe`, and that the current builtin `niobe` loop can drive the project to a closure report without requiring live `MASTER` execution.
-- Outcome: The correct operator-facing guidance is to post a plain human request to the `projects` stream using a `project/{project_id}/intake` topic so the project id is explicit and the request enters the live `AgentSmith -> Niobe` path cleanly.
+- Request: Provide the exact prompt to send to `AgentSmith` for a sample Fibonacci project so it is initiated, handed to `Niaobe`, processed through the loop, finalized, and returned.
+- Action: Reviewed the live Zulip gateway intake behavior, topic routing, `AgentSmith` framing behavior, and `Niaobe` closure behavior to derive the correct human-intake message shape and posting location.
+- Validation: Confirmed that plain human intake on Zulip is normalized into a `FRAME_PROJECT` task for `agent_smith`, that `agent_smith` hands successful framing to `niaobe`, and that the current builtin `niaobe` loop can drive the project to a closure report without requiring live `MASTER` execution.
+- Outcome: The correct operator-facing guidance is to post a plain human request to the `projects` stream using a `project/{project_id}/intake` topic so the project id is explicit and the request enters the live `AgentSmith -> Niaobe` path cleanly.
 
 - Date: 2026-04-13
 - Request: Diagnose why `AgentSmith` did not respond correctly and instead returned a context-overflow error after a direct message.
@@ -68,7 +68,7 @@ history, live credentials, or project-specific task transcripts here.
 
 - Date: 2026-04-13
 - Request: Continue the remaining pre-deployment work by hardening the `openclaw_workspace` software backend, then rerun a real live software smoke through the deployed gateway and worker services.
-- Action: Hardened `openclaw_agents/runtime/openclaw_workspace_executor.py` to shrink the execution context, align worker and backend timeouts, harvest finished session results after CLI timeout, and classify missing-workspace and backend timeout conditions as blocked runtime issues; updated `openclaw_agents/runtime/worker_runner.py`, `openclaw_agents/orchestrators/morpheus_engine.py`, and `openclaw_agents/runtime/worker_config.yaml`; added regression coverage for session harvesting, blocked missing-workspace handling, and Morpheus workspace gating; restarted the live worker supervisor; seeded a fresh git-backed workspace project; posted a real Niobe-authored `ORCHESTRATE_SOFTWARE` task into Zulip; and watched the live `planner -> implementer -> tester -> morpheus` flow complete on the patched stack.
+- Action: Hardened `openclaw_agents/runtime/openclaw_workspace_executor.py` to shrink the execution context, align worker and backend timeouts, harvest finished session results after CLI timeout, and classify missing-workspace and backend timeout conditions as blocked runtime issues; updated `openclaw_agents/runtime/worker_runner.py`, `openclaw_agents/orchestrators/morpheus_engine.py`, and `openclaw_agents/runtime/worker_config.yaml`; added regression coverage for session harvesting, blocked missing-workspace handling, and Morpheus workspace gating; restarted the live worker supervisor; seeded a fresh git-backed workspace project; posted a real Niaobe-authored `ORCHESTRATE_SOFTWARE` task into Zulip; and watched the live `planner -> implementer -> tester -> morpheus` flow complete on the patched stack.
 - Validation: Ran `python3 -m unittest discover -s tests -v` with 22 passing tests, restarted the repo-specific worker supervisor successfully, and verified a live software smoke for `P_live_software_smoke_v2_1776087442` where `T_live_software_smoke_v2_1776087442` and all child software tasks completed with `SUCCESS`. Zulip message links recorded inbound task assignment `2361`, outbound mirrored assignment `2362`, and outbound mirrored result `2363`.
 - Outcome: The workspace-backed software path now completes on the live deployed stack instead of failing at the worker timeout boundary, and missing-workspace projects now block upstream with explicit control-plane evidence instead of crashing inside the implementer worker.
 
@@ -80,7 +80,7 @@ history, live credentials, or project-specific task transcripts here.
 
 - Date: 2026-04-13
 - Request: Replace the placeholder prompt files in `openclaw_agents/prompts/` with real role prompts that match the new orchestration, scheduling, and authority model.
-- Action: Re-read the agent registry, routing rules, and Niobe and Morpheus state machines, then rewrote all ten prompt files as contract-driven role instructions covering accepted tasks, requester boundaries, owned decisions, refusal rules, artifact outputs, and orchestrator-specific pause, switch, lease, and escalation behavior.
+- Action: Re-read the agent registry, routing rules, and Niaobe and Morpheus state machines, then rewrote all ten prompt files as contract-driven role instructions covering accepted tasks, requester boundaries, owned decisions, refusal rules, artifact outputs, and orchestrator-specific pause, switch, lease, and escalation behavior.
 - Validation: Reviewed the resulting prompt files and confirmed the placeholder text was removed from the prompt directory.
 - Outcome: The prompt layer now matches the implemented control-plane contracts instead of leaving role behavior undefined.
 
@@ -794,7 +794,7 @@ history, live credentials, or project-specific task transcripts here.
 
 - Date: 2026-04-02
 - Request: Read `openclaw_agents/complete_agentic_software_workflow_with_zulip.md` and rebuild the migration plan around that integrated design instead of the earlier split workflow and Zulip documents.
-- Action: Reviewed the integrated handoff spec, compared it with the current `openclaw_agents/` tree and the existing untracked split spec files, and rebuilt the migration plan around the integrated control-plane model, the Niobe and Morpheus two-loop ownership split, the single Zulip gateway pattern, the authoritative state and artifact stores, and the revised workspace contract.
+- Action: Reviewed the integrated handoff spec, compared it with the current `openclaw_agents/` tree and the existing untracked split spec files, and rebuilt the migration plan around the integrated control-plane model, the Niaobe and Morpheus two-loop ownership split, the single Zulip gateway pattern, the authoritative state and artifact stores, and the revised workspace contract.
 - Validation: Read the integrated workflow document in full, checked the current worktree status to avoid clobbering the existing unstaged `SOFTWARE_WORKSPACE_README.md` edit, and mapped the integrated spec's `builder_agent_must_generate` outputs against the current template layout.
 - Outcome: The next migration plan now uses the single-file integrated handoff as the authoritative source and treats the earlier split workflow, Zulip, and workspace docs as supporting or superseded inputs.
 
@@ -812,7 +812,7 @@ history, live credentials, or project-specific task transcripts here.
 
 - Date: 2026-04-02
 - Request: Execute the first real foundation pass by adding the scheduler layer and filling the config, schema, database, and orchestrator contract files.
-- Action: Added the new `openclaw_agents/scheduler/` module scaffold; created scheduling schemas for control events, project snapshots, orchestrator leases, and project scheduling records; replaced the placeholder agent registry, model map, routing rules, task/result/escalation/Zulip schemas, database schema, and Niobe/Morpheus state-machine files with spec-based content; and filled the gateway config and Docker sandbox profile YAMLs so the control-plane contracts are now explicit instead of placeholder text.
+- Action: Added the new `openclaw_agents/scheduler/` module scaffold; created scheduling schemas for control events, project snapshots, orchestrator leases, and project scheduling records; replaced the placeholder agent registry, model map, routing rules, task/result/escalation/Zulip schemas, database schema, and Niaobe/Morpheus state-machine files with spec-based content; and filled the gateway config and Docker sandbox profile YAMLs so the control-plane contracts are now explicit instead of placeholder text.
 - Validation: Ran a local validation pass that successfully parsed all JSON schemas, compiled the Python modules under `scheduler/`, `communication/`, and `runtime/`, and loaded the YAML files under `config/`, `orchestrators/`, `communication/`, and `runtime/`.
 - Outcome: The repository now has a concrete foundation contract layer for routing, persistence, scheduling, leases, snapshots, safe boundaries, and orchestrator flow, while the actual gateway, scheduler, runtime, and prompt implementations remain to be filled.
 
@@ -825,7 +825,7 @@ history, live credentials, or project-specific task transcripts here.
 - Date: 2026-04-13
 - Request: Continue the implementation by building the persistence-backed scheduler and control-plane command layer.
 - Action: Added `openclaw_agents/database/store.py` plus package exports, implemented SQLite-backed persistence helpers for projects, snapshots, leases, control events, recovery events, and Zulip message links, replaced the scheduler stubs with working queue policy, lease management, snapshot capture, workspace validation, recovery assessment, control-command handling, and project scheduling logic, and turned `communication/message_mapping_store.py` into a real store-backed helper.
-- Validation: Ran local compile and JSON parse checks, then executed a temporary SQLite smoke test that initialized the schema, seeded a sample project, captured a snapshot, acquired a Niobe lease through the scheduler, paused and resumed the project through control commands, and persisted a Zulip message link successfully.
+- Validation: Ran local compile and JSON parse checks, then executed a temporary SQLite smoke test that initialized the schema, seeded a sample project, captured a snapshot, acquired a Niaobe lease through the scheduler, paused and resumed the project through control commands, and persisted a Zulip message link successfully.
 - Outcome: The repo now has a working minimal control-plane core for persistence, scheduling, leases, snapshots, pause or resume handling, and Zulip message-link storage. The gateway implementation, artifact runtime helpers, prompts, and project template content still remain to be filled.
 
 - Date: 2026-04-13
@@ -854,13 +854,13 @@ history, live credentials, or project-specific task transcripts here.
 
 - Date: 2026-04-13
 - Request: Continue by implementing the next missing loop above Morpheus so the built-in runtime can execute project orchestration instead of only the software subloop.
-- Action: Added `openclaw_agents/orchestrators/niobe_engine.py` for the persisted Niobe project loop, extended `openclaw_agents/runtime/role_executor.py` to support `agent_smith`, `niobe`, `architect`, and `oracle` alongside the existing software roles, added response hooks that convert a successful `FRAME_PROJECT` result into a real `ORCHESTRATE_PROJECT` task and requeue Niobe after `Architect`, `Morpheus`, or `Oracle` child completion, updated `runtime/dispatcher.py` to classify `project_status_report` and `project_closure_report` as explicit project-status safe boundaries, and refreshed the top-level README and local bootstrap runbook to document the broader builtin path.
-- Validation: Ran `python3 -m py_compile` on the updated runtime, orchestrator, dispatcher, store, and communication modules; ran a happy-path SQLite smoke test that completed `agent_smith -> niobe -> architect -> morpheus -> oracle -> niobe` with `project_status_report`, `project_charter`, `architecture_spec`, `software_delivery_package`, `verification_report`, and `project_closure_report` artifacts; and ran a verification-failure branch test that showed Niobe route an Oracle implementation defect back into a second Morpheus task instead of incorrectly closing the project.
+- Action: Added `openclaw_agents/orchestrators/niobe_engine.py` for the persisted Niaobe project loop, extended `openclaw_agents/runtime/role_executor.py` to support `agent_smith`, `niaobe`, `architect`, and `oracle` alongside the existing software roles, added response hooks that convert a successful `FRAME_PROJECT` result into a real `ORCHESTRATE_PROJECT` task and requeue Niaobe after `Architect`, `Morpheus`, or `Oracle` child completion, updated `runtime/dispatcher.py` to classify `project_status_report` and `project_closure_report` as explicit project-status safe boundaries, and refreshed the top-level README and local bootstrap runbook to document the broader builtin path.
+- Validation: Ran `python3 -m py_compile` on the updated runtime, orchestrator, dispatcher, store, and communication modules; ran a happy-path SQLite smoke test that completed `agent_smith -> niaobe -> architect -> morpheus -> oracle -> niaobe` with `project_status_report`, `project_charter`, `architecture_spec`, `software_delivery_package`, `verification_report`, and `project_closure_report` artifacts; and ran a verification-failure branch test that showed Niaobe route an Oracle implementation defect back into a second Morpheus task instead of incorrectly closing the project.
 - Outcome: The repo now has a real builtin end-to-end project loop on top of the software loop, so the control plane can validate project framing, project orchestration, specialist handoffs, verification routing, and final closure without an external model backend.
 
 - Date: 2026-04-13
 - Request: Implement the next two steps after the builtin loops: a real external execution adapter behind the current runtime path, and actual automated test coverage for the control-plane flows.
-- Action: Added `openclaw_agents/runtime/external_executor.py` with `ExecutionContextBuilder` and `PromptSubprocessExecutor` so workers can launch prompt-aware subprocess backends with a structured JSON execution context, prompt text, model-profile hints, project/task/workspace state, and artifact inputs; wired `prompt_subprocess` into `openclaw_agents/runtime/worker_runner.py` and exported the new runtime surface from `openclaw_agents/runtime/__init__.py`; added runnable standard-library tests under `tests/` for the prompt-aware external executor path, the builtin Morpheus software loop, the builtin Niobe project-loop reroute path, and Zulip human-intake normalization; and updated `openclaw_agents/README.md` plus `openclaw_agents/operations/runbooks/local_bootstrap.md` to document the new adapter and the test runner.
+- Action: Added `openclaw_agents/runtime/external_executor.py` with `ExecutionContextBuilder` and `PromptSubprocessExecutor` so workers can launch prompt-aware subprocess backends with a structured JSON execution context, prompt text, model-profile hints, project/task/workspace state, and artifact inputs; wired `prompt_subprocess` into `openclaw_agents/runtime/worker_runner.py` and exported the new runtime surface from `openclaw_agents/runtime/__init__.py`; added runnable standard-library tests under `tests/` for the prompt-aware external executor path, the builtin Morpheus software loop, the builtin Niaobe project-loop reroute path, and Zulip human-intake normalization; and updated `openclaw_agents/README.md` plus `openclaw_agents/operations/runbooks/local_bootstrap.md` to document the new adapter and the test runner.
 - Validation: Ran `python3 -m py_compile` on the new runtime modules and test files, and ran `python3 -m unittest discover -s tests -v`, which passed all four committed tests.
 - Outcome: The repo now has a real external execution contract for runtime workers and a runnable automated regression suite that covers the highest-value control-plane behaviors already implemented.
 
@@ -940,7 +940,7 @@ history, live credentials, or project-specific task transcripts here.
 - Request: Commit the latest single-thread feedback changes and inspect the most recent live run that ended blocked.
 - Action: Reviewed the working tree changes, inspected the live control-plane database plus runtime-response artifacts for the latest blocked project, and prepared a single commit for the canonical-thread and Morpheus-progress update work.
 - Validation: Queried the live SQLite control-plane state and runtime response files for `P_2e39de70701447a591d27700665faff2`, confirming the mirrored Zulip messages, child-task progression, and implementer failure details before commit.
-- Outcome: The blocked Fibonacci run is not blocked by a user control event in the control plane; it is blocked because the `implementer` runtime finished with `worker execution failed: OpenClaw response has no payloads`, after which Morpheus emitted an escalation packet and Niobe moved the project to `WAITING_EXTERNAL`.
+- Outcome: The blocked Fibonacci run is not blocked by a user control event in the control plane; it is blocked because the `implementer` runtime finished with `worker execution failed: OpenClaw response has no payloads`, after which Morpheus emitted an escalation packet and Niaobe moved the project to `WAITING_EXTERNAL`.
 
 - Date: 2026-04-13
 - Request: Explain how to fix the blocked OpenClaw implementer run and the unexpected `qwen3:8b` model usage seen in the live runtime logs.
@@ -956,9 +956,9 @@ history, live credentials, or project-specific task transcripts here.
 
 - Date: 2026-04-14
 - Request: Lock the live OpenClaw runtime to `gemma4:31b` for all active agents, repair the blocked Fibonacci project, and continue the live recovery work instead of leaving the project stalled.
-- Action: Applied a Gemma-only model policy to `/home/alik/.openclaw/openclaw.json`, verified `openclaw agents list --json` shows `ollama/gemma4:31b` for `main`, `neo`, and all workspace agents, patched `openclaw_agents/runtime/openclaw_workspace_executor.py` to isolate backend agents per run instead of per project-role, and patched `openclaw_agents/database/store.py` so Niobe and Morpheus only treat `PENDING` and `RUNNING` child tasks as active. Added regression coverage in `tests/test_openclaw_workspace_executor.py` and `tests/test_builtin_loops.py`, restarted the live `openclaw-worker-supervisor.service`, and requeued the stuck Niobe task for project `P_2e39de70701447a591d27700665faff2`.
+- Action: Applied a Gemma-only model policy to `/home/alik/.openclaw/openclaw.json`, verified `openclaw agents list --json` shows `ollama/gemma4:31b` for `main`, `neo`, and all workspace agents, patched `openclaw_agents/runtime/openclaw_workspace_executor.py` to isolate backend agents per run instead of per project-role, and patched `openclaw_agents/database/store.py` so Niaobe and Morpheus only treat `PENDING` and `RUNNING` child tasks as active. Added regression coverage in `tests/test_openclaw_workspace_executor.py` and `tests/test_builtin_loops.py`, restarted the live `openclaw-worker-supervisor.service`, and requeued the stuck Niaobe task for project `P_2e39de70701447a591d27700665faff2`.
 - Validation: Ran `python3 -m py_compile openclaw_agents/runtime/openclaw_workspace_executor.py openclaw_agents/database/store.py tests/test_openclaw_workspace_executor.py tests/test_builtin_loops.py`, `python3 -m unittest tests.test_openclaw_workspace_executor -v`, `python3 -m unittest tests.test_builtin_loops -v`, and `python3 -m unittest discover -s tests -v`, which passed with 30 tests. Live polling after the worker restart showed the retried software loop succeeded, Oracle verification succeeded, and the project advanced to `DONE`.
-- Outcome: The live stack now runs Gemma-only for the active OpenClaw agents, the stale-session workspace executor bug is mitigated by per-run backend isolation, the Niobe blocked-child bug is fixed, and the previously blocked Fibonacci project completed successfully.
+- Outcome: The live stack now runs Gemma-only for the active OpenClaw agents, the stale-session workspace executor bug is mitigated by per-run backend isolation, the Niaobe blocked-child bug is fixed, and the previously blocked Fibonacci project completed successfully.
 
 - Date: 2026-04-14
 - Request: Check the latest `fibo_test3` project status in the live OpenClaw control plane.
@@ -985,13 +985,13 @@ history, live credentials, or project-specific task transcripts here.
 - Outcome: The next implementation should focus on context minimization and progress visibility, not on changing orchestration roles or model choices.
 
 - Date: 2026-04-14
-- Request: Replan the context-trimming work around two generic builders only, with `MASTER`/`Neo`/`AgentSmith` using the full workspace root, `Niobe`/`Architect`/`Oracle` using full project context, and `Morpheus` plus the software team using task-related context only; explicitly drop heartbeat planning from this pass.
+- Request: Replan the context-trimming work around two generic builders only, with `MASTER`/`Neo`/`AgentSmith` using the full workspace root, `Niaobe`/`Architect`/`Oracle` using full project context, and `Morpheus` plus the software team using task-related context only; explicitly drop heartbeat planning from this pass.
 - Action: Reframed the speed plan away from per-role builders and toward two generic context builders keyed by role class and context scope, keeping the design simple enough for future role additions.
 - Validation: The requested split is structurally consistent with the current agent families in `agent_registry.yaml` and avoids hard-coding custom context builders for every role.
 - Outcome: The next implementation should focus only on `build_project_context` and `build_task_context`, with role-to-scope mapping driven by a small policy layer rather than by role-specific builder functions.
 
 - Date: 2026-04-14
-- Request: Implement the two-builder context policy so `master`/`neo`/`agent_smith` use workspace-root scope, `niobe`/`architect`/`oracle` use project scope, and `morpheus` plus the software team use task scope, while keeping the design generic and simple.
+- Request: Implement the two-builder context policy so `master`/`neo`/`agent_smith` use workspace-root scope, `niaobe`/`architect`/`oracle` use project scope, and `morpheus` plus the software team use task scope, while keeping the design generic and simple.
 - Action: Patched `openclaw_agents/runtime/external_executor.py` to build execution context through only `build_project_context(...)` and `build_task_context(...)`, with a small agent-to-scope policy. Patched `openclaw_agents/runtime/openclaw_workspace_executor.py` and `openclaw_agents/runtime/ollama_prompt_runner.py` so both backends consume the normalized `context_payload` directly instead of rebuilding broader legacy prompt context. Added regression coverage in `tests/test_runtime_adapter.py` and updated `tests/test_ollama_prompt_runner.py` to validate the new context shape.
 - Validation: Ran `python3 -m py_compile openclaw_agents/runtime/external_executor.py openclaw_agents/runtime/openclaw_workspace_executor.py openclaw_agents/runtime/ollama_prompt_runner.py tests/test_runtime_adapter.py tests/test_ollama_prompt_runner.py`, `python3 -m unittest tests.test_runtime_adapter tests.test_ollama_prompt_runner -v`, `python3 -m unittest tests.test_openclaw_workspace_executor -v`, and `python3 -m unittest discover -s tests -v`, which passed with 31 tests.
 - Outcome: Runtime context is now scoped by two generic builders instead of ad hoc per-backend prompt assembly, and the software roles are constrained to project-folder task context rather than inheriting broader workspace state.
@@ -1039,7 +1039,7 @@ history, live credentials, or project-specific task transcripts here.
 - Outcome: The current implementation step is a real in-flight execution, not stale state, and the single-thread Zulip feedback path is working through implementation start.
 
 - Date: 2026-04-14
-- Request: Restore the intended project-management layer so `AgentSmith`, `Niobe`, `Architect`, `Morpheus`, and `Oracle` drive real workspace management files instead of only DB rows and artifacts.
+- Request: Restore the intended project-management layer so `AgentSmith`, `Niaobe`, `Architect`, `Morpheus`, and `Oracle` drive real workspace management files instead of only DB rows and artifacts.
 - Action: Implemented `WorkspaceManagementWriter` in `openclaw_agents/scheduler/management_writer.py`, wired it into workspace provisioning, runtime dispatch, runtime response recording, and control-command recording, and added regression coverage in `tests/test_management_writer.py`.
 - Validation: Ran `python3 -m py_compile` on the changed scheduler/runtime files and `python3 -m unittest discover -s tests -v`, which passed with 34 tests after the new management sync path was added.
 - Outcome: Project workspaces can now self-repair missing scaffolds and project management files are rendered from live control-plane state (`PROJECT.md`, `management/STATUS.md`, `BACKLOG.md`, `MILESTONES.md`, `DECISIONS.md`, `TEST_REPORT.md`) instead of remaining static template placeholders.
@@ -1077,14 +1077,14 @@ history, live credentials, or project-specific task transcripts here.
 - Date: 2026-04-14
 - Request: Start a dummy Fibonacci project from Zulip as the `master` human user so the full live thread can be observed.
 - Action: Checked the live gateway/worker services, the active Zulip rc directory, and the current gateway configuration to determine whether this machine can originate a real human Zulip post as `master`.
-- Validation: Verified `zulip-gateway.service` and `openclaw-worker-supervisor.service` are active, confirmed the live Zulip rc directory only contains bot identities (`agent_smith`, `niobe`, `morpheus`, `architect`, `oracle`), and confirmed there is no local `master.zuliprc`.
+- Validation: Verified `zulip-gateway.service` and `openclaw-worker-supervisor.service` are active, confirmed the live Zulip rc directory only contains bot identities (`agent_smith`, `niaobe`, `morpheus`, `architect`, `oracle`), and confirmed there is no local `master.zuliprc`.
 - Outcome: The live stack can process a real human message from `master` in Zulip, but this machine cannot originate one without a real user credential for `master`. A true end-to-end human-originated test from here therefore requires adding `master.zuliprc` or posting from the actual Zulip UI.
 
 - Date: 2026-04-14
-- Request: Explain why the latest live project blocked and whether `AgentSmith` failed to respond to `Niobe`.
+- Request: Explain why the latest live project blocked and whether `AgentSmith` failed to respond to `Niaobe`.
 - Action: Queried the live project/task/attempt/run state for blocked project `P_e59706da53834907bd2b861287bbefe3`, inspected the blocked implementer runtime response and command log, and verified the hidden `--agent-dir` provisioning path in the corresponding OpenClaw provision log.
 - Validation: Verified `FRAME_PROJECT` succeeded under `AgentSmith`, `ORCHESTRATE_PROJECT` and `DESIGN_ARCHITECTURE` succeeded, `PLAN_SOFTWARE_TASK` succeeded, and the block occurred at `IMPLEMENT_SOFTWARE_TASK` after the OpenClaw backend returned plain text timeout output instead of the required JSON object. Verified the provision log used `--agent-dir .../.openclaw/backend_agents/.../agent`.
-- Outcome: The latest block is an implementer runtime timeout and malformed visible reply issue, not a Smith/Niobe handoff failure. The hidden `agentDir` fix is active, but the blocked run still shows OpenClaw injecting root-level persona files into the prompt context, so there is a remaining workspace/bootstrap leakage path beyond simple `agentDir` placement.
+- Outcome: The latest block is an implementer runtime timeout and malformed visible reply issue, not a Smith/Niaobe handoff failure. The hidden `agentDir` fix is active, but the blocked run still shows OpenClaw injecting root-level persona files into the prompt context, so there is a remaining workspace/bootstrap leakage path beyond simple `agentDir` placement.
 
 - Date: 2026-04-14
 - Request: Move project-local runtime history out of the visible project root and under each project's hidden `.agents/` tree, then inspect and address the remaining OpenClaw workspace leakage path.
@@ -1099,10 +1099,10 @@ history, live credentials, or project-specific task transcripts here.
 - Outcome: New provisioned projects now keep runtime history, tasks, attempts, runs, artifacts, decisions, snapshots, control events, workspace state, recovery events, and Zulip mappings in `project/.agents/project.db`, while the shared DB remains the scheduler registry for project summaries, scheduling records, and orchestrator leases.
 
 - Date: 2026-04-14
-- Request: Check why `Niobe` appeared stuck after the Phase 3 migration work.
+- Request: Check why `Niaobe` appeared stuck after the Phase 3 migration work.
 - Action: Queried the live shared DB for active projects and open tasks, inspected the latest `projects` and `tasks` rows, checked the running process list for the repo-specific gateway and worker supervisor, and restarted the user services after confirming the control plane was idle.
 - Validation: Verified there were `0` active projects and `0` open tasks in the shared DB before restart, then restarted `zulip-gateway.service` and `openclaw-worker-supervisor.service` and confirmed both repo-specific Python processes were running again afterward.
-- Outcome: `Niobe` was not stuck in a live workflow. The apparent stall was caused by the gateway and worker supervisor simply not running after the migration work. The live stack is back up cleanly.
+- Outcome: `Niaobe` was not stuck in a live workflow. The apparent stall was caused by the gateway and worker supervisor simply not running after the migration work. The live stack is back up cleanly.
 
 - Date: 2026-04-14
 - Request: Complete the live verification for Phase 3 after the shared/project DB split.
@@ -1115,3 +1115,27 @@ history, live credentials, or project-specific task transcripts here.
 - Action: Re-ran the full unit test suite, staged the routed store, project-local runtime state, migrator, template updates, and associated tests/docs, and prepared a single commit covering the shared/project DB split and live rollout notes.
 - Validation: Ran `python3 -m unittest discover -s tests -v` with 35 passing tests immediately before staging the commit.
 - Outcome: The Phase 2 and Phase 3 project-local state work is ready to be committed as one coherent batch.
+
+- Date: 2026-04-14
+- Request: Plan the next feature gap around multi-milestone software delivery, separate milestone processing, and management tracking.
+- Action: Inspected the current Niaobe loop, Morpheus loop, management writer, and Smith framing path to confirm how software delivery is modeled today before proposing the next implementation phase.
+- Validation: Confirmed the current built-in/control-plane flow still models one project-level software delivery step (`ORCHESTRATE_SOFTWARE`) with one plan/implement/test loop, while management files only project the existing task graph and fixed milestone labels.
+- Outcome: The next missing feature is first-class milestone/software-task decomposition with sequential Niaobe gating and management projection driven by that decomposition rather than by one monolithic software-delivery step.
+
+- Date: 2026-04-14
+- Request: Rename the project orchestrator to the corrected `Niaobe` spelling everywhere, then implement milestone-scoped software delivery and management tracking.
+- Action: Renamed the project orchestrator identity to `niaobe` across configs, prompts, schemas, runtime files, state-machine files, tests, and docs; extended freeform Zulip intake parsing to preserve project goal, milestone, requirement, and acceptance-criteria structure; taught AgentSmith framing to emit a `delivery_plan_seed`; added `project_delivery_plan` artifacts and sequential work-item gating in `openclaw_agents/orchestrators/niaobe_engine.py`; threaded milestone/work-item metadata through Morpheus and specialist artifacts; and updated the workspace management projection to render backlog, milestones, status, and test summaries from the delivery plan plus live task/report state.
+- Validation: Ran `python3 -m unittest discover -s tests -v` with 36 passing tests, including a new regression proving a multi-milestone project creates sequential `ORCHESTRATE_SOFTWARE` and `VERIFY_PROJECT` tasks (`M1-W1`, then `M2-W1`) instead of one monolithic software-delivery step.
+- Outcome: The codebase now uses `Niaobe` as the project orchestrator name, and large structured projects can be decomposed into milestone-scoped software work items that Niaobe executes and verifies one at a time with matching management-file tracking.
+
+- Date: 2026-04-14
+- Request: Fix the live rename rollout so the repo-specific Zulip gateway starts cleanly after the orchestrator spelling correction.
+- Action: Added a startup migration in `openclaw_agents/database/store.py` that rewrites legacy `niobe` schema constraints and persisted row values to `niaobe` across shared and project databases, and added `tests/test_store_migrations.py` to lock that behavior.
+- Validation: Ran `python3 -m unittest tests.test_store_migrations -v` and `python3 -m unittest discover -s tests -v` with 37 passing tests.
+- Outcome: Existing control-plane databases can self-migrate to the canonical `niaobe` identity on startup instead of crashing the gateway on the old `orchestrator_leases` check constraint.
+
+- Date: 2026-04-14
+- Request: Remove the last runtime-facing compatibility remnants of the old orchestrator spelling and commit the batch.
+- Action: Removed the old-name alias from `openclaw_agents/config/agent_registry.yaml`, removed the gateway credential fallback from `openclaw_agents/communication/zulip_gateway_service.py`, renamed the live Zulip credential file to `niaobe.zuliprc`, and normalized stale test identifiers that still used the old spelling.
+- Validation: Ran targeted regressions for builtin loops, management projection, and store migrations, then restarted the repo-specific gateway and worker services on the clean credential path.
+- Outcome: The live stack now starts with the canonical `niaobe.zuliprc` filename and no longer depends on runtime fallbacks for the old orchestrator spelling.

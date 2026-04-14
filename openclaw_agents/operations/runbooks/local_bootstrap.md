@@ -75,7 +75,7 @@ store.upsert(
         "priority": "MEDIUM",
         "current_phase": "intake",
         "current_owner_agent": "agent_smith",
-        "assigned_project_orchestrator": "niobe",
+        "assigned_project_orchestrator": "niaobe",
         "assigned_software_orchestrator": "morpheus",
         "next_action_json": {"type": "FRAME_PROJECT"},
         "workspace_ref": workspace_ref,
@@ -133,7 +133,7 @@ store = ControlPlaneStore()
 project_id = "replace_me"
 
 print(WorkspaceValidator(store).validate_project(project_id))
-print(ProjectScheduler(store).inspect_queue("niobe"))
+print(ProjectScheduler(store).inspect_queue("niaobe"))
 PY
 ```
 
@@ -218,7 +218,7 @@ Process one queued run with the built-in deterministic executor for the software
 python3 -m openclaw_agents.runtime.worker_runner --agent morpheus --default-executor builtin --once
 ```
 
-The built-in executor currently supports `agent_smith`, `niobe`, `architect`, `morpheus`, `oracle`, `planner`, `implementer`, and `tester`. It is useful for control-plane smoke tests because it advances the visible project loop and the nested Morpheus software loop, persists artifacts, and requeues parent tasks automatically after child-task completion.
+The built-in executor currently supports `agent_smith`, `niaobe`, `architect`, `morpheus`, `oracle`, `planner`, `implementer`, and `tester`. It is useful for control-plane smoke tests because it advances the visible project loop and the nested Morpheus software loop, persists artifacts, and requeues parent tasks automatically after child-task completion.
 
 Run a configured worker continuously:
 

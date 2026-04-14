@@ -27,7 +27,7 @@ Provision credentials for:
 - `MASTER`
 - `Neo`
 - `AgentSmith`
-- `Niobe`
+- `Niaobe`
 - `Morpheus`
 - `Architect`
 - `Oracle`
@@ -37,7 +37,7 @@ Store credentials in the secret mechanism your deployment uses. The simplest sup
 - `master.zuliprc`
 - `neo.zuliprc`
 - `agent_smith.zuliprc`
-- `niobe.zuliprc`
+- `niaobe.zuliprc`
 - `morpheus.zuliprc`
 - `architect.zuliprc`
 - `oracle.zuliprc`
@@ -49,7 +49,7 @@ Match `openclaw_agents/communication/zulip_gateway_config.yaml`:
 - `MASTER`: `exec`, `projects`, `verification`, `escalations`
 - `Neo`: `exec`, `projects`, `verification`, `escalations`
 - `AgentSmith`: `exec`, `projects`, `escalations`
-- `Niobe`: `projects`, `software`, `verification`, `escalations`
+- `Niaobe`: `projects`, `software`, `verification`, `escalations`
 - `Morpheus`: `projects`, `software`, `escalations`
 - `Architect`: `projects`, `software`
 - `Oracle`: `verification`, `projects`, `escalations`
@@ -87,7 +87,7 @@ from openclaw_agents.communication.zulip_gateway import GatewayEvent, ZulipGatew
 gateway = ZulipGateway()
 event = GatewayEvent(
     message_id="zulip-smoke-1",
-    sender_name="Niobe",
+    sender_name="Niaobe",
     sender_type="bot",
     stream_name="projects",
     topic_name="project/demo",
@@ -96,13 +96,13 @@ event = GatewayEvent(
 kind: task_assignment
 task_id: task_demo_1
 project_id: demo
-from_agent: niobe
+from_agent: niaobe
 to_agent: architect
 task_type: DESIGN_ARCHITECTURE
 title: Draft the initial architecture
 goal: Produce an implementable architecture spec
 priority: HIGH
-return_to: niobe
+return_to: niaobe
 context:
   charter_ref: artifact_demo_charter
 expected_output:

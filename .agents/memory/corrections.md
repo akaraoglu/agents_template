@@ -131,7 +131,7 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 
 - Date: 2026-04-14
 - Problem: The first live retry recovery focused on the OpenClaw implementer timeout and model drift, but the project still remained stuck even after a later Morpheus retry succeeded.
-- Root cause: The store-layer “active child” query treated `BLOCKED` tasks as still active, so Niobe kept waiting on an older blocked software child instead of advancing from the newer successful Morpheus retry to Oracle verification.
+- Root cause: The store-layer “active child” query treated `BLOCKED` tasks as still active, so Niaobe kept waiting on an older blocked software child instead of advancing from the newer successful Morpheus retry to Oracle verification.
 - New rule: When orchestration code asks for non-terminal child tasks, filter to `PENDING` and `RUNNING` only. A blocked child is historical context, not an active dependency.
 - Where it was recorded: `openclaw_agents/database/store.py` and `tests/test_builtin_loops.py`
 
@@ -172,7 +172,19 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 - Where it was recorded: `openclaw_agents/database/store.py`, `openclaw_agents/scheduler/lease_manager.py`
 
 - Date: 2026-04-14
-- Problem: After the Phase 3 migration work, the live stack looked like `Niobe` was stuck even though there was no active workflow.
+- Problem: After the Phase 3 migration work, the live stack looked like `Niaobe` was stuck even though there was no active workflow.
 - Root cause: The repo-specific gateway and worker supervisor had not been restarted after the migration/purge work, so no live processes were available to consume new work even though the database was otherwise clean.
 - New rule: Treat migration or purge completion as incomplete until `zulip-gateway.service` and `openclaw-worker-supervisor.service` are restarted and the corresponding repo-specific processes are verified in `ps`.
 - Where it was recorded: live rollout of the Phase 3 migration on 2026-04-14
+
+- Date: 2026-04-14
+- Problem: A full mechanical rename in code/config was not sufficient to keep the live stack running on the first rollout.
+- Root cause: The live Zulip credential filename still used the previous orchestrator spelling, so removing compatibility immediately would have broken bot loading even though the canonical agent id had already changed.
+- New rule: For runtime identity corrections, rename the live operational credential files and then remove the temporary compatibility bridge in the code; do not leave the bridge in place after the operational rename is complete.
+- Where it was recorded: `openclaw_agents/communication/zulip_gateway_service.py`
+
+- Date: 2026-04-14
+- Problem: The first orchestrator spelling-correction rollout still left the live gateway broken after restart.
+- Root cause: Existing SQLite databases still carried legacy `niobe` check constraints and row values, especially in `orchestrator_leases`, so startup lease seeding crashed before the gateway could even load bots.
+- New rule: Treat runtime identity renames as a data-migration problem as well as a code/config rename; verify service startup against existing live databases before considering the rollout complete.
+- Where it was recorded: `openclaw_agents/database/store.py`, `tests/test_store_migrations.py`

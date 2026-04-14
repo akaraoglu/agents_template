@@ -46,7 +46,7 @@ def seed_project(
             "priority": priority,
             "current_phase": current_phase,
             "current_owner_agent": current_owner_agent,
-            "assigned_project_orchestrator": "niobe",
+            "assigned_project_orchestrator": "niaobe",
             "assigned_software_orchestrator": "morpheus",
             "next_action_json": next_action or {},
             "workspace_ref": workspace_ref,

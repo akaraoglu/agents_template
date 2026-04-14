@@ -161,6 +161,21 @@ class ZulipGateway:
     """Normalize inbound Zulip messages and produce control-plane actions."""
 
     _YAML_BLOCK_RE = re.compile(r"```yaml\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+    _MILESTONE_RE = re.compile(r"^Milestone\s+(\d+)\s*:\s*(.+?)\s*$", re.IGNORECASE)
+    _PROJECT_NAME_RE = re.compile(r"^(?:Start|Initiate)\s+(?:a\s+)?(?:new\s+)?(?:sample\s+)?software project:\s*(.+?)\.?\s*$", re.IGNORECASE)
+    _SECTION_MAP = {
+        "project goal": "project_goal",
+        "requirements": "requirements",
+        "acceptance criteria": "acceptance_criteria",
+        "execution requirements": "execution_requirements",
+        "project-wide constraints": "project_constraints",
+        "project management requirements": "management_requirements",
+        "constraints": "constraints",
+        "dependencies": "dependencies",
+        "open questions": "open_questions",
+        "non-goals": "non_goals",
+        "non goals": "non_goals",
+    }
     _STEP_LABELS = {
         "FRAME_PROJECT": (1, 5, "Intake Framing"),
         "CLARIFY_GOAL": (1, 5, "Clarification"),
@@ -254,11 +269,11 @@ class ZulipGateway:
         if task_type == "VERIFY_PROJECT":
             return "Oracle will verify the delivered package and return a pass, fail, or clarification result."
         if task_type == "DESIGN_ARCHITECTURE":
-            return "Architect will produce an implementable architecture and hand it back to Niobe."
+            return "Architect will produce an implementable architecture and hand it back to Niaobe."
         if task_type == "FRAME_PROJECT":
-            return "AgentSmith will frame the request into a project charter for Niobe."
+            return "AgentSmith will frame the request into a project charter for Niaobe."
         if task_type == "CLOSE_PROJECT":
-            return "Niobe will finalize the project and return the closure report."
+            return "Niaobe will finalize the project and return the closure report."
         return f"{self.agent_display_name(target_agent)} will continue this step and report back."
 
     def _next_step_text(self, next_action: dict[str, Any]) -> str:
@@ -271,7 +286,7 @@ class ZulipGateway:
             owner = self.agent_display_name(target_agent) if target_agent else "the requesting agent"
             return f"Return to {owner}."
         if action_type == "CLOSE_PROJECT":
-            return "Niobe will finalize project closure."
+            return "Niaobe will finalize project closure."
         if target_agent:
             return f"Next owner: {self.agent_display_name(target_agent)}."
         if action_type:
@@ -342,6 +357,86 @@ class ZulipGateway:
             schema_name=schema_name,
             kind=payload.get("kind", "control_event" if schema_name == "control_event" else "unknown"),
         )
+
+    @staticmethod
+    def _normalize_request_text(value: str) -> str:
+        return " ".join(str(value or "").split()).strip()
+
+    def _parse_project_request(self, content: str) -> dict[str, Any]:
+        parsed: dict[str, Any] = {
+            "project_title": None,
+            "project_goal": None,
+            "requirements": [],
+            "acceptance_criteria": [],
+            "execution_requirements": [],
+            "project_constraints": [],
+            "management_requirements": [],
+            "constraints": [],
+            "dependencies": [],
+            "open_questions": [],
+            "non_goals": [],
+            "milestones": [],
+        }
+        top_level_notes: list[str] = []
+        current_section: str | None = None
+        current_milestone: dict[str, Any] | None = None
+
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            project_match = self._PROJECT_NAME_RE.match(line)
+            if project_match and not parsed["project_title"]:
+                parsed["project_title"] = self._normalize_request_text(project_match.group(1))
+                continue
+            milestone_match = self._MILESTONE_RE.match(line)
+            if milestone_match:
+                current_milestone = {
+                    "milestone_id": f"M{int(milestone_match.group(1))}",
+                    "title": self._normalize_request_text(milestone_match.group(2)),
+                    "goal": self._normalize_request_text(milestone_match.group(2)),
+                    "requirements": [],
+                    "acceptance_criteria": [],
+                    "constraints": [],
+                    "dependencies": [],
+                    "notes": [],
+                }
+                parsed["milestones"].append(current_milestone)
+                current_section = None
+                continue
+            if line.endswith(":"):
+                section_key = self._SECTION_MAP.get(line[:-1].strip().lower())
+                if section_key:
+                    current_section = section_key
+                    if current_section == "project_goal":
+                        current_milestone = None
+                    continue
+            item = line[2:].strip() if line.startswith(("- ", "* ")) else line
+            item = self._normalize_request_text(item)
+            if not item:
+                continue
+            if current_section:
+                if current_milestone is not None and current_section in {"requirements", "acceptance_criteria", "constraints", "dependencies"}:
+                    current_milestone[current_section].append(item)
+                elif current_section == "project_goal":
+                    parsed["project_goal"] = item if not parsed["project_goal"] else f"{parsed['project_goal']} {item}"
+                else:
+                    parsed[current_section].append(item)
+                continue
+            if current_milestone is not None:
+                current_milestone["notes"].append(item)
+                continue
+            top_level_notes.append(item)
+
+        if not parsed["project_goal"]:
+            for candidate in top_level_notes:
+                if candidate.lower().startswith(("start a new software project", "initiate a sample software project", "initiate a new software project")):
+                    continue
+                parsed["project_goal"] = candidate
+                break
+        if not parsed["project_goal"]:
+            parsed["project_goal"] = self._normalize_request_text(content.splitlines()[0] if content.splitlines() else content)
+        return parsed
 
     def _ensure_project(self, project_id: str, *, goal: str, owner_agent: str, phase: str) -> dict[str, Any]:
         project = self.store.get_project(project_id)
@@ -543,7 +638,9 @@ class ZulipGateway:
         project_id = envelope.route.project_id or self.store.new_id("P")
         entry_agent = self.routing_rules["routing"]["default_entry_agent"]
         task_id = self.store.new_id("T")
-        self._ensure_project(project_id, goal=envelope.summary, owner_agent=entry_agent, phase="intake")
+        parsed_request = self._parse_project_request(envelope.summary)
+        project_goal = str(parsed_request.get("project_goal") or envelope.summary).strip()
+        self._ensure_project(project_id, goal=project_goal, owner_agent=entry_agent, phase="intake")
         self._persist_task(
             project_id=project_id,
             task_id=task_id,
@@ -551,13 +648,26 @@ class ZulipGateway:
             to_agent=entry_agent,
             task_type="FRAME_PROJECT",
             title="Human intake request",
-            goal=envelope.summary,
+            goal=project_goal,
             priority="MEDIUM",
             context={
                 "source": "zulip_human_message",
                 "stream_name": event.stream_name,
                 "topic_name": event.topic_name,
                 "sender_name": event.sender_name,
+                "request_summary": envelope.summary,
+                "project_title": parsed_request.get("project_title"),
+                "project_goal": project_goal,
+                "requirements": parsed_request.get("requirements") or [],
+                "acceptance_criteria": parsed_request.get("acceptance_criteria") or [],
+                "execution_requirements": parsed_request.get("execution_requirements") or [],
+                "project_constraints": parsed_request.get("project_constraints") or [],
+                "management_requirements": parsed_request.get("management_requirements") or [],
+                "constraints": parsed_request.get("constraints") or [],
+                "dependencies": parsed_request.get("dependencies") or [],
+                "open_questions": parsed_request.get("open_questions") or [],
+                "non_goals": parsed_request.get("non_goals") or [],
+                "milestones": parsed_request.get("milestones") or [],
             },
             expected_output={"artifact_type": "project_charter"},
             decision_bounds={},
@@ -582,7 +692,7 @@ class ZulipGateway:
             task_type="FRAME_PROJECT",
             reply_stream=reply_stream,
             reply_topic=reply_topic,
-            reason=envelope.summary,
+            reason=project_goal,
         )
         return GatewayResult(
             status="dispatch_planned",

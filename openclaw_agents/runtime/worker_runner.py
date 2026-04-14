@@ -112,7 +112,7 @@ class RuntimeWorker:
                 "constraints": [],
                 "acceptance_criteria": [],
                 "priority": packet["priority"],
-                "assigned_orchestrator": "niobe",
+                "assigned_orchestrator": "niaobe",
             }
         if artifact_type == "architecture_spec":
             return {

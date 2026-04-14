@@ -25,7 +25,7 @@
     },
     "orchestrator_id": {
       "type": "string",
-      "enum": ["niobe", "morpheus"]
+      "enum": ["niaobe", "morpheus"]
     },
     "command": {
       "type": "string",

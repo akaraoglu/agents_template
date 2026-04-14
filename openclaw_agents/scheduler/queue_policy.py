@@ -79,8 +79,8 @@ class QueuePolicy:
             reasons.append("missing_workspace_ref")
         if not candidate.last_snapshot_id:
             reasons.append("missing_snapshot")
-        if orchestrator_id == "niobe" and candidate.runtime_status not in {"NEW", "READY", "ACTIVE", "PAUSED"}:
-            reasons.append("not_ready_for_niobe")
+        if orchestrator_id == "niaobe" and candidate.runtime_status not in {"NEW", "READY", "ACTIVE", "PAUSED"}:
+            reasons.append("not_ready_for_niaobe")
         if orchestrator_id == "morpheus":
             if candidate.runtime_status not in {"READY", "ACTIVE", "PAUSED"}:
                 reasons.append("not_ready_for_morpheus")

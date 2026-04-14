@@ -8,7 +8,7 @@ This file tracks the latest software validation evidence that `Morpheus` and `Or
 - Related task or delivery package: `[task_id_or_artifact_id]`
 - Tester verdict: `PASS | FAIL | INCONCLUSIVE`
 - Likely failure cause: `BAD_PLAN | IMPLEMENTATION_DEFECT | TEST_GAP | ARCHITECTURE_GAP | REQUIREMENT_GAP | ENVIRONMENT_FAILURE | UNKNOWN`
-- Safe to hand back to `Niobe`: `yes | no`
+- Safe to hand back to `Niaobe`: `yes | no`
 
 ## Commands And Results
 

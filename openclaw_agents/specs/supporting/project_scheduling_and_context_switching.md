@@ -5,7 +5,7 @@ This document defines how the agentic software-development system schedules, pau
 - This spec extends `agentic_workflow.md`, `zulip_communication_spec.md`, and the software workspace contract.
 - The YAML block under **Authoritative Spec** is the source of truth.
 - This spec is designed for **serial multi-project execution with context switching**, not unrestricted parallel project execution.
-- **Niobe** and **Morpheus** are treated as singleton orchestrators unless explicitly upgraded in a future version.
+- **Niaobe** and **Morpheus** are treated as singleton orchestrators unless explicitly upgraded in a future version.
 - **Zulip remains transport and audit only**. Scheduling state lives in the authoritative state store.
 
 ## Authoritative Spec
@@ -29,7 +29,7 @@ scope:
     - "priority-aware queueing"
     - "workspace isolation rules"
     - "state snapshot requirements"
-    - "Niobe and Morpheus scheduling behavior"
+    - "Niaobe and Morpheus scheduling behavior"
   out_of_scope:
     - "fully parallel project orchestration by one singleton orchestrator"
     - "cross-project dependency optimization"
@@ -72,7 +72,7 @@ enums:
     - "DONE"
     - "CANCELLED"
   orchestrator_ids:
-    - "niobe"
+    - "niaobe"
     - "morpheus"
   lease_statuses:
     - "FREE"
@@ -184,7 +184,7 @@ scheduler:
 leasing:
   lease_required_for_execution: true
   singleton_orchestrators:
-    niobe:
+    niaobe:
       max_active_projects: 1
       lease_ttl_minutes: 30
       renew_interval_minutes: 5
@@ -273,7 +273,7 @@ project_queue_model:
   eligibility_rules:
     ready_for_niobe:
       - "project_status in [NEW, READY, ACTIVE, PAUSED]"
-      - "assigned_project_orchestrator == niobe"
+      - "assigned_project_orchestrator == niaobe"
       - "required charter or snapshot data present"
     ready_for_morpheus:
       - "project_status in [ACTIVE, PAUSED, READY]"
@@ -291,15 +291,15 @@ project_queue_model:
 niobe_scheduling:
   role: "project-level singleton scheduler consumer"
   rules:
-    - "Niobe may manage many projects over time but holds one active project lease at a time."
-    - "Niobe chooses next project actions only for the currently leased project."
-    - "Niobe must persist a project status snapshot before releasing a project."
-    - "Niobe may request Morpheus work, but Morpheus scheduling is independent once the task is assigned."
-    - "Niobe may switch away from a project when it becomes WAITING_EXTERNAL, WAITING_VERIFICATION, PAUSED, BLOCKED, or after a safe project boundary."
+    - "Niaobe may manage many projects over time but holds one active project lease at a time."
+    - "Niaobe chooses next project actions only for the currently leased project."
+    - "Niaobe must persist a project status snapshot before releasing a project."
+    - "Niaobe may request Morpheus work, but Morpheus scheduling is independent once the task is assigned."
+    - "Niaobe may switch away from a project when it becomes WAITING_EXTERNAL, WAITING_VERIFICATION, PAUSED, BLOCKED, or after a safe project boundary."
   recommended_switch_triggers:
     - "Oracle verification in progress"
     - "Escalation pending human decision"
-    - "Morpheus task in progress and Niobe has no immediate local action"
+    - "Morpheus task in progress and Niaobe has no immediate local action"
     - "Project explicitly paused"
     - "Higher-priority eligible project arrives"
 
@@ -311,7 +311,7 @@ morpheus_scheduling:
     - "Morpheus should not switch projects while an implementation or test run is actively mutating the workspace."
     - "Morpheus must return a persisted delivery package or persisted blocker before releasing a project lease."
   recommended_switch_triggers:
-    - "Tester report persisted and next action requires Niobe or Architect"
+    - "Tester report persisted and next action requires Niaobe or Architect"
     - "Environment failure persisted and escalated"
     - "Project paused or preempted at a safe software boundary"
     - "Higher-priority software request becomes eligible and current project is safely parked"
@@ -370,7 +370,7 @@ human_control_surface:
   recommended_access:
     - "MASTER"
     - "authorized operators"
-    - "Niobe for project-level pause/escalation actions within policy"
+    - "Niaobe for project-level pause/escalation actions within policy"
   audit_requirement: "Every command must create an immutable control event record."
 
 zulip_interaction:
@@ -441,7 +441,7 @@ implementation_targets:
     - "schemas/orchestrator_lease.schema.json"
     - "schemas/project_schedule_record.schema.json"
   acceptance_criteria_for_builder_agent:
-    - "The system can track many projects while assigning at most one active Niobe lease and one active Morpheus lease at a time."
+    - "The system can track many projects while assigning at most one active Niaobe lease and one active Morpheus lease at a time."
     - "A project can be paused and resumed without reading Zulip history."
     - "Switching projects requires persisted boundary state unless FORCE_INTERRUPT is explicitly used."
     - "Workspace isolation is enforced per project."
@@ -457,7 +457,7 @@ This update adds the missing control-plane behavior for handling **multiple proj
 
 It defines:
 - how many projects can exist in the system,
-- how one project becomes the active project for Niobe or Morpheus,
+- how one project becomes the active project for Niaobe or Morpheus,
 - how a project is paused,
 - how a project is resumed,
 - how the system safely switches from one project to another,
@@ -468,7 +468,7 @@ It defines:
 
 The system supports:
 - many projects existing concurrently in the database,
-- one active project for **Niobe** at a time,
+- one active project for **Niaobe** at a time,
 - one active project for **Morpheus** at a time,
 - explicit switching between projects at safe boundaries,
 - persistence-based resume instead of chat-history reconstruction.

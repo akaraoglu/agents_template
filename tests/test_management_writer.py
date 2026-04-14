@@ -82,26 +82,26 @@ class WorkspaceManagementWriterTests(unittest.TestCase):
         self.harness.store.record_task(
             project_id="P_manage",
             from_agent="agent_smith",
-            to_agent="niobe",
+            to_agent="niaobe",
             task_type="ORCHESTRATE_PROJECT",
             title="Drive the project loop",
             goal="Build a fibonacci command-line tool",
             priority="MEDIUM",
             status="RUNNING",
             return_to="requesting_agent",
-            task_id="T_parent_niobe",
+            task_id="T_parent_niaobe",
         )
         self.harness.store.record_task(
             project_id="P_manage",
-            parent_task_id="T_parent_niobe",
-            from_agent="niobe",
+            parent_task_id="T_parent_niaobe",
+            from_agent="niaobe",
             to_agent="morpheus",
             task_type="ORCHESTRATE_SOFTWARE",
             title="Deliver the software package",
             goal="Build a fibonacci command-line tool",
             priority="MEDIUM",
             status="RUNNING",
-            return_to="niobe",
+            return_to="niaobe",
             task_id="T_morpheus_active",
         )
         self.harness.store.record_task(
@@ -170,7 +170,7 @@ class WorkspaceManagementWriterTests(unittest.TestCase):
         )
         task = self.harness.store.record_task(
             project_id="P_dispatch_sync",
-            from_agent="niobe",
+            from_agent="niaobe",
             to_agent="architect",
             task_type="DESIGN_ARCHITECTURE",
             title="Design the fibonacci system",
@@ -221,8 +221,8 @@ class WorkspaceManagementWriterTests(unittest.TestCase):
                 "findings": ["Use a single Python module with tests."],
                 "next_action": {
                     "type": "RETURN_TO_REQUESTER",
-                    "reason": "Architecture is ready for Niobe.",
-                    "target_agent": "niobe",
+                    "reason": "Architecture is ready for Niaobe.",
+                    "target_agent": "niaobe",
                 },
                 "risks": [],
                 "trace": {"run_id": receipt.run_id},

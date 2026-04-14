@@ -168,7 +168,8 @@ class GatewayService:
             raise ValueError(
                 "zuliprc directory is not configured; set OPENCLAW_ZULIPRC_DIR or pass --zuliprc-dir"
             )
-        return (self.zuliprc_dir / f"{agent_id}.zuliprc").resolve()
+        direct_path = (self.zuliprc_dir / f"{agent_id}.zuliprc").resolve()
+        return direct_path
 
     def _load_bots(self) -> None:
         subscriptions = self.gateway_config.get("zulip", {}).get("subscriptions", {})
@@ -263,7 +264,7 @@ class GatewayService:
         )
 
     def _default_sender_agent(self) -> str:
-        for preferred in ("agent_smith", "niobe", "morpheus"):
+        for preferred in ("agent_smith", "niaobe", "morpheus"):
             if preferred in self.bots:
                 return preferred
         return next(iter(self.bots))

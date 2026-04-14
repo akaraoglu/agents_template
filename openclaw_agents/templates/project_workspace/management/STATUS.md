@@ -10,7 +10,7 @@ This file is the human-readable project snapshot. Update it after accepted task 
 - Runtime status: `NEW | READY | ACTIVE | PAUSE_REQUESTED | PAUSED | WAITING_EXTERNAL | WAITING_VERIFICATION | BLOCKED | DONE | CANCELLED`
 - Priority: `LOW | MEDIUM | HIGH | URGENT`
 - Current phase: `[intake | design | implementation | verification | closure | other]`
-- Current owner agent: `[agent_smith | niobe | architect | morpheus | oracle | other]`
+- Current owner agent: `[agent_smith | niaobe | architect | morpheus | oracle | other]`
 - Next action: `[replace_me]`
 - Safe to pause or switch: `yes | no`
 - Last safe boundary type: `[TASK_RESULT_PERSISTED | ORACLE_REPORT_PERSISTED | other]`

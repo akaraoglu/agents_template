@@ -4,10 +4,10 @@ This file is a reusable starting README for a software project workspace used by
 
 In the current model:
 
-* **Niobe** owns project-level orchestration.
+* **Niaobe** owns project-level orchestration.
 * **Morpheus** owns software delivery orchestration.
 * **Planner -> Implementer -> Tester** is Morpheus's internal software loop.
-* **Oracle** verifies the project at the project level after Niobe requests verification.
+* **Oracle** verifies the project at the project level after Niaobe requests verification.
 * **Zulip is transport and audit**, not the source of truth.
 
 Inside the Docker sandbox, this project workspace is mounted at `/workspace`.
@@ -39,7 +39,7 @@ Recommended defaults for the current template:
 
 Use this workspace with the following ownership boundaries:
 
-* **Niobe** may assign software work into this workspace, but does not manage individual implementation attempts.
+* **Niaobe** may assign software work into this workspace, but does not manage individual implementation attempts.
 * **Morpheus** owns sequencing, retries, and handoff between Planner, Implementer, and Tester.
 * **Planner, Implementer, and Tester** are internal software agents by default and should not post directly to Zulip unless you intentionally expose them.
 * **Oracle** consumes the resulting delivery package through the project workflow and does not replace the software test loop.
@@ -177,7 +177,7 @@ Track:
 * failing and passing suites,
 * gaps in automated coverage,
 * tester verdict,
-* evidence needed for Oracle or Niobe.
+* evidence needed for Oracle or Niaobe.
 
 ## Morpheus Software Loop
 
@@ -192,7 +192,7 @@ For every software task, Morpheus should use this loop unless a smaller direct a
    * rerun Implementer with the defect report, or
    * rerun Planner first if the plan or task framing is wrong.
 6. When Tester passes, Morpheus updates the workspace documents and produces a delivery summary.
-7. Morpheus returns the delivery package to the requester, usually Niobe.
+7. Morpheus returns the delivery package to the requester, usually Niaobe.
 
 ### Required Delivery Rule
 
@@ -243,7 +243,7 @@ Recommended behavior:
 * Morpheus consumes the request through the gateway,
 * internal Planner, Implementer, and Tester runs stay internal unless explicitly mirrored,
 * Morpheus posts back a summary and references the updated artifacts,
-* Niobe decides what happens next at the project level.
+* Niaobe decides what happens next at the project level.
 
 Do not rely on Zulip topic history as the only execution state.
 
@@ -263,7 +263,7 @@ Recommended outputs in `artifacts/outgoing/` or `artifacts/reports/`:
 * patch notes,
 * dependency notes,
 * test summaries,
-* handoff packets for Niobe or Oracle.
+* handoff packets for Niaobe or Oracle.
 
 ## Notes
 

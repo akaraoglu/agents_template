@@ -53,7 +53,7 @@ visible_agents:
     - "master"
     - "neo"
     - "agent_smith"
-    - "niobe"
+    - "niaobe"
     - "morpheus"
     - "architect"
     - "oracle"
@@ -120,7 +120,7 @@ subscription_policy:
     streams: ["exec", "projects", "verification", "escalations"]
   agent_smith:
     streams: ["exec", "projects", "escalations"]
-  niobe:
+  niaobe:
     streams: ["projects", "software", "verification", "escalations"]
   morpheus:
     streams: ["projects", "software", "escalations"]
@@ -283,13 +283,13 @@ examples:
       reason: Software test obligations satisfied
     ```
   escalation: |
-    Niobe -> AgentSmith: Requirements are contradictory and cannot be verified as written.
+    Niaobe -> AgentSmith: Requirements are contradictory and cannot be verified as written.
 
     ```yaml
     kind: escalation
     project_id: P-104
     task_id: T-240
-    from_agent: Niobe
+    from_agent: Niaobe
     to_agent: AgentSmith
     reason: CONFLICTING_REQUIREMENTS
     blocking_facts:
@@ -302,18 +302,18 @@ canonical_flows:
     - "Human or MASTER posts in exec or projects"
     - "Gateway converts message to FRAME_PROJECT for AgentSmith"
     - "AgentSmith replies in project intake topic with project charter"
-    - "AgentSmith assigns Niobe"
+    - "AgentSmith assigns Niaobe"
   design_request:
-    - "Niobe posts task for Architect in project design topic"
+    - "Niaobe posts task for Architect in project design topic"
     - "Architect replies in same topic with design artifact summary and schema block"
   software_delivery:
-    - "Niobe assigns ORCHESTRATE_SOFTWARE to Morpheus"
+    - "Niaobe assigns ORCHESTRATE_SOFTWARE to Morpheus"
     - "Morpheus may keep Planner/Implementer/Tester internal or mirror to software-internal"
     - "Morpheus posts completion summary to software stream"
   project_verification:
-    - "Niobe assigns VERIFY_PROJECT to Oracle"
+    - "Niaobe assigns VERIFY_PROJECT to Oracle"
     - "Oracle posts report in verification stream"
-    - "Niobe reads report and decides next action"
+    - "Niaobe reads report and decides next action"
   escalation:
     - "Any orchestrator posts escalation packet in escalations stream or DM when sensitive"
     - "Gateway links escalation message to the owning task and project"
@@ -395,7 +395,7 @@ Start with these visible agents in Zulip:
 - MASTER
 - Neo
 - AgentSmith
-- Niobe
+- Niaobe
 - Morpheus
 - Architect
 - Oracle
