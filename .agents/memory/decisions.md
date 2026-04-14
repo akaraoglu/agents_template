@@ -18,6 +18,12 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Status: Accepted
 
 - Date: 2026-04-13
+- Decision: When the local OpenClaw deployment is pinned to one mandated Ollama model, the runtime should not keep permissive fallbacks to older local models, and the workspace executor must reconcile backend-agent drift before reuse.
+- Context: A live implementer run for `P_2e39de70701447a591d27700665faff2` was provisioned on `ollama/gemma4:31b` but still reported `qwen3:8b` in runtime metadata, then returned `status=ok` with no visible payloads. The OpenClaw defaults still allowed qwen fallback, and the executor reused backend agents blindly.
+- Consequences: The deployment should keep Gemma as the only active local fallback path when the operator requests a single-model policy, and `openclaw_workspace_executor.py` now deletes and recreates backend agents when their stored model or workspace no longer matches the requested configuration. Empty-payload OpenClaw runs are also allowed one session-harvest recovery pass before being treated as blocked runtime failures.
+- Status: Accepted
+
+- Date: 2026-04-13
 - Decision: The repo-local Zulip credential directory must be self-contained. `openclaw_agents/state/zuliprc` should contain local regular files, not symlinks into older bridge or gateway repos.
 - Context: After the legacy V3 gateway was removed, the last remaining carryover was that the new repo-specific gateway still loaded bot credentials through symlinks pointing at `/home/alik/workspace/zulip/assistant_bridge` and `/home/alik/workspace/zulip/software_bridge`. That kept the new system operationally dependent on older repos even though the runtime logic had been migrated.
 - Consequences: The local `.zuliprc` files under `openclaw_agents/state/zuliprc` were replaced with regular files and the repo-specific gateway was restarted successfully against those local files. Future cleanup and deployment work should treat the local credential directory as the authoritative runtime input for this scaffold.
@@ -495,4 +501,16 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Decision: Human-facing feedback for a project should default to one canonical Zulip thread derived from the first inbound project message, while phase-specific topics remain secondary routing detail rather than the primary operator surface.
 - Context: The original integrated spec exposed intake, design, software, verification, and escalation topics, and the first implementation mirrored visible results back to those task-specific destinations. That made the audit trail technically consistent but produced a poor operator experience because one project appeared fragmented across many topics.
 - Consequences: `store.get_project_feedback_thread()` now resolves the canonical operator thread from persisted inbound Zulip links; visible dispatches, visible task results, and control-event mirrors now prefer that thread; and the human-readable summaries for those mirrors now explicitly describe the step, owner, and next step so operators can follow progress in one place.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: When the operator mandates one model, the live OpenClaw runtime must remove fallback models entirely, and workspace-backed `implementer` or `tester` runs must use isolated backend-agent identities per run instead of reusing one agent per project-role.
+- Context: The blocked Fibonacci project showed two coupled failure modes: OpenClaw session state could drift from the requested Gemma configuration back onto an older `qwen3:8b` session, and per-project-role backend agent reuse let stale session history survive into later retries even after the visible control-plane task changed.
+- Consequences: The live OpenClaw config now keeps only `ollama/gemma4:31b` active for the default deployment, and `openclaw_workspace_executor.py` now derives backend agent ids from the runtime run identity so each workspace-backed execution gets a fresh OpenClaw session boundary. This reduces cross-run contamination and makes a strict single-model deployment enforceable in practice.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: Non-terminal task queries in the control plane must treat only `PENDING` and `RUNNING` tasks as active; `BLOCKED`, `NEEDS_CLARIFICATION`, `FAILED`, `SUCCESS`, and `CANCELLED` are all terminal for orchestration wait logic.
+- Context: Niobe stayed stuck in `WAIT_FOR_EXTERNAL` on a completed Morpheus retry because the store-layer child-task query still surfaced an older blocked Morpheus child as “active”, so Niobe never advanced to Oracle even though a newer software-delivery task had already succeeded.
+- Consequences: `ControlPlaneStore.list_open_tasks()` and `ControlPlaneStore.list_child_tasks(..., include_terminal=False)` now filter to `PENDING` and `RUNNING` only. Niobe and Morpheus therefore wait only on truly active child tasks and can correctly ignore earlier blocked retries when a later child has already delivered the required artifact.
 - Status: Accepted

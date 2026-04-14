@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+NON_TERMINAL_TASK_STATUSES = ("PENDING", "RUNNING")
+
 
 def utc_now() -> str:
     """Return the current UTC time as an ISO-8601 string."""
@@ -295,10 +297,10 @@ class ControlPlaneStore:
             SELECT *
             FROM tasks
             WHERE project_id = ?
-              AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+              AND status IN (?, ?)
             ORDER BY opened_at ASC
             """,
-            (project_id,),
+            (project_id, *NON_TERMINAL_TASK_STATUSES),
             conn=conn,
         )
 
@@ -320,7 +322,8 @@ class ControlPlaneStore:
             sql += " AND task_type = ?"
             params.append(task_type)
         if not include_terminal:
-            sql += " AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')"
+            sql += " AND status IN (?, ?)"
+            params.extend(NON_TERMINAL_TASK_STATUSES)
         sql += " ORDER BY opened_at ASC"
         return self.fetchall(sql, params, conn=conn)
 

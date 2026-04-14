@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from openclaw_agents.database.store import utc_now
 from openclaw_agents.runtime.dispatcher import RuntimeDispatcher
 from openclaw_agents.runtime.worker_runner import RuntimeWorker
 
@@ -165,6 +166,129 @@ class BuiltinLoopTests(unittest.TestCase):
             ("P_morpheus_missing_workspace", task["task_id"]),
         )
         self.assertIn("escalation_packet", [item["artifact_type"] for item in escalation])
+
+    def test_niobe_ignores_older_blocked_software_child_when_later_retry_succeeds(self) -> None:
+        store = self.harness.store
+        workspace = self.harness.tmp_path / "P_niobe_retry_resume"
+        workspace.mkdir(parents=True, exist_ok=True)
+        seed_project(
+            store,
+            project_id="P_niobe_retry_resume",
+            goal="Resume verification after a successful Morpheus retry",
+            current_phase="project_orchestration",
+            current_owner_agent="niobe",
+            next_action={"type": "ORCHESTRATE_PROJECT", "target_agent": "niobe"},
+            workspace_ref=str(workspace),
+        )
+        now = utc_now()
+        niobe_task = store.record_task(
+            project_id="P_niobe_retry_resume",
+            from_agent="agent_smith",
+            to_agent="niobe",
+            task_type="ORCHESTRATE_PROJECT",
+            title="Resume the project loop",
+            goal="Resume verification after a successful Morpheus retry",
+            priority="MEDIUM",
+            context={},
+            expected_output={"artifact_type": "project_status_report"},
+            return_to="requesting_agent",
+            status="PENDING",
+        )
+        architecture_task = store.record_task(
+            project_id="P_niobe_retry_resume",
+            parent_task_id=niobe_task["task_id"],
+            from_agent="niobe",
+            to_agent="architect",
+            task_type="DESIGN_ARCHITECTURE",
+            title="Architecture",
+            goal="Architecture",
+            priority="MEDIUM",
+            status="SUCCESS",
+            opened_at=now,
+            updated_at=now,
+            closed_at=now,
+        )
+        blocked_software_task = store.record_task(
+            project_id="P_niobe_retry_resume",
+            parent_task_id=niobe_task["task_id"],
+            from_agent="niobe",
+            to_agent="morpheus",
+            task_type="ORCHESTRATE_SOFTWARE",
+            title="Software attempt 1",
+            goal="Software attempt 1",
+            priority="MEDIUM",
+            status="BLOCKED",
+            opened_at=now,
+            updated_at=now,
+            closed_at=now,
+        )
+        successful_software_task = store.record_task(
+            project_id="P_niobe_retry_resume",
+            parent_task_id=niobe_task["task_id"],
+            from_agent="niobe",
+            to_agent="morpheus",
+            task_type="ORCHESTRATE_SOFTWARE",
+            title="Software attempt 2",
+            goal="Software attempt 2",
+            priority="MEDIUM",
+            status="SUCCESS",
+            opened_at="9999-12-31T23:59:59Z",
+            updated_at="9999-12-31T23:59:59Z",
+            closed_at="9999-12-31T23:59:59Z",
+        )
+        for task_id, artifact_type, payload in [
+            (
+                niobe_task["task_id"],
+                "project_charter",
+                {"acceptance_criteria": ["deliver the project"], "summary": "charter"},
+            ),
+            (
+                architecture_task["task_id"],
+                "architecture_spec",
+                {"summary": "arch"},
+            ),
+            (
+                successful_software_task["task_id"],
+                "software_delivery_package",
+                {"summary": "delivery", "verification_notes": ["ready for oracle"]},
+            ),
+        ]:
+            artifact_id = store.new_id("artifact")
+            store.upsert(
+                "artifacts",
+                {
+                    "artifact_id": artifact_id,
+                    "project_id": "P_niobe_retry_resume",
+                    "task_id": task_id,
+                    "produced_by_agent": "test",
+                    "artifact_type": artifact_type,
+                    "store_backend": "inline_json",
+                    "ref": f"inline://{artifact_id}",
+                    "content_hash": None,
+                    "metadata_json": {"payload": payload},
+                    "created_at": now,
+                },
+                conflict_columns=["artifact_id"],
+            )
+
+        dispatcher = RuntimeDispatcher(store, state_dir=self.harness.state_dir)
+        queue_task(dispatcher, niobe_task)
+        worker = RuntimeWorker(store, state_dir=self.harness.state_dir, default_executor="builtin")
+
+        result = worker.process_once(agent_id="niobe")
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.status, "RUNNING")
+        oracle_tasks = store.fetchall(
+            "SELECT task_id, status FROM tasks WHERE project_id = ? AND to_agent = 'oracle' ORDER BY opened_at ASC",
+            ("P_niobe_retry_resume",),
+        )
+        self.assertEqual(len(oracle_tasks), 1)
+        project = store.get_project("P_niobe_retry_resume")
+        assert project is not None
+        self.assertEqual(project["current_owner_agent"], "oracle")
+        self.assertIn("Niobe queued Oracle", result.summary)
 
 
 if __name__ == "__main__":  # pragma: no cover

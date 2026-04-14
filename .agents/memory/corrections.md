@@ -128,3 +128,9 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 - Root cause: The committed systemd unit templates used shell arrays and `$...` variable expansions inside `ExecStart` and `ExecStartPre`, but systemd expands `$` itself unless it is escaped. That turned `cmd[@]` into an invalid environment expansion before `bash` ever ran.
 - New rule: When a systemd unit shells out through `bash -lc`, escape every shell-side `$` as `$$` in the unit file. Keep environment-driven optional flags such as the Zulip `--insecure` path explicit in the unit or env file instead of depending on a hidden transient-service command line.
 - Where it was recorded: `openclaw_agents/operations/systemd/zulip-gateway.service`, `openclaw_agents/operations/systemd/openclaw-worker-supervisor.service`, and `openclaw_agents/operations/systemd/openclaw-worker@.service`
+
+- Date: 2026-04-14
+- Problem: The first live retry recovery focused on the OpenClaw implementer timeout and model drift, but the project still remained stuck even after a later Morpheus retry succeeded.
+- Root cause: The store-layer “active child” query treated `BLOCKED` tasks as still active, so Niobe kept waiting on an older blocked software child instead of advancing from the newer successful Morpheus retry to Oracle verification.
+- New rule: When orchestration code asks for non-terminal child tasks, filter to `PENDING` and `RUNNING` only. A blocked child is historical context, not an active dependency.
+- Where it was recorded: `openclaw_agents/database/store.py` and `tests/test_builtin_loops.py`

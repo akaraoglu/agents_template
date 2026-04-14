@@ -66,8 +66,12 @@ class OpenClawWorkspaceExecutor:
     def _backend_agent_id(self, packet: dict[str, Any]) -> str:
         project_slug = self._sanitize_identifier(packet["project_id"])
         role_slug = self._sanitize_identifier(packet["to_agent"])
-        workspace_ref = (packet.get("metadata") or {}).get("workspace_ref") or packet["project_id"]
-        digest = hashlib.sha1(str(workspace_ref).encode("utf-8")).hexdigest()[:8]
+        run_key = (
+            (packet.get("metadata") or {}).get("run_id")
+            or (packet.get("metadata") or {}).get("attempt_id")
+            or packet["task_id"]
+        )
+        digest = hashlib.sha1(str(run_key).encode("utf-8")).hexdigest()[:8]
         return f"ocw-{project_slug}-{role_slug}-{digest}"
 
     def _session_id(self, packet: dict[str, Any]) -> str:
@@ -180,6 +184,11 @@ class OpenClawWorkspaceExecutor:
                 stderr=stderr,
             )
         )
+
+    @staticmethod
+    def _append_log_note(log_path: Path, note: str) -> None:
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n{note}\n")
 
     @staticmethod
     def _session_dir(agent_record: dict[str, Any]) -> Path | None:
@@ -415,7 +424,23 @@ class OpenClawWorkspaceExecutor:
         )
         for agent in agents:
             if agent.get("id") == backend_agent_id:
-                return agent
+                existing_model = str(agent.get("model") or "")
+                existing_workspace = str(agent.get("workspace") or "")
+                if existing_model == model_id and existing_workspace == workspace_ref:
+                    return agent
+                self._run_command(
+                    [
+                        openclaw_bin,
+                        "agents",
+                        "delete",
+                        backend_agent_id,
+                        "--force",
+                        "--json",
+                    ],
+                    timeout_seconds=timeout_seconds,
+                    log_path=log_path.with_suffix(".reconcile.log"),
+                )
+                break
         Path(workspace_ref).mkdir(parents=True, exist_ok=True)
         payload = self._run_command(
             [
@@ -755,8 +780,23 @@ class OpenClawWorkspaceExecutor:
         )
         if not isinstance(payload, dict):
             raise ValueError("OpenClaw agent run did not return an object")
-        visible_text = self._raw_visible_text(payload)
-        parsed = self._parse_visible_payload(visible_text)
+        try:
+            visible_text = self._raw_visible_text(payload)
+            parsed = self._parse_visible_payload(visible_text)
+        except ValueError as exc:
+            harvested = self._harvest_session_result(self._session_dir(agent_record))
+            if harvested is not None:
+                visible_text, parsed, payload = harvested
+                self._append_log_note(log_path, "recovered_empty_payload_from_session: True")
+            else:
+                session_dir = self._session_dir(agent_record)
+                backend_model = str(agent_record.get("model") or model_id)
+                raise WorkspaceExecutionBlockedError(
+                    "OpenClaw response was not usable: "
+                    f"{exc}; backend_agent_id={backend_agent_id}; "
+                    f"backend_model={backend_model}; session_id={session_id}; "
+                    f"session_dir={session_dir or 'n/a'}"
+                ) from exc
         after = self._scan_workspace(workspace_root)
         response = self._normalize_response(
             packet=packet,

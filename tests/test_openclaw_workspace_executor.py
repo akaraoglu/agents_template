@@ -44,6 +44,13 @@ if args[:3] == ["agents", "list", "--json"]:
     print(json.dumps(list(state["agents"].values())))
     raise SystemExit(0)
 
+if len(args) >= 5 and args[0] == "agents" and args[1] == "delete":
+    agent_id = args[2]
+    state["agents"].pop(agent_id, None)
+    save()
+    print(json.dumps({"deleted": agent_id}))
+    raise SystemExit(0)
+
 if len(args) >= 8 and args[0] == "agents" and args[1] == "add":
     agent_id = args[2]
     workspace = args[args.index("--workspace") + 1]
@@ -141,6 +148,13 @@ if args[:3] == ["agents", "list", "--json"]:
     print(json.dumps(list(state["agents"].values())))
     raise SystemExit(0)
 
+if len(args) >= 5 and args[0] == "agents" and args[1] == "delete":
+    agent_id = args[2]
+    state["agents"].pop(agent_id, None)
+    save()
+    print(json.dumps({"deleted": agent_id}))
+    raise SystemExit(0)
+
 if len(args) >= 8 and args[0] == "agents" and args[1] == "add":
     agent_id = args[2]
     workspace = args[args.index("--workspace") + 1]
@@ -217,6 +231,125 @@ raise SystemExit(f"unsupported args: {args}")
         )
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
         wrapper = self.harness.tmp_path / "harvest_openclaw"
+        wrapper.write_text(f"#!/usr/bin/env bash\nexec {sys.executable} {script} \"$@\"\n")
+        wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
+        return wrapper
+
+    def _write_empty_payload_harvest_openclaw(self) -> Path:
+        script = self.harness.tmp_path / "empty_payload_openclaw.py"
+        state_path = self.harness.tmp_path / "empty_payload_openclaw_state.json"
+        state_path.write_text(json.dumps({"agents": {}}))
+        script.write_text(
+            """
+import json
+import sys
+from pathlib import Path
+
+state_path = Path(__file__).with_name("empty_payload_openclaw_state.json")
+state = json.loads(state_path.read_text())
+args = sys.argv[1:]
+
+def save() -> None:
+    state_path.write_text(json.dumps(state, sort_keys=True))
+
+if args[:3] == ["agents", "list", "--json"]:
+    print(json.dumps(list(state["agents"].values())))
+    raise SystemExit(0)
+
+if len(args) >= 5 and args[0] == "agents" and args[1] == "delete":
+    agent_id = args[2]
+    state["agents"].pop(agent_id, None)
+    save()
+    print(json.dumps({"deleted": agent_id}))
+    raise SystemExit(0)
+
+if len(args) >= 8 and args[0] == "agents" and args[1] == "add":
+    agent_id = args[2]
+    workspace = args[args.index("--workspace") + 1]
+    model = args[args.index("--model") + 1]
+    agent_root = Path(__file__).with_name("empty_payload_agents") / agent_id
+    record = {
+        "id": agent_id,
+        "workspace": workspace,
+        "agentDir": str(agent_root / "agent"),
+        "model": model,
+        "bindings": 0,
+    }
+    (agent_root / "agent").mkdir(parents=True, exist_ok=True)
+    state["agents"][agent_id] = record
+    save()
+    print(json.dumps(record))
+    raise SystemExit(0)
+
+if args and args[0] == "agent":
+    agent_id = args[args.index("--agent") + 1]
+    sessions_dir = Path(state["agents"][agent_id]["agentDir"]).parent / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    visible = {
+        "status": "SUCCESS",
+        "summary": "Recovered result from empty payload session.",
+        "findings": ["updated src/recovered.py"],
+        "build_notes": "empty-payload harvest path",
+        "known_limitations": [],
+        "handoff_notes_for_tester": ["verify the recovered file"],
+    }
+    session_file = sessions_dir / "session-empty-payload.jsonl"
+    session_file.write_text(
+        "\\n".join(
+            [
+                json.dumps({"type": "session", "id": "session-empty-payload"}),
+                json.dumps({"type": "model_change", "provider": "ollama", "modelId": "gemma4:31b"}),
+                json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": json.dumps(visible)}],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\\n"
+    )
+    (sessions_dir / "sessions.json").write_text(
+        json.dumps(
+            {
+                f"agent:{agent_id}:main": {
+                    "sessionId": "session-empty-payload",
+                    "updatedAt": 1,
+                    "provider": "ollama",
+                    "model": "gemma4:31b",
+                    "sessionFile": str(session_file),
+                    "status": "done",
+                }
+            },
+            sort_keys=True,
+        )
+    )
+    payload = {
+        "runId": "run-backend",
+        "status": "ok",
+        "summary": "completed",
+        "result": {
+            "payloads": [],
+            "meta": {
+                "agentMeta": {
+                    "sessionId": "session-empty-payload",
+                    "provider": "ollama",
+                    "model": "qwen3:8b",
+                }
+            },
+        },
+    }
+    print(json.dumps(payload))
+    raise SystemExit(0)
+
+raise SystemExit(f"unsupported args: {args}")
+""".strip()
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        wrapper = self.harness.tmp_path / "empty_payload_openclaw"
         wrapper.write_text(f"#!/usr/bin/env bash\nexec {sys.executable} {script} \"$@\"\n")
         wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
         return wrapper
@@ -372,6 +505,107 @@ raise SystemExit(f"unsupported args: {args}")
         self.assertTrue((workspace_ref / "src" / "harvested.py").exists())
         self.assertIn("src/harvested.py", response["artifacts_out"][0]["payload"]["changed_files"])
         self.assertIn("harvested_from_session: True", log_path.read_text())
+
+    def test_executor_reprovisions_backend_agent_when_model_drift_is_detected(self) -> None:
+        fake_openclaw = self._write_fake_openclaw()
+        _workspace_ref, task = self._seed_workspace_project(
+            "P_impl_model_reconcile",
+            to_agent="implementer",
+            task_type="IMPLEMENT_SOFTWARE_TASK",
+            goal="Implement after model drift reconciliation",
+            context={"plan_summary": {"implementation_steps": ["edit src/implemented.py"]}},
+            expected_output={"artifact_type": "code_change"},
+        )
+        dispatcher = RuntimeDispatcher(self.harness.store, state_dir=self.harness.state_dir)
+        queue_task(dispatcher, task)
+        run = self.harness.store.list_pending_runtime_runs(agent_id="implementer")[0]
+        packet = yaml.safe_load(Path(run["log_ref"]).read_text())
+
+        executor = OpenClawWorkspaceExecutor(self.harness.store, openclaw_bin=str(fake_openclaw))
+        backend_agent_id = executor._backend_agent_id(packet)
+        state_path = fake_openclaw.with_name("fake_openclaw_state.json")
+        state_path.write_text(
+            json.dumps(
+                {
+                    "agents": {
+                        backend_agent_id: {
+                            "id": backend_agent_id,
+                            "workspace": "/tmp/stale-workspace",
+                            "agentDir": f"/tmp/{backend_agent_id}/agent",
+                            "model": "ollama/qwen3:8b",
+                            "bindings": 0,
+                        }
+                    }
+                },
+                sort_keys=True,
+            )
+        )
+
+        response = executor.execute(
+            packet=packet,
+            response_path=self.harness.tmp_path / "reconcile_response.yaml",
+            log_path=self.harness.tmp_path / "reconcile_response.log",
+            timeout_seconds=60,
+        )
+
+        state = json.loads(state_path.read_text())
+        self.assertEqual(response["status"], "SUCCESS")
+        self.assertEqual(state["agents"][backend_agent_id]["model"], "ollama/gemma4:31b")
+        self.assertEqual(state["agents"][backend_agent_id]["workspace"], str(self.harness.tmp_path / "P_impl_model_reconcile"))
+        self.assertTrue((self.harness.tmp_path / "reconcile_response.reconcile.log").exists())
+
+    def test_executor_backend_agent_id_isolated_per_run(self) -> None:
+        fake_openclaw = self._write_fake_openclaw()
+        _workspace_ref, task = self._seed_workspace_project(
+            "P_impl_isolated_backend",
+            to_agent="implementer",
+            task_type="IMPLEMENT_SOFTWARE_TASK",
+            goal="Implement with isolated backend agents per run",
+            context={"plan_summary": {"implementation_steps": ["edit src/implemented.py"]}},
+            expected_output={"artifact_type": "code_change"},
+        )
+        dispatcher = RuntimeDispatcher(self.harness.store, state_dir=self.harness.state_dir)
+        queue_task(dispatcher, task)
+        first_run = self.harness.store.list_pending_runtime_runs(agent_id="implementer")[0]
+        first_packet = yaml.safe_load(Path(first_run["log_ref"]).read_text())
+        second_packet = json.loads(json.dumps(first_packet))
+        second_packet["metadata"]["run_id"] = "run-second-attempt"
+
+        executor = OpenClawWorkspaceExecutor(self.harness.store, openclaw_bin=str(fake_openclaw))
+        first_backend_agent_id = executor._backend_agent_id(first_packet)
+        second_backend_agent_id = executor._backend_agent_id(second_packet)
+
+        self.assertNotEqual(first_backend_agent_id, second_backend_agent_id)
+
+    def test_executor_harvests_session_result_after_empty_payload_response(self) -> None:
+        empty_payload_openclaw = self._write_empty_payload_harvest_openclaw()
+        _workspace_ref, task = self._seed_workspace_project(
+            "P_empty_payload_harvest",
+            to_agent="implementer",
+            task_type="IMPLEMENT_SOFTWARE_TASK",
+            goal="Implement after empty payload recovery",
+            context={"plan_summary": {"implementation_steps": ["edit src/recovered.py"]}},
+            expected_output={"artifact_type": "code_change"},
+        )
+        dispatcher = RuntimeDispatcher(self.harness.store, state_dir=self.harness.state_dir)
+        queue_task(dispatcher, task)
+        run = self.harness.store.list_pending_runtime_runs(agent_id="implementer")[0]
+        packet = yaml.safe_load(Path(run["log_ref"]).read_text())
+
+        response_path = self.harness.tmp_path / "empty_payload_response.yaml"
+        log_path = self.harness.tmp_path / "empty_payload_response.log"
+        executor = OpenClawWorkspaceExecutor(self.harness.store, openclaw_bin=str(empty_payload_openclaw))
+        response = executor.execute(
+            packet=packet,
+            response_path=response_path,
+            log_path=log_path,
+            timeout_seconds=60,
+        )
+
+        self.assertEqual(response["status"], "SUCCESS")
+        self.assertEqual(response["trace"]["backend_model"], "gemma4:31b")
+        self.assertIn("Recovered result from empty payload session.", response["summary"])
+        self.assertIn("recovered_empty_payload_from_session: True", log_path.read_text())
 
     def test_worker_missing_workspace_is_blocked_not_failed(self) -> None:
         store = self.harness.store
