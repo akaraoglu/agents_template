@@ -380,6 +380,12 @@ class RuntimeDispatcher:
             return "ESCALATION_PERSISTED"
         return "TASK_RESULT_PERSISTED"
 
+    @staticmethod
+    def _lifecycle_status_for_response(response_status: str) -> str:
+        if response_status in {"PENDING", "RUNNING"}:
+            return "SUCCESS"
+        return response_status
+
     def record_response(self, response: dict[str, Any]) -> ResponseRecord:
         self.validator.validate("response_envelope", response)
         task = self.store.get_task(response["task_id"])
@@ -409,11 +415,12 @@ class RuntimeDispatcher:
         duration_ms = None
         if run_started and run_finished:
             duration_ms = max(int((run_finished - run_started).total_seconds() * 1000), 0)
+        lifecycle_status = self._lifecycle_status_for_response(response["status"])
 
         self.store.update(
             "task_attempts",
             {
-                "status": response["status"],
+                "status": lifecycle_status,
                 "output_artifact_refs_json": artifact_refs,
                 "summary": response["summary"],
                 "finished_at": now,
@@ -424,7 +431,7 @@ class RuntimeDispatcher:
         self.store.update(
             "agent_runs",
             {
-                "result_status": response["status"],
+                "result_status": lifecycle_status,
                 "ended_at": now,
                 "duration_ms": duration_ms,
             },

@@ -959,3 +959,69 @@ history, live credentials, or project-specific task transcripts here.
 - Action: Applied a Gemma-only model policy to `/home/alik/.openclaw/openclaw.json`, verified `openclaw agents list --json` shows `ollama/gemma4:31b` for `main`, `neo`, and all workspace agents, patched `openclaw_agents/runtime/openclaw_workspace_executor.py` to isolate backend agents per run instead of per project-role, and patched `openclaw_agents/database/store.py` so Niobe and Morpheus only treat `PENDING` and `RUNNING` child tasks as active. Added regression coverage in `tests/test_openclaw_workspace_executor.py` and `tests/test_builtin_loops.py`, restarted the live `openclaw-worker-supervisor.service`, and requeued the stuck Niobe task for project `P_2e39de70701447a591d27700665faff2`.
 - Validation: Ran `python3 -m py_compile openclaw_agents/runtime/openclaw_workspace_executor.py openclaw_agents/database/store.py tests/test_openclaw_workspace_executor.py tests/test_builtin_loops.py`, `python3 -m unittest tests.test_openclaw_workspace_executor -v`, `python3 -m unittest tests.test_builtin_loops -v`, and `python3 -m unittest discover -s tests -v`, which passed with 30 tests. Live polling after the worker restart showed the retried software loop succeeded, Oracle verification succeeded, and the project advanced to `DONE`.
 - Outcome: The live stack now runs Gemma-only for the active OpenClaw agents, the stale-session workspace executor bug is mitigated by per-run backend isolation, the Niobe blocked-child bug is fixed, and the previously blocked Fibonacci project completed successfully.
+
+- Date: 2026-04-14
+- Request: Check the latest `fibo_test3` project status in the live OpenClaw control plane.
+- Action: Queried the live SQLite control-plane database for the Zulip topic `fibo_test3`, resolved the matching project id, and inspected the latest project row, task rows, task attempts, artifacts, and Zulip message links.
+- Validation: Confirmed the project is `P_3c5385938872416ba84a12c60b3ab4c1`, still `ACTIVE / WAITING_EXTERNAL`, with `Morpheus` software orchestration and the child `IMPLEMENT_SOFTWARE_TASK` both still marked `RUNNING`, and no newer Zulip mirror after message `2451`.
+- Outcome: `fibo_test3` has not completed yet; it is currently waiting on the `implementer` stage in the software loop.
+
+- Date: 2026-04-14
+- Request: Explain why the latest `fibo_test3` implementation step took so long for a simple Fibonacci project and whether that is expected.
+- Action: Inspected the live `agent_runs`, `task_attempts`, runtime response YAML, and runtime command log for the `IMPLEMENT_SOFTWARE_TASK` run on `P_3c5385938872416ba84a12c60b3ab4c1`.
+- Validation: Confirmed the implementer run itself completed successfully on `gemma4:31b`, with a backend-reported duration of `515745 ms` and a last-call prompt size of `25627` tokens. The same project had already advanced to the tester stage by the time of the deeper inspection.
+- Outcome: The delay is real and too high for a trivial task. The dominant cost is the full workspace-backed OpenClaw runtime path plus large injected prompt/tool context on `gemma4:31b`, not the code change complexity itself.
+
+- Date: 2026-04-14
+- Request: Plan the next work to fix Zulip communication for `MASTER` and `Neo`, and consider whether `AgentSmith` needs different behavior for larger projects.
+- Action: Reviewed the current role registry, worker config, gateway subscriptions, and routing rules for `master`, `neo`, and `agent_smith` to establish what is already declared versus what is still disabled or missing from the live communication surface.
+- Validation: Confirmed `master` and `neo` are defined in `agent_registry.yaml` and routed in `routing_rules.yaml`, but are still disabled in `worker_config.yaml` and have no active Zulip subscriptions in `zulip_gateway_config.yaml`, so there is no clean live communication contract for them yet.
+- Outcome: The next step should be a contract-first enablement plan for executive communication rather than directly enabling those roles in the live stack.
+
+- Date: 2026-04-14
+- Request: Produce a plan to improve software-loop speed by reducing the prompt/context loaded into the workspace executor and by adding live heartbeat/progress updates for long `implementer` and `tester` runs.
+- Action: Reused the recent runtime inspection of the slow `fibo_test3` implementer run, the workspace-executor prompt construction in `openclaw_agents/runtime/openclaw_workspace_executor.py`, and the current Zulip mirroring path in `openclaw_agents/communication/zulip_gateway_service.py` to scope a speed-and-observability planning pass.
+- Validation: The last inspected implementer run completed successfully but carried a large prompt and tool context (`25627` prompt tokens on the last backend call and `32403` system-prompt chars), which is enough to justify a context-slimming and heartbeat-specific plan before changing runtime semantics.
+- Outcome: The next implementation should focus on context minimization and progress visibility, not on changing orchestration roles or model choices.
+
+- Date: 2026-04-14
+- Request: Replan the context-trimming work around two generic builders only, with `MASTER`/`Neo`/`AgentSmith` using the full workspace root, `Niobe`/`Architect`/`Oracle` using full project context, and `Morpheus` plus the software team using task-related context only; explicitly drop heartbeat planning from this pass.
+- Action: Reframed the speed plan away from per-role builders and toward two generic context builders keyed by role class and context scope, keeping the design simple enough for future role additions.
+- Validation: The requested split is structurally consistent with the current agent families in `agent_registry.yaml` and avoids hard-coding custom context builders for every role.
+- Outcome: The next implementation should focus only on `build_project_context` and `build_task_context`, with role-to-scope mapping driven by a small policy layer rather than by role-specific builder functions.
+
+- Date: 2026-04-14
+- Request: Implement the two-builder context policy so `master`/`neo`/`agent_smith` use workspace-root scope, `niobe`/`architect`/`oracle` use project scope, and `morpheus` plus the software team use task scope, while keeping the design generic and simple.
+- Action: Patched `openclaw_agents/runtime/external_executor.py` to build execution context through only `build_project_context(...)` and `build_task_context(...)`, with a small agent-to-scope policy. Patched `openclaw_agents/runtime/openclaw_workspace_executor.py` and `openclaw_agents/runtime/ollama_prompt_runner.py` so both backends consume the normalized `context_payload` directly instead of rebuilding broader legacy prompt context. Added regression coverage in `tests/test_runtime_adapter.py` and updated `tests/test_ollama_prompt_runner.py` to validate the new context shape.
+- Validation: Ran `python3 -m py_compile openclaw_agents/runtime/external_executor.py openclaw_agents/runtime/openclaw_workspace_executor.py openclaw_agents/runtime/ollama_prompt_runner.py tests/test_runtime_adapter.py tests/test_ollama_prompt_runner.py`, `python3 -m unittest tests.test_runtime_adapter tests.test_ollama_prompt_runner -v`, `python3 -m unittest tests.test_openclaw_workspace_executor -v`, and `python3 -m unittest discover -s tests -v`, which passed with 31 tests.
+- Outcome: Runtime context is now scoped by two generic builders instead of ad hoc per-backend prompt assembly, and the software roles are constrained to project-folder task context rather than inheriting broader workspace state.
+
+- Date: 2026-04-14
+- Request: Confirm which parts of the context-trimming plan are now complete and identify what still remains to do.
+- Action: Reviewed the implemented builder split, executor changes, and tests against the previously enumerated context-policy plan to identify completed versus remaining items.
+- Validation: Confirmed the code now covers the scope policy, two-builder routing, relevant-artifact selection, folder-boundary enforcement, payload trimming, and regression tests; diagnostics and live restart/field validation remain open.
+- Outcome: The context-policy implementation is mostly complete, but it is not fully deployed until diagnostics are added and the live services are restarted and checked against a real run.
+
+- Date: 2026-04-14
+- Request: Restart the live worker and gateway user services so the running stack loads the trimmed-context runtime code.
+- Action: Restarted `zulip-gateway.service` and `openclaw-worker-supervisor.service` through `systemctl --user`, then checked both units with `systemctl --user is-active`.
+- Validation: Both services returned `active` after restart.
+- Outcome: The live stack is now running on the current trimmed-context code path.
+
+- Date: 2026-04-14
+- Request: Check the status of the currently running software test after the service restart.
+- Action: Queried the live control-plane SQLite database under `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/db/control_plane.sqlite3` for active projects, active tasks, active task attempts, agent runs, and the Zulip thread links for the newest active project.
+- Validation: Confirmed the newest active test project is `P_d4f78e850b094afbbce5af83a199fdbe` in Zulip topic `projects > fibo_test5`, with `IMPLEMENT_SOFTWARE_TASK` `T_5687b54013194ddda47741d4fd62ae4d` still queued as `PENDING` while the project remains `ACTIVE / WAITING_EXTERNAL` in `software_implementation`. Also confirmed there are older implementer runs from `P_0a7d10c9631a41709e9320f935c76198` and `P_63aa51f51ad64e97b91a80b65b35f159` still marked `RUNNING`.
+- Outcome: The newest test thread has advanced through framing, architecture, and planning, but the implementer step has not been claimed yet and appears to be queued behind older active implementer work.
+
+- Date: 2026-04-14
+- Request: Clean up all stale backlog runs so only the current live software test remains active.
+- Action: Inspected the live worker process tree, confirmed the active OpenClaw subprocess belonged to the current test flow rather than the stale backlog, then cancelled every stale non-completed project except `P_d4f78e850b094afbbce5af83a199fdbe` by using the control-plane cancel path and explicitly closing any leftover `PENDING`/`RUNNING` tasks, task attempts, and agent runs in the live SQLite database. After that, normalized historical task attempts and agent runs that still showed `RUNNING` despite having `finished_at` or `ended_at` set.
+- Validation: Re-queried the live database and confirmed only `P_d4f78e850b094afbbce5af83a199fdbe` remains active, with one live tester task/attempt/run still open. Rechecked the process list and confirmed only one `openclaw` / `openclaw-agent` pair remains, owned by the current tester worker.
+- Outcome: The stale backlog is cleared, ghost active-state rows are normalized, and the live system now shows only the current test run as active.
+
+- Date: 2026-04-14
+- Request: Fix the code path so finished attempts and agent runs do not remain marked `RUNNING`.
+- Action: Patched `openclaw_agents/runtime/dispatcher.py` so `record_response()` now distinguishes task state from attempt/run lifecycle state. For responses with `status in {'PENDING', 'RUNNING'}`, the parent task stays open, but the specific task attempt and agent run that emitted the handoff are finalized as `SUCCESS`. Added a regression in `tests/test_runtime_adapter.py` that proves a `RUNNING` handoff closes the attempt/run while leaving the parent task open in `WAITING_EXTERNAL`.
+- Validation: Ran `python3 -m py_compile openclaw_agents/runtime/dispatcher.py tests/test_runtime_adapter.py`, `python3 -m unittest tests.test_runtime_adapter tests.test_builtin_loops -v`, and `python3 -m unittest discover -s tests -v`, which passed with 32 tests.
+- Outcome: New orchestration handoffs should no longer create ghost `RUNNING` attempts or runs. The code fix is ready; the live services still need a restart to pick it up after the current active tester run is allowed to finish.

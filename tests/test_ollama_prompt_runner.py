@@ -40,6 +40,7 @@ class OllamaPromptRunnerTests(unittest.TestCase):
                     "prompt = args[2]",
                     "assert 'Return exactly one JSON object' in prompt",
                     "assert 'Design the project' in prompt or 'architecture' in prompt",
+                    "assert '\"scope\": \"project\"' in prompt",
                     f"print(json.dumps({json.dumps(stdout_payload, sort_keys=True)}))",
                 ]
             )
@@ -64,6 +65,41 @@ class OllamaPromptRunnerTests(unittest.TestCase):
                         "runtime": "ollama",
                         "model_hint": "gemma4:31b",
                     },
+                    "context_scope": "project",
+                    "context_root": {
+                        "root_path": "/tmp/project_1",
+                        "project_root": "/tmp/project_1",
+                        "workspace_root": "/tmp",
+                    },
+                    "context_payload": {
+                        "scope": "project",
+                        "root": {
+                            "root_path": "/tmp/project_1",
+                            "project_root": "/tmp/project_1",
+                            "workspace_root": "/tmp",
+                        },
+                        "task": {
+                            "task_id": "task_1",
+                            "task_type": "DESIGN_ARCHITECTURE",
+                            "goal": "Design the project architecture",
+                            "priority": "MEDIUM",
+                            "from_agent": "niobe",
+                            "expected_output": {"artifact_type": "architecture_spec"},
+                            "context": {},
+                        },
+                        "project": {
+                            "project_id": "project_1",
+                            "goal": "Design the project architecture",
+                            "current_phase": "project_design",
+                            "current_owner_agent": "architect",
+                            "runtime_status": "READY",
+                        },
+                        "parent_task": None,
+                        "workspace": None,
+                        "input_artifacts": [],
+                        "relevant_artifacts": [],
+                        "child_tasks": [],
+                    },
                     "task_envelope": {
                         "task_id": "task_1",
                         "project_id": "project_1",
@@ -83,7 +119,7 @@ class OllamaPromptRunnerTests(unittest.TestCase):
                     "parent_task_record": None,
                     "workspace_state": None,
                     "input_artifacts": [],
-                    "recent_artifacts": [],
+                    "relevant_artifacts": [],
                     "child_tasks": [],
                 },
                 indent=2,

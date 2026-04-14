@@ -514,3 +514,15 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Context: Niobe stayed stuck in `WAIT_FOR_EXTERNAL` on a completed Morpheus retry because the store-layer child-task query still surfaced an older blocked Morpheus child as “active”, so Niobe never advanced to Oracle even though a newer software-delivery task had already succeeded.
 - Consequences: `ControlPlaneStore.list_open_tasks()` and `ControlPlaneStore.list_child_tasks(..., include_terminal=False)` now filter to `PENDING` and `RUNNING` only. Niobe and Morpheus therefore wait only on truly active child tasks and can correctly ignore earlier blocked retries when a later child has already delivered the required artifact.
 - Status: Accepted
+
+- Date: 2026-04-14
+- Decision: Runtime execution context must be built through exactly two generic builders: `build_project_context(...)` for workspace-root and project-scope roles, and `build_task_context(...)` for task-scope roles.
+- Context: The earlier external and workspace executors had started to diverge in how they assembled prompt context, which risked leaking broader state back into the software roles and made the system harder to extend when new roles are added. The requested policy is intentionally simple: `master`/`neo`/`agent_smith` get workspace-root scope, `niobe`/`architect`/`oracle` get project scope, and `morpheus` plus the internal software team get task scope.
+- Consequences: `ExecutionContextBuilder` in `openclaw_agents/runtime/external_executor.py` now owns scope selection and routes all runtime packets through only `build_project_context(...)` or `build_task_context(...)`. `openclaw_workspace_executor.py` and `ollama_prompt_runner.py` now consume the normalized `context_payload` directly rather than reconstructing their own broader prompt context. Software roles therefore stay bounded to project-folder task context, while future visible roles can reuse the same generic scope model without another builder explosion.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: A response envelope with task `status` of `PENDING` or `RUNNING` keeps the parent task open, but it still finalizes the specific task attempt and agent run that produced the response.
+- Context: Orchestration roles such as `Niobe` and `Morpheus` legitimately emit `status=\"RUNNING\"` when they hand work off to a child and leave the parent task in `WAITING_EXTERNAL`. The earlier dispatcher persisted that same `RUNNING` state onto `task_attempts` and `agent_runs` even while also setting `finished_at` / `ended_at`, which created ghost live rows and distorted queue introspection.
+- Consequences: `RuntimeDispatcher.record_response()` now maps handoff responses (`PENDING` / `RUNNING`) to terminal lifecycle status `SUCCESS` for `task_attempts` and `agent_runs`, while preserving the parent task’s own `status` as `PENDING` or `RUNNING`. Queue and recovery logic can therefore trust open attempts/runs as truly active instead of historical handoff records.
+- Status: Accepted

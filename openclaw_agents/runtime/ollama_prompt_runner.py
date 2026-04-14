@@ -102,10 +102,8 @@ class OllamaPromptRunner:
             return None
         return {key: record.get(key) for key in keys if key in record}
 
-    def build_prompt(self, context: dict[str, Any], *, model: str) -> str:
+    def _legacy_prompt_context(self, context: dict[str, Any]) -> dict[str, Any]:
         packet = context["task_envelope"]
-        artifact_type = self.infer_artifact_type(context)
-        target_agent = self._target_agent_for_return(context)
         project_record = self._compact_record(
             context.get("project_record"),
             [
@@ -152,14 +150,37 @@ class OllamaPromptRunner:
                     "to_agent": child.get("to_agent"),
                 }
             )
-        prompt_context = {
-            "task_envelope": packet,
-            "project_record": project_record,
-            "parent_task_record": parent_record,
-            "workspace_state": workspace_state,
+        return {
+            "task": {
+                "task_id": packet.get("task_id"),
+                "task_type": packet.get("task_type"),
+                "title": packet.get("title"),
+                "goal": packet.get("goal"),
+                "priority": packet.get("priority"),
+                "from_agent": packet.get("from_agent"),
+                "to_agent": packet.get("to_agent"),
+                "context": packet.get("context") or {},
+                "expected_output": packet.get("expected_output") or {},
+            },
+            "project": project_record,
+            "parent_task": parent_record,
+            "workspace": workspace_state,
             "input_artifacts": context.get("input_artifacts") or [],
-            "recent_artifacts": context.get("recent_artifacts") or [],
+            "relevant_artifacts": context.get("relevant_artifacts") or context.get("recent_artifacts") or [],
             "child_tasks": child_tasks,
+        }
+
+    def build_prompt(self, context: dict[str, Any], *, model: str) -> str:
+        packet = context["task_envelope"]
+        artifact_type = self.infer_artifact_type(context)
+        target_agent = self._target_agent_for_return(context)
+        prompt_context = context.get("context_payload")
+        if not isinstance(prompt_context, dict):
+            prompt_context = self._legacy_prompt_context(context)
+        prompt_context_wrapper = {
+            "scope": context.get("context_scope"),
+            "root": context.get("context_root"),
+            "payload": prompt_context,
         }
         target_line = f'Include `next_action.target_agent` set to "{target_agent}".' if target_agent else "Omit `next_action.target_agent` unless you are explicitly routing to another agent."
         return "\n".join(
@@ -184,7 +205,7 @@ class OllamaPromptRunner:
                 "- Never claim code was changed, tests were run, or artifacts exist unless the provided context supports that claim.",
                 "",
                 "Execution context:",
-                json.dumps(prompt_context, indent=2, sort_keys=True),
+                json.dumps(prompt_context_wrapper, indent=2, sort_keys=True),
             ]
         )
 

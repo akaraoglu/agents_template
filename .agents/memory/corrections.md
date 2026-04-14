@@ -134,3 +134,9 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 - Root cause: The store-layer “active child” query treated `BLOCKED` tasks as still active, so Niobe kept waiting on an older blocked software child instead of advancing from the newer successful Morpheus retry to Oracle verification.
 - New rule: When orchestration code asks for non-terminal child tasks, filter to `PENDING` and `RUNNING` only. A blocked child is historical context, not an active dependency.
 - Where it was recorded: `openclaw_agents/database/store.py` and `tests/test_builtin_loops.py`
+
+- Date: 2026-04-14
+- Problem: The live control plane could accumulate historical `task_attempts` and `agent_runs` that still showed `RUNNING` even though `finished_at` or `ended_at` was already populated, which made stale work look active and obscured the true current queue state.
+- Root cause: Some orchestration-side runs finish their local attempt or agent-run record when they hand off work, but the terminal status is not always normalized away from `RUNNING` unless a later path updates it.
+- New rule: Any runtime or orchestration path that sets `finished_at` or `ended_at` must also persist a terminal `status` / `result_status` immediately. Operational queries for “open” activity should not rely on timestamps to infer closure.
+- Where it was recorded: Live cleanup on `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/db/control_plane.sqlite3`; a code fix is still needed in the control-plane runtime path.

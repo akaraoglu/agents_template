@@ -116,8 +116,11 @@ class OpenClawWorkspaceExecutor:
 
     @staticmethod
     def _workspace_root(context: dict[str, Any]) -> Path:
+        context_root = context.get("context_root") or {}
         workspace_ref = (
-            ((context.get("workspace_state") or {}).get("workspace_ref"))
+            context_root.get("project_root")
+            or context_root.get("root_path")
+            or ((context.get("workspace_state") or {}).get("workspace_ref"))
             or ((context.get("project_record") or {}).get("workspace_ref"))
             or ((context.get("task_envelope") or {}).get("metadata") or {}).get("workspace_ref")
         )
@@ -532,55 +535,19 @@ class OpenClawWorkspaceExecutor:
         }
 
     def _prompt_context(self, context: dict[str, Any]) -> dict[str, Any]:
-        task = context["task_envelope"]
-        project = context.get("project_record") or {}
-        parent_task = context.get("parent_task_record") or {}
-        workspace = context.get("workspace_state") or {}
-        return {
-            "task": {
-                "task_id": task.get("task_id"),
-                "task_type": task.get("task_type"),
-                "goal": task.get("goal"),
-                "priority": task.get("priority"),
-                "from_agent": task.get("from_agent"),
-                "expected_output": task.get("expected_output") or {},
-                "context": self._task_context_brief(task.get("context") or {}),
-            },
-            "project": {
-                "project_id": project.get("project_id"),
-                "goal": project.get("goal"),
-                "current_phase": project.get("current_phase"),
-                "current_owner_agent": project.get("current_owner_agent"),
-                "runtime_status": project.get("runtime_status"),
-            },
-            "parent_task": {
-                "task_id": parent_task.get("task_id"),
-                "task_type": parent_task.get("task_type"),
-                "status": parent_task.get("status"),
-                "goal": parent_task.get("goal"),
-            },
-            "workspace": {
-                "workspace_ref": workspace.get("workspace_ref") or project.get("workspace_ref"),
-                "repo_root": workspace.get("repo_root") or project.get("workspace_ref"),
-                "branch_or_worktree_id": workspace.get("branch_or_worktree_id"),
-                "last_clean_commit_or_checkpoint": workspace.get("last_clean_commit_or_checkpoint"),
-            },
-            "input_artifacts": [self._artifact_entry_brief(item) for item in (context.get("input_artifacts") or [])[:3]],
-            "recent_artifacts": [self._artifact_entry_brief(item) for item in (context.get("recent_artifacts") or [])[:4]],
-            "child_tasks": [
-                {
-                    "task_id": item.get("task_id"),
-                    "task_type": item.get("task_type"),
-                    "to_agent": item.get("to_agent"),
-                    "status": item.get("status"),
-                }
-                for item in (context.get("child_tasks") or [])[-3:]
-            ],
-        }
+        prompt_context = context.get("context_payload")
+        if isinstance(prompt_context, dict):
+            return prompt_context
+        return {}
 
     def _build_prompt(self, context: dict[str, Any]) -> str:
         packet = context["task_envelope"]
         role = packet["to_agent"]
+        context_scope = str(context.get("context_scope") or "")
+        if context_scope != "task":
+            raise WorkspaceExecutionBlockedError(
+                f"openclaw_workspace executor requires task context, got {context_scope or 'unknown'}"
+            )
         workspace_root = self._workspace_root(context)
         if role == "implementer":
             artifact_schema = {
@@ -621,7 +588,8 @@ class OpenClawWorkspaceExecutor:
         return "\n".join(
             [
                 f"You are the OpenClaw runtime backend for the `{role}` role.",
-                f"Operate only inside the workspace: {workspace_root}",
+                f"Operate only inside the project folder: {workspace_root}",
+                f"Context scope: {context_scope}",
                 "You may inspect files, edit files, and run commands needed to complete the task.",
                 *[f"- {note}" for note in role_notes],
                 "",
