@@ -140,3 +140,15 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 - Root cause: Some orchestration-side runs finish their local attempt or agent-run record when they hand off work, but the terminal status is not always normalized away from `RUNNING` unless a later path updates it.
 - New rule: Any runtime or orchestration path that sets `finished_at` or `ended_at` must also persist a terminal `status` / `result_status` immediately. Operational queries for “open” activity should not rely on timestamps to infer closure.
 - Where it was recorded: Live cleanup on `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/db/control_plane.sqlite3`; a code fix is still needed in the control-plane runtime path.
+
+- Date: 2026-04-14
+- Problem: The project workspaces exposed to operators did not actually reflect the running project loop, even though the templates and specs said `PROJECT.md` and `management/` were the human-readable project source of truth.
+- Root cause: The original implementation provisioned template files once, then advanced the project only through DB rows, artifacts, and Zulip messages. There was no sync layer to keep workspace management docs aligned with accepted task and artifact state.
+- New rule: Any project with a `workspace_ref` must have a maintained management projection. Provisioning, dispatch, accepted responses, and control-event recording should all refresh the workspace management docs so operators can follow the project from the workspace itself.
+- Where it was recorded: `openclaw_agents/scheduler/management_writer.py`, `openclaw_agents/runtime/dispatcher.py`, `openclaw_agents/scheduler/workspace_provisioner.py`, `openclaw_agents/scheduler/control_commands.py`
+
+- Date: 2026-04-14
+- Problem: The first live rollout of the management writer crashed when it hit stale historical projects whose artifact refs pointed at files that no longer existed on disk.
+- Root cause: `WorkspaceManagementWriter` treated every artifact record as readable and attempted to parse missing workspace files during control-command sync.
+- New rule: Management projection must be resilient to historical bad state. Missing artifact files should be skipped during projection instead of crashing live control-plane actions.
+- Where it was recorded: `openclaw_agents/scheduler/management_writer.py`

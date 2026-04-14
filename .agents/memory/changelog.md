@@ -1031,3 +1031,27 @@ history, live credentials, or project-specific task transcripts here.
 - Action: Cancelled the current live tester project to avoid leaving a ghost active run during restart, restarted `zulip-gateway.service` and `openclaw-worker-supervisor.service`, verified both units were active and the live control plane had no active projects or runs, then committed the pending runtime/context changes as `9835387 fix(runtime): trim context and finalize handoff runs`.
 - Validation: Verified `systemctl --user is-active` returned `active` for both services, confirmed the live SQLite control-plane database had no active projects or open runs after restart, confirmed there were no leftover `openclaw` / `openclaw-agent` processes, and verified `git status --short` was empty after the commit.
 - Outcome: The live stack is restarted on the new code and the repository is clean.
+
+- Date: 2026-04-14
+- Request: Check the status of the latest sample Fibonacci Zulip project and confirm whether the implementation is truly running with the new single-thread feedback path in place.
+- Action: Queried the live control-plane database for active projects, tasks, attempts, runs, and Zulip message links; inspected the live process tree for the implementer worker and its OpenClaw child processes; and checked the current task context payload and project workspace reference for the active project `P_24e5f04fce3e4feb9413ab893c1fddfa`.
+- Validation: Confirmed project `P_24e5f04fce3e4feb9413ab893c1fddfa` is `ACTIVE` in `software_implementation`, the active implementer task/attempt/run are all genuinely `RUNNING`, the matching `openclaw` and `openclaw-agent` processes are alive, and visible Zulip updates are staying in the canonical `projects > fibo_test` thread.
+- Outcome: The current implementation step is a real in-flight execution, not stale state, and the single-thread Zulip feedback path is working through implementation start.
+
+- Date: 2026-04-14
+- Request: Restore the intended project-management layer so `AgentSmith`, `Niobe`, `Architect`, `Morpheus`, and `Oracle` drive real workspace management files instead of only DB rows and artifacts.
+- Action: Implemented `WorkspaceManagementWriter` in `openclaw_agents/scheduler/management_writer.py`, wired it into workspace provisioning, runtime dispatch, runtime response recording, and control-command recording, and added regression coverage in `tests/test_management_writer.py`.
+- Validation: Ran `python3 -m py_compile` on the changed scheduler/runtime files and `python3 -m unittest discover -s tests -v`, which passed with 34 tests after the new management sync path was added.
+- Outcome: Project workspaces can now self-repair missing scaffolds and project management files are rendered from live control-plane state (`PROJECT.md`, `management/STATUS.md`, `BACKLOG.md`, `MILESTONES.md`, `DECISIONS.md`, `TEST_REPORT.md`) instead of remaining static template placeholders.
+
+- Date: 2026-04-14
+- Request: Reconcile the stale live sample, restart the live stack on the new management-sync code, and verify the management files on a fresh live sample project.
+- Action: Fixed a runtime import cycle by making `openclaw_agents/runtime/__init__.py` lazy, hardened `WorkspaceManagementWriter` to skip missing historical artifact refs, cancelled the stale live sample project `P_24e5f04fce3e4feb9413ab893c1fddfa`, restarted `zulip-gateway.service` and `openclaw-worker-supervisor.service`, and injected a fresh live sample project `P_live_management_sync` through the control-plane gateway path.
+- Validation: Verified both user services restarted successfully, confirmed the stale sample workspace was repaired with `PROJECT.md` and `management/*.md`, confirmed the fresh sample workspace `/home/alik/workspace/claw_software_workspace/projects/P_live_management_sync` now contains `PROJECT.md`, `management/STATUS.md`, `management/BACKLOG.md`, `management/MILESTONES.md`, `management/DECISIONS.md`, and `management/TEST_REPORT.md`, and confirmed those files reflect the active project state through framing, architecture, planning, and implementation start.
+- Outcome: The live stack is now running with the management projection enabled, and fresh projects are materializing and updating the intended workspace management layer while the project loop advances.
+
+- Date: 2026-04-14
+- Request: Commit the verified management-sync and live-hardening batch.
+- Action: Reviewed the working tree after live verification, kept the commit scoped to the management projection, runtime package import fix, and associated memory updates, and prepared a single commit for the validated changes.
+- Validation: Confirmed the working tree only contains the management-sync implementation, import-cycle fix, and memory updates that were already validated with `python3 -m unittest discover -s tests -v` and a fresh live Fibonacci sample project.
+- Outcome: The repository is ready for one commit containing the management projection rollout.

@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 
 from openclaw_agents.database.store import ControlPlaneStore, utc_now
+from openclaw_agents.scheduler.management_writer import WorkspaceManagementWriter
 
 
 class ProjectWorkspaceProvisioner:
@@ -25,6 +26,10 @@ class ProjectWorkspaceProvisioner:
         configured_root = workspace_root or os.environ.get("OPENCLAW_PROJECT_WORKSPACES_DIR")
         self.workspace_root = self._resolve_workspace_root(configured_root=configured_root)
         self.template_root = Path(template_root or (base / "templates" / "project_workspace")).resolve()
+        self.management_writer = WorkspaceManagementWriter(
+            self.store,
+            template_root=self.template_root,
+        )
 
     @staticmethod
     def _resolve_workspace_root(*, configured_root: str | Path | None) -> Path:
@@ -247,6 +252,7 @@ class ProjectWorkspaceProvisioner:
             },
             conflict_columns=["project_id"],
         )
+        self.management_writer.sync_project(project_id)
         return {
             "workspace_ref": workspace_ref,
             "repo_root": workspace_ref,

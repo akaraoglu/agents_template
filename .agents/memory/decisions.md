@@ -526,3 +526,15 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Context: Orchestration roles such as `Niobe` and `Morpheus` legitimately emit `status=\"RUNNING\"` when they hand work off to a child and leave the parent task in `WAITING_EXTERNAL`. The earlier dispatcher persisted that same `RUNNING` state onto `task_attempts` and `agent_runs` even while also setting `finished_at` / `ended_at`, which created ghost live rows and distorted queue introspection.
 - Consequences: `RuntimeDispatcher.record_response()` now maps handoff responses (`PENDING` / `RUNNING`) to terminal lifecycle status `SUCCESS` for `task_attempts` and `agent_runs`, while preserving the parent task’s own `status` as `PENDING` or `RUNNING`. Queue and recovery logic can therefore trust open attempts/runs as truly active instead of historical handoff records.
 - Status: Accepted
+
+- Date: 2026-04-14
+- Decision: Workspace management files are now a control-plane projection maintained by the system, not passive template files or ad hoc prompt output.
+- Context: The integrated design expected `PROJECT.md` and `management/` to be the human-readable source of truth inside each project workspace, but the implementation only provisioned placeholders and then kept authoritative progress in SQLite plus artifacts. That left live project workspaces without current `STATUS.md`, `BACKLOG.md`, `MILESTONES.md`, `DECISIONS.md`, or `TEST_REPORT.md`.
+- Consequences: `WorkspaceManagementWriter` now repairs missing workspace scaffolds and renders `PROJECT.md` and `management/*.md` directly from project state, task graph state, accepted artifacts, workspace state, and control events. The writer is triggered during provisioning, task dispatch, accepted responses, and control-command recording so the management layer tracks the live project loop automatically.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: The `openclaw_agents.runtime` package must use lazy exports instead of eager package-level imports.
+- Context: Adding the management writer introduced a valid control-command path that imports `artifact_parsers` without needing the rest of the runtime stack. The previous eager `runtime/__init__.py` imported `dispatcher`, which imported `zulip_gateway`, which imported `control_commands`, creating a circular import during live control-command execution.
+- Consequences: `openclaw_agents/runtime/__init__.py` now resolves exports lazily through `__getattr__`, which preserves package-level convenience imports without forcing dispatcher/gateway/control-command cycles during unrelated imports.
+- Status: Accepted

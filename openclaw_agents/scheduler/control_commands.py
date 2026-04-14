@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from openclaw_agents.database.store import ControlPlaneStore, utc_now
 from openclaw_agents.scheduler.lease_manager import LeaseConflictError, LeaseManager
+from openclaw_agents.scheduler.management_writer import WorkspaceManagementWriter
 from openclaw_agents.scheduler.recovery_manager import RecoveryManager
 from openclaw_agents.scheduler.snapshot_store import SnapshotStore
 from openclaw_agents.scheduler.workspace_validator import WorkspaceValidator
@@ -31,12 +32,14 @@ class ControlCommandService:
         snapshot_store: SnapshotStore | None = None,
         recovery_manager: RecoveryManager | None = None,
         workspace_validator: WorkspaceValidator | None = None,
+        management_writer: WorkspaceManagementWriter | None = None,
     ) -> None:
         self.store = store or ControlPlaneStore()
         self.lease_manager = lease_manager or LeaseManager(self.store)
         self.snapshot_store = snapshot_store or SnapshotStore(self.store)
         self.recovery_manager = recovery_manager or RecoveryManager(self.store, snapshot_store=self.snapshot_store)
         self.workspace_validator = workspace_validator or WorkspaceValidator(self.store)
+        self.management_writer = management_writer or WorkspaceManagementWriter(self.store)
 
     def _record(
         self,
@@ -60,6 +63,9 @@ class ControlCommandService:
             reason=reason,
             result_summary=result_summary,
         )
+        project = self.store.get_project(project_id)
+        if project and project.get("workspace_ref"):
+            self.management_writer.sync_project(project_id)
         return ControlCommandResult(event["event_id"], command, status, result_summary, project_id)
 
     def _is_safe_to_switch(self, project_id: str) -> bool:

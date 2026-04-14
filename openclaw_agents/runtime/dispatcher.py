@@ -14,6 +14,7 @@ import yaml
 from openclaw_agents.communication.topic_router import TopicRouter
 from openclaw_agents.database.store import ControlPlaneStore, parse_timestamp, utc_now
 from openclaw_agents.runtime.artifact_serializers import ArtifactSerializer
+from openclaw_agents.scheduler.management_writer import WorkspaceManagementWriter
 from openclaw_agents.scheduler.snapshot_store import SnapshotStore
 
 
@@ -139,6 +140,7 @@ class RuntimeDispatcher:
         routing_rules_path: str | Path | None = None,
         state_dir: str | Path | None = None,
         snapshot_store: SnapshotStore | None = None,
+        management_writer: WorkspaceManagementWriter | None = None,
     ) -> None:
         self.store = store or ControlPlaneStore()
         base = Path(__file__).resolve().parents[1]
@@ -151,6 +153,7 @@ class RuntimeDispatcher:
         self.validator = ContractValidator(base / "schemas")
         self.artifact_serializer = ArtifactSerializer(self.store)
         self.snapshot_store = snapshot_store or SnapshotStore(self.store)
+        self.management_writer = management_writer or WorkspaceManagementWriter(self.store)
 
     def reply_address_for_task(self, project_id: str, task_id: str, task_type: str) -> tuple[str, str]:
         operator_thread = self.store.get_project_feedback_thread(project_id)
@@ -302,6 +305,8 @@ class RuntimeDispatcher:
             where_clause="project_id = ?",
             where_params=[plan.project_id],
         )
+        if project.get("workspace_ref"):
+            self.management_writer.sync_project(plan.project_id)
         return DispatchReceipt(
             task_id=plan.task_id,
             project_id=plan.project_id,
@@ -478,6 +483,7 @@ class RuntimeDispatcher:
                 safe_boundary_type=boundary,
                 created_from_run_id=run["run_id"],
             )
+            self.management_writer.sync_project(response["project_id"])
 
         return ResponseRecord(
             task_id=response["task_id"],
