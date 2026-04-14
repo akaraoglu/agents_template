@@ -222,7 +222,7 @@ class ExecutionContextBuilder:
         return payload
 
     def _artifact_record_for_ref(self, ref: str) -> dict[str, Any] | None:
-        return self.store.fetchone("SELECT * FROM artifacts WHERE ref = ?", (ref,))
+        return self.store.get_artifact_by_ref(ref)
 
     def _artifact_entry(self, ref: str) -> dict[str, Any]:
         record = self._artifact_record_for_ref(ref)

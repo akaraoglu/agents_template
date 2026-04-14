@@ -450,7 +450,7 @@ class ZulipGateway:
             where_clause="project_id = ?",
             where_params=[project_id],
         )
-        return self.store.fetchone("SELECT * FROM tasks WHERE task_id = ?", (task_id,)) or {}
+        return self.store.get_task(task_id) or {}
 
     def build_authoritative_message(self, summary: str, payload: dict[str, Any]) -> str:
         rendered = yaml.safe_dump(payload, sort_keys=False).strip()

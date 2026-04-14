@@ -181,7 +181,9 @@ If a task already exists in the control-plane store, you can queue it for runtim
 python3 -m openclaw_agents.runtime.dispatcher dispatch-task --task-id <task_id>
 ```
 
-This writes a task packet into the project workspace `artifacts/incoming/` directory when `workspace_ref` exists, or into the gateway state queue when it does not.
+This writes a task packet into the project workspace hidden runtime directory `.agents/runtime/incoming/` when `workspace_ref` exists, or into the gateway state queue when it does not.
+
+With the Phase 2 split, project-local task state, artifacts, task attempts, runs, control events, snapshots, recovery data, and Zulip links live in `project/.agents/project.db`. The shared database remains a scheduler registry for projects, scheduling records, and orchestrator leases.
 
 When an external runner finishes, persist its response envelope back into the state store:
 
@@ -243,7 +245,8 @@ For prompt-aware external execution, use the `prompt_subprocess` executor instea
 For real code-changing software execution, use the `openclaw_workspace` executor for `implementer` and `tester`. That backend:
 
 - provisions a dedicated OpenClaw agent per project workspace and role
-- binds that agent to the real project workspace
+- binds that agent to a hidden OpenClaw workspace under `project/.agents/openclaw/workspace`
+- exposes the visible project tree through that hidden workspace so code changes still land in the real project
 - runs the task through `openclaw agent --json`
 - requires the agent to return one structured JSON result
 - derives changed files from workspace state before and after the run

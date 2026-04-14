@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from openclaw_agents.database.store import ControlPlaneStore
+from openclaw_agents.database.store import ControlPlaneStore, utc_now
 from openclaw_agents.scheduler.snapshot_store import SnapshotStore
 from openclaw_agents.scheduler.workspace_validator import WorkspaceValidator
 
@@ -55,16 +55,7 @@ class RecoveryManager:
         }
         if not validation.ok:
             issues.extend(validation.issues)
-        active_leases = self.store.fetchall(
-            """
-            SELECT orchestrator_id, active_project_id, lease_owner_run_id, lease_expires_at
-            FROM orchestrator_leases
-            WHERE active_project_id = ?
-              AND lease_status = 'HELD'
-            ORDER BY orchestrator_id ASC
-            """,
-            (project_id,),
-        )
+        active_leases = self.store.list_active_leases_for_project(project_id)
         if active_leases:
             issues.append("active_orchestrator_lease_present")
             details["active_leases"] = active_leases
@@ -109,7 +100,7 @@ class RecoveryManager:
             )
             self.store.update(
                 "projects",
-                {"runtime_status": "BLOCKED", "updated_at": self.store.fetchone("SELECT CURRENT_TIMESTAMP AS ts")["ts"]},
+                {"runtime_status": "BLOCKED", "updated_at": utc_now()},
                 where_clause="project_id = ?",
                 where_params=[project_id],
             )

@@ -55,13 +55,7 @@ class BuiltinLoopTests(unittest.TestCase):
         )
         self.assertTrue(all(item["status"] == "SUCCESS" for item in child_tasks))
 
-        artifact_types = [
-            item["artifact_type"]
-            for item in store.fetchall(
-                "SELECT artifact_type FROM artifacts WHERE project_id = ? ORDER BY created_at ASC",
-                ("P_morpheus_loop",),
-            )
-        ]
+        artifact_types = [item["artifact_type"] for item in store.list_project_artifacts("P_morpheus_loop")]
         self.assertIn("software_delivery_package", artifact_types)
         self.assertIn("test_execution_report", artifact_types)
 
@@ -106,18 +100,9 @@ class BuiltinLoopTests(unittest.TestCase):
         worker = RuntimeWorker(store, state_dir=self.harness.state_dir, default_executor="builtin")
         seen = drain_worker(worker, limit=24)
 
-        morpheus_tasks = store.fetchall(
-            "SELECT task_id, status FROM tasks WHERE project_id = ? AND to_agent = 'morpheus' ORDER BY opened_at ASC",
-            ("P_project_verification_failure",),
-        )
-        oracle_tasks = store.fetchall(
-            "SELECT task_id, status FROM tasks WHERE project_id = ? AND to_agent = 'oracle' ORDER BY opened_at ASC",
-            ("P_project_verification_failure",),
-        )
-        niobe_tasks = store.fetchall(
-            "SELECT task_id, status FROM tasks WHERE project_id = ? AND to_agent = 'niobe' ORDER BY opened_at ASC",
-            ("P_project_verification_failure",),
-        )
+        morpheus_tasks = store.list_tasks_for_project("P_project_verification_failure", to_agent="morpheus")
+        oracle_tasks = store.list_tasks_for_project("P_project_verification_failure", to_agent="oracle")
+        niobe_tasks = store.list_tasks_for_project("P_project_verification_failure", to_agent="niobe")
         project = store.get_project("P_project_verification_failure")
 
         self.assertGreaterEqual(len(morpheus_tasks), 2)
@@ -161,10 +146,7 @@ class BuiltinLoopTests(unittest.TestCase):
         child_tasks = store.list_child_tasks(task["task_id"])
         self.assertEqual([item["task_type"] for item in child_tasks], ["PLAN_SOFTWARE_TASK"])
         self.assertEqual(child_tasks[0]["status"], "SUCCESS")
-        escalation = store.fetchall(
-            "SELECT artifact_type FROM artifacts WHERE project_id = ? AND task_id = ? ORDER BY created_at ASC",
-            ("P_morpheus_missing_workspace", task["task_id"]),
-        )
+        escalation = store.list_project_artifacts("P_morpheus_missing_workspace", task_id=task["task_id"])
         self.assertIn("escalation_packet", [item["artifact_type"] for item in escalation])
 
     def test_niobe_ignores_older_blocked_software_child_when_later_retry_succeeds(self) -> None:
@@ -280,10 +262,7 @@ class BuiltinLoopTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.status, "RUNNING")
-        oracle_tasks = store.fetchall(
-            "SELECT task_id, status FROM tasks WHERE project_id = ? AND to_agent = 'oracle' ORDER BY opened_at ASC",
-            ("P_niobe_retry_resume",),
-        )
+        oracle_tasks = store.list_tasks_for_project("P_niobe_retry_resume", to_agent="oracle")
         self.assertEqual(len(oracle_tasks), 1)
         project = store.get_project("P_niobe_retry_resume")
         assert project is not None

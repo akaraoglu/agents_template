@@ -4,7 +4,7 @@ This directory is the minimum per-project workspace scaffold for the new control
 
 ## Purpose
 
-Use one isolated workspace per project. The workspace is the operational surface for `Morpheus` and the internal software team, while the control-plane database remains the authoritative state store for scheduling, leases, snapshots, and control events.
+Use one isolated workspace per project. The workspace is the operational surface for `Morpheus` and the internal software team. Project-local runtime state and project history live under `.agents/`, while the shared scheduler registry remains outside the project.
 
 ## Required Invariants
 
@@ -24,11 +24,14 @@ Use one isolated workspace per project. The workspace is the operational surface
 
 ## Recommended Structure
 
-- `artifacts/incoming/`
 - `artifacts/outgoing/`
 - `artifacts/reports/`
 - `tests/`
-- optional `.agents/` if the project carries a local runtime
+- `.agents/project.db`
+- `.agents/runtime/incoming/`
+- `.agents/runtime/runtime_responses/`
+- `.agents/openclaw/workspace/`
+- `.agents/openclaw/agents/`
 
 ## How To Instantiate
 

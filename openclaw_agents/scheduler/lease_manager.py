@@ -30,30 +30,32 @@ class LeaseManager:
         self.store.ensure_orchestrator_leases()
 
     def _ensure_run_record(self, *, run_id: str, project_id: str, orchestrator_id: str, now: str) -> None:
-        existing = self.store.fetchone("SELECT run_id FROM agent_runs WHERE run_id = ?", (run_id,))
-        if existing:
-            return
-        self.store.upsert(
-            "agent_runs",
-            {
-                "run_id": run_id,
-                "task_id": None,
-                "project_id": project_id,
-                "agent_id": orchestrator_id,
-                "model_profile": "scheduler_control_plane",
-                "model_used": None,
-                "runtime_backend": "control_plane",
-                "sandbox_id": None,
-                "session_id": None,
-                "result_status": "RUNNING",
-                "raw_transcript_ref": None,
-                "log_ref": None,
-                "started_at": now,
-                "ended_at": None,
-                "duration_ms": None,
-            },
-            conflict_columns=["run_id"],
-        )
+        with self.store.transaction() as conn:
+            existing = self.store.fetchone("SELECT run_id FROM agent_runs WHERE run_id = ?", (run_id,), conn=conn)
+            if existing:
+                return
+            self.store.upsert(
+                "agent_runs",
+                {
+                    "run_id": run_id,
+                    "task_id": None,
+                    "project_id": project_id,
+                    "agent_id": orchestrator_id,
+                    "model_profile": "scheduler_control_plane",
+                    "model_used": None,
+                    "runtime_backend": "control_plane",
+                    "sandbox_id": None,
+                    "session_id": None,
+                    "result_status": "RUNNING",
+                    "raw_transcript_ref": None,
+                    "log_ref": None,
+                    "started_at": now,
+                    "ended_at": None,
+                    "duration_ms": None,
+                },
+                conflict_columns=["run_id"],
+                conn=conn,
+            )
 
     def get_lease(self, orchestrator_id: str) -> dict | None:
         return self.store.get_lease(orchestrator_id)

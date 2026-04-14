@@ -390,6 +390,10 @@ Path(os.environ["OPENCLAW_RESPONSE_FILE"]).write_text(yaml.safe_dump(response, s
                 },
             )()
         )
+        self.assertEqual(
+            Path(receipt.packet_ref),
+            workspace_ref / ".agents" / "runtime" / "incoming" / Path(receipt.packet_ref).name,
+        )
         packet = yaml.safe_load(Path(receipt.packet_ref).read_text())
         builder = ExecutionContextBuilder(store)
 

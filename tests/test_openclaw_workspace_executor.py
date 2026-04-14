@@ -54,14 +54,16 @@ if len(args) >= 5 and args[0] == "agents" and args[1] == "delete":
 if len(args) >= 8 and args[0] == "agents" and args[1] == "add":
     agent_id = args[2]
     workspace = args[args.index("--workspace") + 1]
+    agent_dir = args[args.index("--agent-dir") + 1]
     model = args[args.index("--model") + 1]
     record = {
         "id": agent_id,
         "workspace": workspace,
-        "agentDir": f"/tmp/{agent_id}/agent",
+        "agentDir": agent_dir,
         "model": model,
         "bindings": 0,
     }
+    Path(agent_dir).mkdir(parents=True, exist_ok=True)
     state["agents"][agent_id] = record
     save()
     print(json.dumps(record))
@@ -73,8 +75,9 @@ if args and args[0] == "agent":
     message = args[args.index("--message") + 1]
     agent = state["agents"][agent_id]
     workspace = Path(agent["workspace"])
+    project_root = workspace / "project" if (workspace / "project").exists() else workspace
     if agent_id.endswith("implementer-" + agent_id.split("-")[-1]):
-        target = workspace / "src" / "implemented.py"
+        target = project_root / "src" / "implemented.py"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("print('implemented')\\n")
         visible = {
@@ -86,7 +89,7 @@ if args and args[0] == "agent":
             "handoff_notes_for_tester": ["run the smoke test"],
         }
     else:
-        target = workspace / "tests" / "test_runtime.py"
+        target = project_root / "tests" / "test_runtime.py"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("def test_runtime():\\n    assert True\\n")
         visible = {
@@ -158,16 +161,16 @@ if len(args) >= 5 and args[0] == "agents" and args[1] == "delete":
 if len(args) >= 8 and args[0] == "agents" and args[1] == "add":
     agent_id = args[2]
     workspace = args[args.index("--workspace") + 1]
+    agent_dir = args[args.index("--agent-dir") + 1]
     model = args[args.index("--model") + 1]
-    agent_root = Path(__file__).with_name("harvest_agents") / agent_id
     record = {
         "id": agent_id,
         "workspace": workspace,
-        "agentDir": str(agent_root / "agent"),
+        "agentDir": agent_dir,
         "model": model,
         "bindings": 0,
     }
-    (agent_root / "agent").mkdir(parents=True, exist_ok=True)
+    Path(agent_dir).mkdir(parents=True, exist_ok=True)
     state["agents"][agent_id] = record
     save()
     print(json.dumps(record))
@@ -176,9 +179,10 @@ if len(args) >= 8 and args[0] == "agents" and args[1] == "add":
 if args and args[0] == "agent":
     agent_id = args[args.index("--agent") + 1]
     workspace = Path(state["agents"][agent_id]["workspace"])
+    project_root = workspace / "project" if (workspace / "project").exists() else workspace
     sessions_dir = Path(state["agents"][agent_id]["agentDir"]).parent / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
-    target = workspace / "src" / "harvested.py"
+    target = project_root / "src" / "harvested.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("print('harvested')\\n")
     visible = {
@@ -266,16 +270,16 @@ if len(args) >= 5 and args[0] == "agents" and args[1] == "delete":
 if len(args) >= 8 and args[0] == "agents" and args[1] == "add":
     agent_id = args[2]
     workspace = args[args.index("--workspace") + 1]
+    agent_dir = args[args.index("--agent-dir") + 1]
     model = args[args.index("--model") + 1]
-    agent_root = Path(__file__).with_name("empty_payload_agents") / agent_id
     record = {
         "id": agent_id,
         "workspace": workspace,
-        "agentDir": str(agent_root / "agent"),
+        "agentDir": agent_dir,
         "model": model,
         "bindings": 0,
     }
-    (agent_root / "agent").mkdir(parents=True, exist_ok=True)
+    Path(agent_dir).mkdir(parents=True, exist_ok=True)
     state["agents"][agent_id] = record
     save()
     print(json.dumps(record))
@@ -424,6 +428,17 @@ raise SystemExit(f"unsupported args: {args}")
         self.assertIn("src/implemented.py", artifact["payload"]["changed_files"])
         self.assertTrue((workspace_ref / "src" / "implemented.py").exists())
         self.assertTrue(log_path.with_suffix(".agents.log").exists())
+        state = json.loads(fake_openclaw.with_name("fake_openclaw_state.json").read_text())
+        backend_agent_id = executor._backend_agent_id(packet)
+        self.assertEqual(
+            state["agents"][backend_agent_id]["workspace"],
+            str(workspace_ref / ".agents" / "openclaw" / "workspace"),
+        )
+        self.assertEqual(
+            state["agents"][backend_agent_id]["agentDir"],
+            str(workspace_ref / ".agents" / "openclaw" / "agents" / backend_agent_id / "agent"),
+        )
+        self.assertTrue((workspace_ref / ".agents" / "openclaw" / "workspace" / "project").is_symlink())
 
     def test_worker_openclaw_workspace_executor_records_tester_failure_report(self) -> None:
         fake_openclaw = self._write_fake_openclaw()
@@ -551,7 +566,14 @@ raise SystemExit(f"unsupported args: {args}")
         state = json.loads(state_path.read_text())
         self.assertEqual(response["status"], "SUCCESS")
         self.assertEqual(state["agents"][backend_agent_id]["model"], "ollama/gemma4:31b")
-        self.assertEqual(state["agents"][backend_agent_id]["workspace"], str(self.harness.tmp_path / "P_impl_model_reconcile"))
+        self.assertEqual(
+            state["agents"][backend_agent_id]["workspace"],
+            str(self.harness.tmp_path / "P_impl_model_reconcile" / ".agents" / "openclaw" / "workspace"),
+        )
+        self.assertEqual(
+            state["agents"][backend_agent_id]["agentDir"],
+            str(self.harness.tmp_path / "P_impl_model_reconcile" / ".agents" / "openclaw" / "agents" / backend_agent_id / "agent"),
+        )
         self.assertTrue((self.harness.tmp_path / "reconcile_response.reconcile.log").exists())
 
     def test_executor_backend_agent_id_isolated_per_run(self) -> None:

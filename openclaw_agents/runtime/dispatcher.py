@@ -14,6 +14,7 @@ import yaml
 from openclaw_agents.communication.topic_router import TopicRouter
 from openclaw_agents.database.store import ControlPlaneStore, parse_timestamp, utc_now
 from openclaw_agents.runtime.artifact_serializers import ArtifactSerializer
+from openclaw_agents.runtime.project_state import ProjectStateLayout
 from openclaw_agents.scheduler.management_writer import WorkspaceManagementWriter
 from openclaw_agents.scheduler.snapshot_store import SnapshotStore
 
@@ -175,7 +176,8 @@ class RuntimeDispatcher:
 
     def _packet_root(self, project_id: str, workspace_ref: str | None) -> Path:
         if workspace_ref:
-            root = Path(workspace_ref) / "artifacts" / "incoming"
+            layout = ProjectStateLayout.from_workspace(workspace_ref)
+            root = layout.runtime_incoming_dir
         else:
             root = self.state_dir / project_id / "incoming"
         root.mkdir(parents=True, exist_ok=True)

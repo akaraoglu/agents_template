@@ -97,10 +97,7 @@ class RecoveryTests(unittest.TestCase):
 
         self.assertFalse(assessment.ok)
         self.assertIn("missing_snapshot", assessment.issues)
-        event = self.harness.store.fetchone(
-            "SELECT * FROM recovery_events WHERE recovery_id = ?",
-            (assessment.recovery_event_id,),
-        )
+        event = self.harness.store.get_recovery_event(assessment.recovery_event_id or "")
         assert event is not None
         self.assertEqual(event["failure_mode"], "resume_readiness_failed")
         self.assertEqual(event["details_json"]["latest_snapshot_id"], None)
@@ -120,10 +117,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(project["runtime_status"], "BLOCKED")
         self.assertEqual(schedule["queue_state"], "blocked")
         self.assertEqual(schedule["waiting_reason"], "recovery_required")
-        event = self.harness.store.fetchone(
-            "SELECT * FROM recovery_events WHERE recovery_id = ?",
-            (assessment.recovery_event_id,),
-        )
+        event = self.harness.store.get_recovery_event(assessment.recovery_event_id or "")
         assert event is not None
         self.assertIn("workspace_dirty_tracked_files", event["details_json"]["issues"])
         self.assertEqual(

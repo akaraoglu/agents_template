@@ -152,3 +152,27 @@ Append one-off lessons here when a mistake is discovered, the agent is corrected
 - Root cause: `WorkspaceManagementWriter` treated every artifact record as readable and attempted to parse missing workspace files during control-command sync.
 - New rule: Management projection must be resilient to historical bad state. Missing artifact files should be skipped during projection instead of crashing live control-plane actions.
 - Where it was recorded: `openclaw_agents/scheduler/management_writer.py`
+
+- Date: 2026-04-14
+- Problem: Fresh project workspaces still contain extra agent/persona markdown files such as `BOOTSTRAP.md`, `SOUL.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, `USER.md`, and a second `AGENTS.md`, which makes the project root look like an agent bootstrap repo instead of a clean project workspace.
+- Root cause: Those files are not coming from the committed `project_workspace` template; they are leaking in from the underlying OpenClaw workspace bootstrap/persona layer used by the real workspace executor.
+- New rule: Project workspaces should expose only project-facing artifacts and management files by default. Agent/bootstrap/persona files must be suppressed, relocated under hidden runtime state, or removed from the project root.
+- Where it was recorded: Live workspace `/home/alik/workspace/claw_software_workspace/projects/P_live_management_sync`
+
+- Date: 2026-04-14
+- Problem: Moving OpenClaw backend agent state into a hidden `--agent-dir` under `.openclaw/backend_agents/...` did not eliminate all root-level persona/bootstrap context from fresh live project runs.
+- Root cause: The blocked live project `P_e59706da53834907bd2b861287bbefe3` was provisioned with the new hidden `agentDir`, but the OpenClaw runtime still injected root-level files such as `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, and `BOOTSTRAP.md` into the system prompt. That means there is a second leakage path tied to workspace bootstrap behavior, not only agent state placement.
+- New rule: Treat hidden `agentDir` isolation as necessary but not sufficient. The real boundary fix is to stop using the visible project root as the OpenClaw `--workspace`; use a hidden project-local OpenClaw workspace under `.agents/openclaw/workspace` and expose the visible project through a symlink inside that hidden workspace instead.
+- Where it was recorded: Blocked live project `/home/alik/workspace/claw_software_workspace/projects/P_e59706da53834907bd2b861287bbefe3`
+
+- Date: 2026-04-14
+- Problem: The first Phase 2 store split left project-local `projects` rows stale and broke shared lease foreign keys.
+- Root cause: `projects` updates were not mirrored into each project's local DB because the routed store did not resolve `project_id` for `UPDATE projects ... WHERE project_id = ?`, and `LeaseManager` still created control-plane `agent_runs` through the routed project-local path even though shared `orchestrator_leases` keeps a foreign key to shared `agent_runs`.
+- New rule: Treat `projects` as a dual-written scheduler summary row and mirror every project update into the project-local DB once `workspace_ref` exists. Shared control-plane orchestrator runs used only to satisfy lease ownership must be inserted through a shared DB transaction, and project-active run queries should merge those shared control-plane rows with project-local runtime rows when needed.
+- Where it was recorded: `openclaw_agents/database/store.py`, `openclaw_agents/scheduler/lease_manager.py`
+
+- Date: 2026-04-14
+- Problem: After the Phase 3 migration work, the live stack looked like `Niobe` was stuck even though there was no active workflow.
+- Root cause: The repo-specific gateway and worker supervisor had not been restarted after the migration/purge work, so no live processes were available to consume new work even though the database was otherwise clean.
+- New rule: Treat migration or purge completion as incomplete until `zulip-gateway.service` and `openclaw-worker-supervisor.service` are restarted and the corresponding repo-specific processes are verified in `ps`.
+- Where it was recorded: live rollout of the Phase 3 migration on 2026-04-14

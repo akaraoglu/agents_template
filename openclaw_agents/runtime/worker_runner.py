@@ -21,6 +21,7 @@ from openclaw_agents.runtime.openclaw_workspace_executor import (
     OpenClawWorkspaceExecutor,
     WorkspaceExecutionBlockedError,
 )
+from openclaw_agents.runtime.project_state import ProjectStateLayout
 from openclaw_agents.runtime.role_executor import BuiltinRoleExecutor
 
 
@@ -70,7 +71,8 @@ class RuntimeWorker:
     def _response_path(self, *, packet_path: Path, workspace_ref: str | None, task_id: str, attempt_id: str) -> Path:
         dir_name = (self.worker_config.get("defaults") or {}).get("response_dir_name", "runtime_responses")
         if workspace_ref:
-            root = Path(workspace_ref) / "artifacts" / "reports" / dir_name
+            layout = ProjectStateLayout.from_workspace(workspace_ref)
+            root = layout.ensure_runtime_dirs(response_dir_name=dir_name)
         else:
             root = self.dispatcher.state_dir / "responses"
         root.mkdir(parents=True, exist_ok=True)
@@ -320,7 +322,7 @@ class RuntimeWorker:
 
     def _claim_run(self, run: dict[str, Any]) -> bool:
         now = utc_now()
-        with self.store.transaction() as conn:
+        with self.store.project_transaction(run["project_id"]) as conn:
             claimed = self.store.claim_agent_run(run["run_id"], started_at=now, conn=conn)
             if not claimed:
                 return False

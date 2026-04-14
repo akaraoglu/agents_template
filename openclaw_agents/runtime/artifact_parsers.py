@@ -18,7 +18,7 @@ class ArtifactParser:
         self.store = store or ControlPlaneStore()
 
     def get_artifact(self, artifact_id: str) -> dict[str, Any] | None:
-        return self.store.fetchone("SELECT * FROM artifacts WHERE artifact_id = ?", (artifact_id,))
+        return self.store.get_artifact(artifact_id)
 
     def _parse_text(self, path: Path) -> Any:
         text = path.read_text()
@@ -62,16 +62,7 @@ class ArtifactParser:
         artifact_type: str | None = None,
         task_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM artifacts WHERE project_id = ?"
-        params: list[Any] = [project_id]
-        if artifact_type:
-            sql += " AND artifact_type = ?"
-            params.append(artifact_type)
-        if task_id:
-            sql += " AND task_id = ?"
-            params.append(task_id)
-        sql += " ORDER BY created_at ASC"
-        return self.store.fetchall(sql, params)
+        return self.store.list_project_artifacts(project_id, artifact_type=artifact_type, task_id=task_id)
 
     def summarize_artifacts(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         summary: list[dict[str, Any]] = []

@@ -212,6 +212,7 @@ class ProjectWorkspaceProvisioner:
         )
 
         workspace_ref = str(workspace_path)
+        self.store.ensure_project_schema(workspace_ref)
         self.store.upsert(
             "workspace_states",
             {

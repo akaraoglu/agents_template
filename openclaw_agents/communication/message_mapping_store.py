@@ -39,18 +39,7 @@ class MessageMappingStore:
         )
 
     def get_by_message_id(self, zulip_message_id: str) -> dict | None:
-        return self.store.fetchone(
-            "SELECT * FROM zulip_message_links WHERE zulip_message_id = ?",
-            (zulip_message_id,),
-        )
+        return self.store.get_zulip_message_link(zulip_message_id)
 
     def get_for_task(self, task_id: str) -> list[dict]:
-        return self.store.fetchall(
-            """
-            SELECT *
-            FROM zulip_message_links
-            WHERE task_id = ?
-            ORDER BY created_at ASC
-            """,
-            (task_id,),
-        )
+        return self.store.list_zulip_links_for_task(task_id)

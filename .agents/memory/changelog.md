@@ -1055,3 +1055,63 @@ history, live credentials, or project-specific task transcripts here.
 - Action: Reviewed the working tree after live verification, kept the commit scoped to the management projection, runtime package import fix, and associated memory updates, and prepared a single commit for the validated changes.
 - Validation: Confirmed the working tree only contains the management-sync implementation, import-cycle fix, and memory updates that were already validated with `python3 -m unittest discover -s tests -v` and a fresh live Fibonacci sample project.
 - Outcome: The repository is ready for one commit containing the management projection rollout.
+
+- Date: 2026-04-14
+- Request: Explain why live project workspaces contain extra agent/persona markdown files like `BOOTSTRAP.md`, `SOUL.md`, and `IDENTITY.md`, and whether that is by design.
+- Action: Inspected the fresh live project workspace `P_live_management_sync`, confirmed the unexpected files in the project root, compared them against the intended project workspace template, and traced their content back to the underlying OpenClaw bootstrap/persona workspace layer rather than the committed project-management template.
+- Validation: Verified the project root contains `AGENTS.md`, `BOOTSTRAP.md`, `HEARTBEAT.md`, `IDENTITY.md`, `SOUL.md`, `TOOLS.md`, and `USER.md`, while the committed template only defines `PROJECT.md`, `management/`, and `artifacts/`.
+- Outcome: The extra agent/persona markdown files are not part of the intended project-management design; they are a leak from the underlying OpenClaw workspace bootstrap and should be removed or hidden from project workspaces in a follow-up cleanup.
+
+- Date: 2026-04-14
+- Request: Plan a proper fix so live project workspaces stop exposing OpenClaw bootstrap/persona files in the visible project root.
+- Action: Inspected `openclaw_workspace_executor.py`, confirmed that backend agents are provisioned with `openclaw agents add --workspace <project-root>` and no `--agent-dir`, and checked the local OpenClaw CLI help to verify that `--agent-dir` exists and can isolate backend agent state from the project root.
+- Validation: Verified `openclaw agents add --help` exposes `--agent-dir <dir>` and that the committed project template still does not define the leaked persona files.
+- Outcome: The proper fix is to isolate backend agent state outside the visible project root, add project-root cleanup/reconciliation for already polluted workspaces, and verify the behavior on a fresh live project before rollout.
+
+- Date: 2026-04-14
+- Request: Apply the minimal fix only so fresh workspace-backed runs stop creating OpenClaw persona/bootstrap files in the visible project root; no legacy cleanup.
+- Action: Updated `openclaw_workspace_executor.py` so `openclaw agents add` now provisions backend agents with `--agent-dir <project-root>/.openclaw/backend_agents/<backend-agent-id>/agent`, reconciles existing backend agents when `agentDir` still points at the old location, updated the workspace-executor tests to assert the hidden `agentDir` path, and restarted `openclaw-worker-supervisor.service` after confirming there were no active projects.
+- Validation: Ran `python3 -m py_compile openclaw_agents/runtime/openclaw_workspace_executor.py tests/test_openclaw_workspace_executor.py`, `python3 -m unittest tests.test_openclaw_workspace_executor -v`, and `python3 -m unittest discover -s tests -v` with 34 passing tests. Verified `openclaw-worker-supervisor.service` restarted successfully and is `active`.
+- Outcome: New workspace-backed implementer/tester runs will keep OpenClaw agent bootstrap state under `.openclaw/backend_agents/...` instead of polluting the visible project root.
+
+- Date: 2026-04-14
+- Request: Start a dummy Fibonacci project from Zulip as the `master` human user so the full live thread can be observed.
+- Action: Checked the live gateway/worker services, the active Zulip rc directory, and the current gateway configuration to determine whether this machine can originate a real human Zulip post as `master`.
+- Validation: Verified `zulip-gateway.service` and `openclaw-worker-supervisor.service` are active, confirmed the live Zulip rc directory only contains bot identities (`agent_smith`, `niobe`, `morpheus`, `architect`, `oracle`), and confirmed there is no local `master.zuliprc`.
+- Outcome: The live stack can process a real human message from `master` in Zulip, but this machine cannot originate one without a real user credential for `master`. A true end-to-end human-originated test from here therefore requires adding `master.zuliprc` or posting from the actual Zulip UI.
+
+- Date: 2026-04-14
+- Request: Explain why the latest live project blocked and whether `AgentSmith` failed to respond to `Niobe`.
+- Action: Queried the live project/task/attempt/run state for blocked project `P_e59706da53834907bd2b861287bbefe3`, inspected the blocked implementer runtime response and command log, and verified the hidden `--agent-dir` provisioning path in the corresponding OpenClaw provision log.
+- Validation: Verified `FRAME_PROJECT` succeeded under `AgentSmith`, `ORCHESTRATE_PROJECT` and `DESIGN_ARCHITECTURE` succeeded, `PLAN_SOFTWARE_TASK` succeeded, and the block occurred at `IMPLEMENT_SOFTWARE_TASK` after the OpenClaw backend returned plain text timeout output instead of the required JSON object. Verified the provision log used `--agent-dir .../.openclaw/backend_agents/.../agent`.
+- Outcome: The latest block is an implementer runtime timeout and malformed visible reply issue, not a Smith/Niobe handoff failure. The hidden `agentDir` fix is active, but the blocked run still shows OpenClaw injecting root-level persona files into the prompt context, so there is a remaining workspace/bootstrap leakage path beyond simple `agentDir` placement.
+
+- Date: 2026-04-14
+- Request: Move project-local runtime history out of the visible project root and under each project's hidden `.agents/` tree, then inspect and address the remaining OpenClaw workspace leakage path.
+- Action: Added `ProjectStateLayout` to centralize per-project hidden runtime paths, moved runtime packets to `.agents/runtime/incoming/`, moved worker responses/log refs to `.agents/runtime/runtime_responses/`, changed `openclaw_workspace_executor.py` to use a hidden OpenClaw workspace at `.agents/openclaw/workspace` plus per-agent state at `.agents/openclaw/agents/<backend-agent-id>/agent`, exposed the visible project through a `project` symlink inside that hidden workspace, updated executor/runtime tests, updated the project template and runbooks to include the hidden `.agents` runtime layout, and restarted the live gateway and worker services after confirming there were no active projects.
+- Validation: Ran `python3 -m py_compile` on the changed runtime/test files, ran `python3 -m unittest tests.test_openclaw_workspace_executor tests.test_runtime_adapter tests.test_ollama_prompt_runner -v`, and ran `python3 -m unittest discover -s tests -v` with 34 passing tests. Also ran one short real OpenClaw validation against a temporary project workspace and confirmed the visible project root only contained `.agents`, `PROJECT.md`, `README.md`, `artifacts`, and `management`, while the hidden OpenClaw workspace used `.agents/openclaw/workspace/project`.
+- Outcome: Phase 1 of the project-local runtime boundary is live. New workspace-backed runs now keep OpenClaw workspace state, agent state, packets, and response logs under each project's hidden `.agents/` tree instead of the visible project root.
+
+- Date: 2026-04-14
+- Request: Implement Phase 2 of the project-based design so project history/state lives in each project's hidden `.agents/project.db` while the shared DB keeps only scheduler/lease state.
+- Action: Reworked `ControlPlaneStore` into a routed shared/project store, kept scheduler records and orchestrator leases in the shared DB, moved project-local tables behind per-project DB routing under `project/.agents/project.db`, added `project_transaction()` for worker-side claims, updated artifact/message/recovery call sites to use explicit store methods instead of raw SQL, and updated workspace template/runbook docs to document the project-local DB boundary.
+- Validation: Ran `python3 -m py_compile` on the changed store/runtime/scheduler modules and `python3 -m unittest discover -s tests -v` with 34 passing tests.
+- Outcome: New provisioned projects now keep runtime history, tasks, attempts, runs, artifacts, decisions, snapshots, control events, workspace state, recovery events, and Zulip mappings in `project/.agents/project.db`, while the shared DB remains the scheduler registry for project summaries, scheduling records, and orchestrator leases.
+
+- Date: 2026-04-14
+- Request: Check why `Niobe` appeared stuck after the Phase 3 migration work.
+- Action: Queried the live shared DB for active projects and open tasks, inspected the latest `projects` and `tasks` rows, checked the running process list for the repo-specific gateway and worker supervisor, and restarted the user services after confirming the control plane was idle.
+- Validation: Verified there were `0` active projects and `0` open tasks in the shared DB before restart, then restarted `zulip-gateway.service` and `openclaw-worker-supervisor.service` and confirmed both repo-specific Python processes were running again afterward.
+- Outcome: `Niobe` was not stuck in a live workflow. The apparent stall was caused by the gateway and worker supervisor simply not running after the migration work. The live stack is back up cleanly.
+
+- Date: 2026-04-14
+- Request: Complete the live verification for Phase 3 after the shared/project DB split.
+- Action: Queried the shared DB for residual project-local table rows after migration, inspected the latest shared `projects` summary rows, and opened a migrated project-local database to verify that task/runtime/artifact/message-link history lives under `project/.agents/project.db`.
+- Validation: Verified the shared DB contains `0` rows in `tasks`, `task_attempts`, `agent_runs`, `artifacts`, `decisions`, `escalations`, `control_events`, `project_snapshots`, `zulip_message_links`, `workspace_states`, and `recovery_events`. Verified migrated project `P_444e0d97ec7a4712a1ed2eac9a079676` has task, attempt, run, artifact, workspace-state, and Zulip-link rows in `/home/alik/workspace/claw_software_workspace/projects/P_444e0d97ec7a4712a1ed2eac9a079676/.agents/project.db`.
+- Outcome: Phase 3 live rollout is functionally complete: the shared DB is now scheduler-summary-only, while project-local history is stored in each project's hidden `.agents/project.db`.
+
+- Date: 2026-04-14
+- Request: Commit the Phase 2 and Phase 3 project-local state changes after live verification.
+- Action: Re-ran the full unit test suite, staged the routed store, project-local runtime state, migrator, template updates, and associated tests/docs, and prepared a single commit covering the shared/project DB split and live rollout notes.
+- Validation: Ran `python3 -m unittest discover -s tests -v` with 35 passing tests immediately before staging the commit.
+- Outcome: The Phase 2 and Phase 3 project-local state work is ready to be committed as one coherent batch.

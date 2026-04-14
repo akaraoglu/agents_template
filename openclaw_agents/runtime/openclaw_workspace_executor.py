@@ -18,6 +18,7 @@ import yaml
 from openclaw_agents.database.store import ControlPlaneStore
 from openclaw_agents.runtime.external_executor import ExecutionContextBuilder
 from openclaw_agents.runtime.ollama_prompt_runner import ANSI_ESCAPE_RE, CONTROL_CHAR_RE
+from openclaw_agents.runtime.project_state import ProjectStateLayout
 from openclaw_agents.runtime.dispatcher import ContractValidator
 
 
@@ -81,6 +82,10 @@ class OpenClawWorkspaceExecutor:
         return f"ocw-{project_slug}-{role_slug}-{task_slug}"
 
     @staticmethod
+    def _agent_dir(layout: ProjectStateLayout, backend_agent_id: str) -> Path:
+        return layout.openclaw_agent_dir(backend_agent_id).resolve()
+
+    @staticmethod
     def _strip_terminal_noise(payload: str) -> str:
         without_ansi = ANSI_ESCAPE_RE.sub("", payload)
         return CONTROL_CHAR_RE.sub("", without_ansi)
@@ -138,7 +143,7 @@ class OpenClawWorkspaceExecutor:
             if not path.is_file():
                 continue
             relative = path.relative_to(root)
-            if ".git" in relative.parts or "artifacts" in relative.parts:
+            if ".git" in relative.parts or "artifacts" in relative.parts or ".agents" in relative.parts:
                 continue
             stat = path.stat()
             files[str(relative)] = (stat.st_mtime_ns, stat.st_size)
@@ -414,7 +419,8 @@ class OpenClawWorkspaceExecutor:
         self,
         *,
         backend_agent_id: str,
-        workspace_ref: str,
+        openclaw_workspace_ref: str,
+        agent_dir: str,
         model_id: str,
         openclaw_bin: str,
         timeout_seconds: int,
@@ -429,7 +435,12 @@ class OpenClawWorkspaceExecutor:
             if agent.get("id") == backend_agent_id:
                 existing_model = str(agent.get("model") or "")
                 existing_workspace = str(agent.get("workspace") or "")
-                if existing_model == model_id and existing_workspace == workspace_ref:
+                existing_agent_dir = str(agent.get("agentDir") or "")
+                if (
+                    existing_model == model_id
+                    and existing_workspace == openclaw_workspace_ref
+                    and existing_agent_dir == agent_dir
+                ):
                     return agent
                 self._run_command(
                     [
@@ -444,7 +455,8 @@ class OpenClawWorkspaceExecutor:
                     log_path=log_path.with_suffix(".reconcile.log"),
                 )
                 break
-        Path(workspace_ref).mkdir(parents=True, exist_ok=True)
+        Path(openclaw_workspace_ref).mkdir(parents=True, exist_ok=True)
+        Path(agent_dir).parent.mkdir(parents=True, exist_ok=True)
         payload = self._run_command(
             [
                 openclaw_bin,
@@ -452,7 +464,9 @@ class OpenClawWorkspaceExecutor:
                 "add",
                 backend_agent_id,
                 "--workspace",
-                workspace_ref,
+                openclaw_workspace_ref,
+                "--agent-dir",
+                agent_dir,
                 "--model",
                 model_id,
                 "--non-interactive",
@@ -548,7 +562,7 @@ class OpenClawWorkspaceExecutor:
             raise WorkspaceExecutionBlockedError(
                 f"openclaw_workspace executor requires task context, got {context_scope or 'unknown'}"
             )
-        workspace_root = self._workspace_root(context)
+        project_root = self._workspace_root(context)
         if role == "implementer":
             artifact_schema = {
                 "status": "SUCCESS | NEEDS_CLARIFICATION | BLOCKED | FAILED",
@@ -588,9 +602,10 @@ class OpenClawWorkspaceExecutor:
         return "\n".join(
             [
                 f"You are the OpenClaw runtime backend for the `{role}` role.",
-                f"Operate only inside the project folder: {workspace_root}",
+                f"Operate only inside the project directory mounted at ./project (host path: {project_root}).",
                 f"Context scope: {context_scope}",
-                "You may inspect files, edit files, and run commands needed to complete the task.",
+                "The current OpenClaw workspace is hidden runtime state. The real project files are under ./project.",
+                "You may inspect files, edit files, and run commands needed to complete the task, but only under ./project.",
                 *[f"- {note}" for note in role_notes],
                 "",
                 "Role prompt:",
@@ -708,6 +723,8 @@ class OpenClawWorkspaceExecutor:
         config = config or {}
         context = self.context_builder.build(packet)
         workspace_root = self._workspace_root(context)
+        layout = ProjectStateLayout.from_workspace(workspace_root)
+        openclaw_workspace_root = layout.ensure_openclaw_workspace()
         backend_agent_id = config.get("backend_agent_id") or self._backend_agent_id(packet)
         session_id = config.get("session_id") or self._session_id(packet)
         model_id = str(config.get("model") or self._model_identifier(context))
@@ -715,10 +732,12 @@ class OpenClawWorkspaceExecutor:
         openclaw_bin = str(config.get("openclaw_bin") or self.openclaw_bin)
         openclaw_timeout_seconds = int(config.get("openclaw_timeout_seconds") or max(timeout_seconds - 30, 30))
         session_grace_seconds = int(config.get("session_grace_seconds") or 15)
+        agent_dir = str(self._agent_dir(layout, backend_agent_id))
         before = self._scan_workspace(workspace_root)
         agent_record = self._ensure_agent(
             backend_agent_id=backend_agent_id,
-            workspace_ref=str(workspace_root),
+            openclaw_workspace_ref=str(openclaw_workspace_root),
+            agent_dir=agent_dir,
             model_id=model_id,
             openclaw_bin=openclaw_bin,
             timeout_seconds=timeout_seconds,

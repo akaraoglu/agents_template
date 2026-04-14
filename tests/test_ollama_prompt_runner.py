@@ -240,6 +240,10 @@ class OllamaPromptRunnerTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.status, "SUCCESS")
+        self.assertEqual(
+            Path(result.response_file),
+            workspace_ref / ".agents" / "runtime" / "runtime_responses" / Path(result.response_file).name,
+        )
         persisted_task = store.get_task(task["task_id"])
         assert persisted_task is not None
         self.assertEqual(persisted_task["status"], "SUCCESS")

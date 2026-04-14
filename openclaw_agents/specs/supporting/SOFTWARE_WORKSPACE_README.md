@@ -80,13 +80,16 @@ Recommended files inside `management/`:
 Optional but recommended:
 
 * `artifacts/`
-* `artifacts/incoming/`
 * `artifacts/outgoing/`
 * `artifacts/reports/`
 
 If the project also carries its own local OpenClaw runtime, it may additionally contain:
 
-* `.agents/`
+* `.agents/project.db`
+* `.agents/runtime/incoming/`
+* `.agents/runtime/runtime_responses/`
+* `.agents/openclaw/workspace/`
+* `.agents/openclaw/agents/`
 
 ### Example Layout
 
@@ -100,12 +103,18 @@ If the project also carries its own local OpenClaw runtime, it may additionally 
 │   ├── DECISIONS.md
 │   └── TEST_REPORT.md
 ├── artifacts/
-│   ├── incoming/
 │   ├── outgoing/
 │   └── reports/
 ├── src/...
 ├── tests/...
-└── .agents/                    # optional local runtime
+└── .agents/
+    ├── project.db
+    ├── runtime/
+    │   ├── incoming/
+    │   └── runtime_responses/
+    └── openclaw/
+        ├── workspace/
+        └── agents/
 ```
 
 ## Required Document Semantics
@@ -263,4 +272,3 @@ Recommended outputs in `artifacts/outgoing/` or `artifacts/reports/`:
 * Keep `.agents/` inside the project only when the project needs its own local runtime. In a shared multi-project setup, `.agents/` stays in the shared control workspace.
 * Do not commit generated `.agents/openclaw.json`, runtime state, secrets, or transient logs if this workspace becomes its own repository.
 * Keep bot-facing summaries short, but keep file-based state explicit and durable.
-

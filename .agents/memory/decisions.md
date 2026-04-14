@@ -538,3 +538,21 @@ Record durable repo or process decisions here, especially behavior or tooling up
 - Context: Adding the management writer introduced a valid control-command path that imports `artifact_parsers` without needing the rest of the runtime stack. The previous eager `runtime/__init__.py` imported `dispatcher`, which imported `zulip_gateway`, which imported `control_commands`, creating a circular import during live control-command execution.
 - Consequences: `openclaw_agents/runtime/__init__.py` now resolves exports lazily through `__getattr__`, which preserves package-level convenience imports without forcing dispatcher/gateway/control-command cycles during unrelated imports.
 - Status: Accepted
+
+- Date: 2026-04-14
+- Decision: Workspace-backed OpenClaw agent state should live outside the visible project root, even when the agent is bound to that project workspace for code execution.
+- Context: The current `openclaw_workspace` executor provisions backend agents with `openclaw agents add --workspace <project-root>` and no explicit `--agent-dir`. In live runs, that causes OpenClaw bootstrap/persona files such as `BOOTSTRAP.md`, `SOUL.md`, and `IDENTITY.md` to appear in the project root, which conflicts with the intended project workspace contract.
+- Consequences: `openclaw_workspace_executor.py` now treats each project's hidden `.agents/` tree as the OpenClaw runtime boundary: backend agents use `--workspace <project-root>/.agents/openclaw/workspace`, `--agent-dir <project-root>/.agents/openclaw/agents/<backend-agent-id>/agent`, and a `project` symlink inside the hidden workspace points back to the visible project root for real code edits. Runtime packets and worker response logs also live under `.agents/runtime/`.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: Phase 2 persistence is split into a shared scheduler registry plus per-project databases under `project/.agents/project.db`.
+- Context: Phase 1 moved runtime packets, response logs, and OpenClaw workspace state under each project's hidden `.agents/` tree, but authoritative task/artifact/history state still lived in one global SQLite file. That kept project history mixed across projects and prevented a project from being self-contained.
+- Consequences: `ControlPlaneStore` now routes `tasks`, `task_attempts`, `agent_runs`, `artifacts`, `decisions`, `escalations`, `zulip_message_links`, `project_snapshots`, `control_events`, `workspace_states`, and `recovery_events` into each project's `.agents/project.db`. The shared DB continues to own `projects` as the scheduler registry summary plus `scheduling_records` and `orchestrator_leases`. Project-facing modules keep using the same store facade rather than talking to multiple databases directly.
+- Status: Accepted
+
+- Date: 2026-04-14
+- Decision: After live migration, the shared control-plane DB should be treated as scheduler-summary-only and should not retain project-local history rows.
+- Context: The Phase 3 migration moved legacy workspace-backed projects from the shared SQLite database into per-project `.agents/project.db` files. Live verification after the migration showed the shared DB can operate with zero rows in project-local tables while still retaining `projects` summary rows and running the gateway/worker services normally.
+- Consequences: Operational checks should now expect `tasks`, `task_attempts`, `agent_runs`, `artifacts`, `decisions`, `escalations`, `control_events`, `project_snapshots`, `zulip_message_links`, `workspace_states`, and `recovery_events` to live only in project-local DBs. The shared DB remains the scheduler registry and lease store, not a fallback archive for completed project history.
+- Status: Accepted

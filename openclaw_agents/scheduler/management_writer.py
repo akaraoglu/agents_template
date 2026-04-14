@@ -107,18 +107,9 @@ class WorkspaceManagementWriter:
         if not project or not project.get("workspace_ref"):
             raise ValueError(f"project {project_id} has no workspace_ref")
         workspace_ref = str(project["workspace_ref"])
-        tasks = self.store.fetchall(
-            "SELECT * FROM tasks WHERE project_id = ? ORDER BY opened_at ASC",
-            (project_id,),
-        )
-        artifacts = self.store.fetchall(
-            "SELECT * FROM artifacts WHERE project_id = ? ORDER BY created_at ASC",
-            (project_id,),
-        )
-        control_events = self.store.fetchall(
-            "SELECT * FROM control_events WHERE project_id = ? ORDER BY requested_at ASC",
-            (project_id,),
-        )
+        tasks = self.store.list_tasks_for_project(project_id)
+        artifacts = self.store.list_project_artifacts(project_id)
+        control_events = self.store.list_control_events(project_id)
         workspace_state = self.store.get_workspace_state(workspace_ref) or {}
         scheduling = self.store.get_scheduling_record(project_id) or {}
         feedback_thread = self.store.get_project_feedback_thread(project_id)
