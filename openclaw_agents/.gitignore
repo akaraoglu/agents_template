@@ -1,5 +1,8 @@
+data/
+workspaces/
 __pycache__/
 *.pyc
+.pytest_cache/
+env-python/
+.venv/
 
-# Local deployment state and secrets.
-state/
