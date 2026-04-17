@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project_projection_event.schema.json",
+  "title": "ProjectProjectionEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "project_id",
+    "summary",
+    "event_type",
+    "actor_agent",
+    "created_at",
+    "project_version"
+  ],
+  "properties": {
+    "event_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "summary": { "type": "string" },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "project_kickoff",
+        "project_change_proposed",
+        "project_change_confirmed",
+        "spec_updated",
+        "plan_updated",
+        "tasks_updated",
+        "execution_handoff_created",
+        "execution_started",
+        "execution_blocked",
+        "verification_reported",
+        "project_closed"
+      ]
+    },
+    "actor_agent": { "type": "string" },
+    "created_at": { "type": "string" },
+    "project_version": { "type": ["string", "integer"] },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": true
+}

@@ -1,45 +1,84 @@
-"""Zulip message-link persistence helpers."""
+"""Persistent mapping of Zulip messages to project/task context."""
 
 from __future__ import annotations
 
-from openclaw_agents.database.store import ControlPlaneStore
+import json
+import threading
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from openclaw_agents.runtime_paths import RuntimePaths
+
+
+def _utc_now() -> str:
+    return datetime.now(tz=UTC).isoformat()
 
 
 class MessageMappingStore:
-    """Persist and query Zulip message mappings in the control-plane store."""
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path or (RuntimePaths.from_root().ensure().state_root / "message_mappings.json")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        if not self.path.exists():
+            self._write({"message_links": {}, "project_topics": {}, "control_events": {}})
 
-    def __init__(self, store: ControlPlaneStore | None = None) -> None:
-        self.store = store or ControlPlaneStore()
+    def _read(self) -> dict[str, Any]:
+        with self.path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def _write(self, payload: dict[str, Any]) -> None:
+        temp = self.path.with_suffix(".tmp")
+        with temp.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+        temp.replace(self.path)
 
     def link_message(
         self,
-        *,
-        project_id: str,
-        zulip_message_id: str,
-        stream_name: str,
-        topic_name: str,
-        direction: str,
+        zulip_message_id: int | str,
+        project_id: str | None,
+        task_id: str | None,
+        topic_name: str | None,
         message_kind: str,
-        linked_entity_type: str,
-        linked_entity_id: str,
-        task_id: str | None = None,
-        control_event_id: str | None = None,
-    ) -> dict:
-        return self.store.link_zulip_message(
-            project_id=project_id,
-            zulip_message_id=zulip_message_id,
-            stream_name=stream_name,
-            topic_name=topic_name,
-            direction=direction,
-            message_kind=message_kind,
-            linked_entity_type=linked_entity_type,
-            linked_entity_id=linked_entity_id,
-            task_id=task_id,
-            control_event_id=control_event_id,
-        )
+    ) -> dict[str, Any]:
+        record = {
+            "zulip_message_id": str(zulip_message_id),
+            "project_id": project_id,
+            "task_id": task_id,
+            "topic_name": topic_name,
+            "message_kind": message_kind,
+            "created_at": _utc_now(),
+        }
+        with self._lock:
+            state = self._read()
+            state["message_links"][str(zulip_message_id)] = record
+            self._write(state)
+        return record
 
-    def get_by_message_id(self, zulip_message_id: str) -> dict | None:
-        return self.store.get_zulip_message_link(zulip_message_id)
+    def get_message_context(self, zulip_message_id: int | str) -> dict[str, Any] | None:
+        with self._lock:
+            return self._read()["message_links"].get(str(zulip_message_id))
 
-    def get_for_task(self, task_id: str) -> list[dict]:
-        return self.store.list_zulip_links_for_task(task_id)
+    def set_primary_topic(self, project_id: str, stream_name: str, topic_name: str) -> None:
+        with self._lock:
+            state = self._read()
+            state["project_topics"][project_id] = {
+                "stream_name": stream_name,
+                "topic_name": topic_name,
+                "updated_at": _utc_now(),
+            }
+            self._write(state)
+
+    def get_primary_topic(self, project_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            return self._read()["project_topics"].get(project_id)
+
+    def set_control_event_message(self, control_event_id: str, zulip_message_id: int | str) -> None:
+        with self._lock:
+            state = self._read()
+            state["control_events"][control_event_id] = str(zulip_message_id)
+            self._write(state)
+
+    def dump(self) -> dict[str, Any]:
+        with self._lock:
+            return self._read()

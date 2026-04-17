@@ -1,95 +1,31 @@
-schema_version: "1.0.0"
-mode: "single_zulip_gateway_service"
-
+version: 2
+zulip_server_url: https://zulip.localnet:3838
+verify_tls: false
+enabled_agents:
+  - neo
+  - agent_smith
+  - niaobe
+bot_identities:
+  neo: neo-bot@bots.localdomain
+  agent_smith: agentsmith-bot@bots.localdomain
+  niaobe: niaobe-bot@localhost.localdomain
+bot_credentials_secret_refs:
+  neo: env:ZULIP_KEY_NEO
+  agent_smith: env:ZULIP_KEY_AGENT_SMITH
+  niaobe: env:ZULIP_KEY_NIAOBE
+local_dev_credentials_file: zulip_bots_email_and_keys.txt
+required_streams:
+  - projects
+required_subscriptions:
+  neo: [projects]
+  agent_smith: [projects]
+  niaobe: [projects]
+topic_conventions:
+  project_main: project/{project_id}
 runtime:
-  zuliprc_dir_env: "OPENCLAW_ZULIPRC_DIR"
-  state_dir_env: "OPENCLAW_ZULIP_GATEWAY_STATE_DIR"
   poll_interval_seconds: 1.0
-  queue_timeout_seconds: 0
-  processed_message_cache_size: 5000
-  ensure_subscriptions: true
-
-zulip:
-  server_url_env: "ZULIP_SERVER_URL"
-  bot_credentials_source: "secrets_store"
-  event_queue:
-    recreate_when_expired: true
-    dedupe_required: true
-  subscriptions:
-    master: []
-    neo: []
-    agent_smith: ["exec", "projects", "escalations"]
-    niaobe: ["projects", "software", "verification", "escalations"]
-    morpheus: ["projects", "software", "escalations"]
-    architect: ["projects", "software"]
-    oracle: ["verification", "projects", "escalations"]
-    planner: []
-    implementer: []
-    tester: []
-
-streams:
-  executive: "exec"
-  projects: "projects"
-  software: "software"
-  verification: "verification"
-  escalations: "escalations"
-  software_internal: "software-internal"
-
-topics:
-  project_intake: "project/{project_id}/intake"
-  project_main: "project/{project_id}"
-  project_decisions: "project/{project_id}/decisions"
-  project_design: "project/{project_id}/design"
-  software_main: "project/{project_id}/software"
-  software_task: "project/{project_id}/software/{task_id}"
-  verification_task: "project/{project_id}/verify/{task_id}"
-  escalation_task: "project/{project_id}/escalate/{task_id}"
-
-message_contract:
-  required_shape:
-    - "brief_human_summary"
-    - "machine_readable_fenced_yaml_block"
-  schema_paths:
-    task_assignment: "schemas/zulip_task_message.schema.json"
-    task_result: "schemas/zulip_result_message.schema.json"
-    control_event: "schemas/control_event.schema.json"
-  authoritative_when:
-    - "schema_block_is_valid"
-    - "project_id_present"
-    - "task_id_or_control_event_present"
-    - "accepted_by_gateway_validation"
-  non_authoritative_when:
-    - "pure_discussion"
-    - "missing_required_ids"
-    - "malformed_schema_block"
-
-state_backends:
-  task_state: "database"
-  project_state: "database"
-  scheduling_state: "database"
-  artifact_store: "database_plus_workspace_refs"
-  zulip_message_mapping_store: "database"
-
-dispatch:
-  entry_agent_for_new_requests: "agent_smith"
-  scheduler_owner: "control_plane"
-  enforce_single_gateway_pattern: true
-  reject_per_agent_zulip_clients: true
-
-control_event_mirroring:
-  enabled: true
-  topic: "project/{project_id}/decisions"
-  include_control_event_id: true
-
-observability:
-  required_metrics:
-    - "messages_received"
-    - "messages_posted"
-    - "schema_validation_failures"
-    - "duplicate_events_dropped"
-    - "queue_recreations"
-    - "task_dispatch_failures"
-    - "topic_mismatch_warnings"
-    - "projects_paused_total"
-    - "projects_resumed_total"
-    - "project_switches_total"
+  queue_timeout_seconds: 10
+  batch_size: 50
+  startup_subscriptions: true
+checkpoint_store: system/state/event_dedupe.json
+message_mapping_store: system/state/message_mappings.json

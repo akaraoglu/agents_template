@@ -1,10 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "zulip_task_message.schema.json",
-  "title": "Zulip Task Message",
-  "description": "Structured task-assignment block mirrored to Zulip by the gateway.",
+  "title": "ZulipTaskMessage",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "kind",
     "project_id",
@@ -16,57 +14,15 @@
     "return_to"
   ],
   "properties": {
-    "kind": {
-      "type": "string",
-      "const": "task_assignment"
-    },
-    "project_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "task_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "from_agent": {
-      "type": "string",
-      "minLength": 1
-    },
-    "to_agent": {
-      "type": "string",
-      "minLength": 1
-    },
-    "task_type": {
-      "type": "string",
-      "enum": [
-        "CLARIFY_GOAL",
-        "FRAME_PROJECT",
-        "APPROVE_PRIORITY",
-        "RESOLVE_ESCALATION",
-        "ORCHESTRATE_PROJECT",
-        "DESIGN_ARCHITECTURE",
-        "REQUEST_ARCHITECTURE_CLARIFICATION",
-        "ORCHESTRATE_SOFTWARE",
-        "PLAN_SOFTWARE_TASK",
-        "IMPLEMENT_SOFTWARE_TASK",
-        "TEST_SOFTWARE_TASK",
-        "VERIFY_PROJECT",
-        "CLOSE_PROJECT"
-      ]
-    },
-    "goal": {
-      "type": "string",
-      "minLength": 1
-    },
-    "return_to": {
-      "type": "string",
-      "minLength": 1
-    },
-    "reply_stream": {
-      "type": "string"
-    },
-    "reply_topic": {
-      "type": "string"
-    }
-  }
+    "kind": { "type": "string" },
+    "project_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "from_agent": { "type": "string" },
+    "to_agent": { "type": "string" },
+    "task_type": { "type": "string" },
+    "goal": { "type": "string" },
+    "return_to": { "type": "string" }
+  },
+  "additionalProperties": true
 }
+

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "approval_event.schema.json",
+  "title": "ApprovalEvent",
+  "type": "object",
+  "required": [
+    "approval_id",
+    "requester_email",
+    "owner_agent",
+    "status",
+    "change",
+    "preview",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "approval_id": { "type": "string" },
+    "requester_email": { "type": "string" },
+    "owner_agent": { "type": "string" },
+    "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+    "change": { "type": "object" },
+    "preview": { "type": "string" },
+    "confirmed_by": { "type": "string" },
+    "created_at": { "type": "string" },
+    "updated_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}
+

@@ -1,10 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "response_envelope.schema.json",
-  "title": "Response Envelope",
-  "description": "Canonical response artifact returned by an agent after task execution.",
+  "title": "ResponseEnvelope",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "task_id",
     "project_id",
@@ -18,153 +16,17 @@
     "trace"
   ],
   "properties": {
-    "task_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "project_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "agent": {
-      "type": "string",
-      "enum": [
-        "master",
-        "neo",
-        "agent_smith",
-        "niaobe",
-        "architect",
-        "morpheus",
-        "oracle",
-        "planner",
-        "implementer",
-        "tester"
-      ]
-    },
-    "status": {
-      "type": "string",
-      "enum": [
-        "PENDING",
-        "RUNNING",
-        "SUCCESS",
-        "NEEDS_CLARIFICATION",
-        "BLOCKED",
-        "FAILED",
-        "CANCELLED"
-      ]
-    },
-    "summary": {
-      "type": "string",
-      "minLength": 1
-    },
-    "artifacts_out": {
-      "type": "array",
-      "items": {
-        "oneOf": [
-          {
-            "type": "string",
-            "minLength": 1
-          },
-          {
-            "type": "object",
-            "additionalProperties": true,
-            "required": ["artifact_type", "ref"],
-            "properties": {
-              "artifact_type": {
-                "type": "string",
-                "enum": [
-                  "clarification_brief",
-                  "project_charter",
-                  "project_delivery_plan",
-                  "project_status_report",
-                  "architecture_spec",
-                  "software_task_plan",
-                  "code_change",
-                  "test_execution_report",
-                  "software_delivery_package",
-                  "verification_report",
-                  "escalation_packet",
-                  "executive_decision",
-                  "project_closure_report"
-                ]
-              },
-              "ref": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        ]
-      }
-    },
-    "findings": {
-      "type": "array",
-      "items": {
-        "oneOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "object",
-            "additionalProperties": true
-          }
-        ]
-      }
-    },
-    "next_action": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "reason"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "RETURN_TO_REQUESTER",
-            "RETRY_SAME_AGENT",
-            "REPLAN",
-            "ESCALATE",
-            "WAIT_FOR_EXTERNAL",
-            "CLOSE_TASK",
-            "CLOSE_PROJECT"
-          ]
-        },
-        "target_agent": {
-          "type": "string",
-          "enum": [
-            "master",
-            "neo",
-            "agent_smith",
-            "niaobe",
-            "architect",
-            "morpheus",
-            "oracle",
-            "planner",
-            "implementer",
-            "tester"
-          ]
-        },
-        "reason": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
-    "risks": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "trace": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["run_id"],
-      "properties": {
-        "run_id": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    }
-  }
+    "task_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "agent": { "type": "string" },
+    "status": { "type": "string" },
+    "summary": { "type": "string" },
+    "artifacts_out": { "type": "array" },
+    "findings": { "type": "array" },
+    "next_action": { "type": ["string", "object"] },
+    "risks": { "type": "array" },
+    "trace": { "type": "object" }
+  },
+  "additionalProperties": true
 }
+

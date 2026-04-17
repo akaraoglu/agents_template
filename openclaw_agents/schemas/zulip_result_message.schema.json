@@ -1,10 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "zulip_result_message.schema.json",
-  "title": "Zulip Result Message",
-  "description": "Structured result block mirrored to Zulip by the gateway after task execution.",
+  "title": "ZulipResultMessage",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "kind",
     "project_id",
@@ -16,48 +14,15 @@
     "next_action"
   ],
   "properties": {
-    "kind": {
-      "type": "string",
-      "enum": ["task_result", "status_update"]
-    },
-    "project_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "task_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "agent": {
-      "type": "string",
-      "minLength": 1
-    },
-    "status": {
-      "type": "string",
-      "enum": [
-        "PENDING",
-        "RUNNING",
-        "SUCCESS",
-        "NEEDS_CLARIFICATION",
-        "BLOCKED",
-        "FAILED",
-        "CANCELLED"
-      ]
-    },
-    "summary": {
-      "type": "string",
-      "minLength": 1
-    },
-    "artifacts_out": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "next_action": {
-      "type": "object",
-      "additionalProperties": true
-    }
-  }
+    "kind": { "type": "string" },
+    "project_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "agent": { "type": "string" },
+    "status": { "type": "string" },
+    "summary": { "type": "string" },
+    "artifacts_out": { "type": "array" },
+    "next_action": { "type": ["string", "object"] }
+  },
+  "additionalProperties": true
 }
+

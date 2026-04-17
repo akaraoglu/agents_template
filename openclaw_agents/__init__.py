@@ -1,1 +1,2 @@
-"""OpenClaw agent-system package."""
+"""Foundation package for the agentic software-development system."""
+

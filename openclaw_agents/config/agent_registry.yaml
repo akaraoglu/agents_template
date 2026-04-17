@@ -1,253 +1,230 @@
-schema_version: "1.0.0"
-metadata:
-  spec_sources:
-    - "specs/complete_agentic_software_workflow_with_zulip.md"
-    - "specs/supporting/project_scheduling_and_context_switching.md"
-  authoritative_for:
-    - "agent identity"
-    - "task acceptance"
-    - "requester permissions"
-    - "visibility"
-    - "singleton leasing metadata"
-
+version: 3
+human_roles:
+  - master
+default_visible_agents:
+  - neo
+  - agent_smith
+  - niaobe
+internal_only_default:
+  - morpheus
+  - planner
+  - implementer
+  - tester
 defaults:
-  returns_to: "requesting_agent"
-  communication_transport: "zulip_gateway"
-  state_source: "orchestrator_state_store"
-  artifact_source: "artifact_store_and_workspace"
-
+  zulip_visibility: visible
+  workspace_access: read_only
+  allowed_surfaces:
+    - dm
+    - project_topic
+  policy_profile: advisory_default
 agents:
-  master:
-    display_name: "MASTER"
-    aliases: ["CEO"]
-    role_type: "executive"
-    visibility: "visible"
-    lifecycle: "singleton"
-    scheduling:
-      lease_required: false
-    purpose: "Final authority for priority, risk, and exceptional scope decisions."
-    owns:
-      - "final priority decisions"
-      - "risk acceptance"
-      - "exception approvals"
-    does_not_own:
-      - "project orchestration"
-      - "implementation"
-      - "verification execution"
-    accepts_tasks: ["APPROVE_PRIORITY", "RESOLVE_ESCALATION", "CLOSE_PROJECT"]
-    allowed_requesters: ["neo", "agent_smith", "niaobe"]
-    primary_artifact: "executive_decision"
-    prompt_path: "prompts/master.md"
-
   neo:
-    display_name: "Neo"
-    aliases: ["CTO"]
-    role_type: "executive"
-    visibility: "visible"
-    lifecycle: "singleton"
-    scheduling:
-      lease_required: false
-    purpose: "Clarify goals, expose tradeoffs, and reduce ambiguity."
-    owns:
-      - "goal clarification"
-      - "tradeoff analysis"
-      - "strategic technical direction"
-    does_not_own:
-      - "project routing"
-      - "software execution"
-      - "project verification"
-    accepts_tasks: ["CLARIFY_GOAL", "RESOLVE_ESCALATION"]
-    allowed_requesters: ["master", "agent_smith", "niaobe", "architect", "morpheus"]
-    primary_artifact: "clarification_brief"
-    prompt_path: "prompts/neo.md"
-
+    role_type: executive
+    runtime_mode: free_conversational
+    purpose: executive technical operator
+    dm_surface: first_class
+    allowed_surfaces:
+      - dm
+      - project_topic
+    allowed_skills:
+      - project_context
+      - workspace_ops
+      - sdd_artifact_ops
+      - web_research
+      - zulip_projection
+    allowed_services:
+      - project_registry
+      - conversation_memory
+      - working_memory
+      - web_research
+      - command_runner
+      - workspace_write
+      - direct_project_mutation
+      - projection_events
+    policy_profile: neo_executive
+    workspace_access: read_write
+    zulip_visibility: visible
+    escalation_targets:
+      - agent_smith
+    memory_profile:
+      conversational_memory: read_write
+      project_memory: read_write
+      working_memory: read_write
+      execution_memory: none
+      conversation_ttl_hours: 72
+      working_ttl_hours: 24
   agent_smith:
-    display_name: "AgentSmith"
-    aliases: ["Agent Smith", "General Manager"]
-    role_type: "intake"
-    visibility: "visible"
-    lifecycle: "singleton"
-    scheduling:
-      lease_required: false
-    purpose: "Convert requests into executable project charters and assign project orchestration."
-    owns:
-      - "request intake"
-      - "project framing"
-      - "acceptance criteria definition"
-      - "initial priority assignment"
-    does_not_own:
-      - "deep research"
-      - "project execution"
-      - "software delivery"
-    accepts_tasks: ["FRAME_PROJECT", "RESOLVE_ESCALATION"]
-    allowed_requesters: ["master", "neo", "niaobe"]
-    primary_artifact: "project_charter"
-    prompt_path: "prompts/agent_smith.md"
-
+    role_type: general_manager
+    runtime_mode: free_conversational
+    purpose: free conversational project manager assistant
+    dm_surface: first_class
+    allowed_surfaces:
+      - dm
+      - project_topic
+    allowed_skills:
+      - project_context
+      - workspace_ops
+      - sdd_artifact_ops
+      - zulip_projection
+      - approval_and_mutation_guard
+      - execution_handoff
+    allowed_services:
+      - project_registry
+      - conversation_memory
+      - working_memory
+      - approvals
+      - project_mutation
+      - projection_events
+    policy_profile: project_manager
+    workspace_access: read_write
+    zulip_visibility: visible
+    escalation_targets:
+      - neo
+      - niaobe
+    memory_profile:
+      conversational_memory: read_write
+      project_memory: read_write
+      working_memory: read_write
+      execution_memory: read_only
+      conversation_ttl_hours: 72
+      working_ttl_hours: 24
   niaobe:
-    display_name: "Niaobe"
-    aliases: ["Niaobe", "Project Manager"]
-    role_type: "orchestrator"
-    visibility: "visible"
-    lifecycle: "singleton"
-    scheduling:
-      lease_required: true
-      orchestrator_id: "niaobe"
-      max_active_projects: 1
-      lease_ttl_minutes: 30
-      renew_interval_minutes: 5
-    purpose: "Project-level orchestrator that decides what happens next until the project is done or blocked."
-    owns:
-      - "project execution loop"
-      - "next-step routing"
-      - "project status"
-      - "project-level retry and escalation"
-    does_not_own:
-      - "architecture design"
-      - "coding"
-      - "software testing"
-      - "project verification execution"
-    accepts_tasks: ["ORCHESTRATE_PROJECT", "CLOSE_PROJECT", "RESOLVE_ESCALATION"]
-    allowed_requesters: ["agent_smith", "master", "neo"]
-    primary_artifact: "project_status_report"
-    prompt_path: "prompts/niaobe.md"
-
-  architect:
-    display_name: "Architect"
-    aliases: ["Project Architect", "Code Architect"]
-    role_type: "specialist"
-    visibility: "visible"
-    lifecycle: "singleton_or_pool"
-    scheduling:
-      lease_required: false
-    purpose: "Design architecture, interfaces, and technical boundaries."
-    owns:
-      - "architecture design"
-      - "component boundaries"
-      - "interface contracts"
-    does_not_own:
-      - "project routing"
-      - "implementation execution"
-      - "project verification"
-    accepts_tasks: ["DESIGN_ARCHITECTURE", "REQUEST_ARCHITECTURE_CLARIFICATION"]
-    allowed_requesters: ["master", "neo", "agent_smith", "niaobe", "morpheus"]
-    primary_artifact: "architecture_spec"
-    prompt_path: "prompts/architect.md"
-
+    role_type: orchestrator
+    runtime_mode: bounded_execution
+    purpose: execution-only project orchestrator
+    dm_surface: not_primary_human_surface
+    allowed_surfaces:
+      - project_topic
+    allowed_skills:
+      - project_context
+      - execution_handoff
+      - zulip_projection
+    allowed_services:
+      - project_registry
+      - projection_events
+      - execution_state
+      - working_memory
+    policy_profile: bounded_orchestrator
+    workspace_access: read_only
+    zulip_visibility: visible
+    escalation_targets:
+      - agent_smith
+    memory_profile:
+      conversational_memory: none
+      project_memory: read_only
+      working_memory: read_write
+      execution_memory: read_write
+      working_ttl_hours: 12
   morpheus:
-    display_name: "Morpheus"
-    aliases: ["Software Manager", "Software Orchestrator"]
-    role_type: "orchestrator"
-    visibility: "visible"
-    lifecycle: "singleton"
-    scheduling:
-      lease_required: true
-      orchestrator_id: "morpheus"
-      max_active_projects: 1
-      lease_ttl_minutes: 60
-      renew_interval_minutes: 10
-    purpose: "Software-delivery orchestrator that runs Planner, Implementer, and Tester until a tested implementation package is ready."
-    owns:
-      - "software delivery loop"
-      - "software subtask sequencing"
-      - "test-required completion of code work"
-      - "integration readiness for project verification"
-    does_not_own:
-      - "project-level acceptance"
-      - "project verification"
-      - "business priority decisions"
-    accepts_tasks: ["ORCHESTRATE_SOFTWARE"]
-    allowed_requesters: ["niaobe", "architect", "neo", "master"]
-    primary_artifact: "software_delivery_package"
-    prompt_path: "prompts/morpheus.md"
-
-  oracle:
-    display_name: "Oracle"
-    aliases: ["Project Verifier"]
-    role_type: "specialist"
-    visibility: "visible"
-    lifecycle: "singleton_or_pool"
-    scheduling:
-      lease_required: false
-    purpose: "Project verifier that checks delivered outputs against the project charter and acceptance criteria."
-    owns:
-      - "project-level verification"
-      - "verification reports"
-      - "evidence-based pass or fail judgments"
-    does_not_own:
-      - "software testing loop"
-      - "project routing"
-      - "implementation"
-    accepts_tasks: ["VERIFY_PROJECT"]
-    allowed_requesters: ["niaobe", "agent_smith", "neo", "master"]
-    primary_artifact: "verification_report"
-    prompt_path: "prompts/oracle.md"
-
+    role_type: internal_orchestrator
+    runtime_mode: internal_control
+    purpose: owner of the internal software-development loop
+    dm_surface: none
+    allowed_surfaces:
+      - control
+    allowed_skills:
+      - project_context
+      - sdd_artifact_ops
+      - execution_handoff
+    allowed_services:
+      - project_registry
+      - projection_events
+      - execution_state
+      - working_memory
+    policy_profile: internal_orchestrator
+    workspace_access: read_only
+    zulip_visibility: internal_only
+    escalation_targets:
+      - agent_smith
+      - niaobe
+    memory_profile:
+      conversational_memory: none
+      project_memory: read_only
+      working_memory: read_write
+      execution_memory: read_write
+      working_ttl_hours: 24
   planner:
-    display_name: "Planner"
-    aliases: ["Software Planner"]
-    role_type: "specialist"
-    visibility: "internal_only"
-    lifecycle: "task_scoped_spawned_by_morpheus"
-    scheduling:
-      lease_required: false
-      managed_by: "morpheus"
-    purpose: "Translate a software goal into an executable plan and explicit test obligations."
-    owns:
-      - "software task decomposition"
-      - "implementation plan"
-      - "test obligation plan"
-    does_not_own:
-      - "writing production code"
-      - "final test execution"
-      - "project routing"
-    accepts_tasks: ["PLAN_SOFTWARE_TASK"]
-    allowed_requesters: ["morpheus"]
-    primary_artifact: "software_task_plan"
-    prompt_path: "prompts/planner.md"
-
+    role_type: internal_planner
+    runtime_mode: internal_control
+    purpose: internal planning specialist for approved execution work
+    dm_surface: none
+    allowed_surfaces:
+      - control
+    allowed_skills:
+      - project_context
+      - workspace_ops
+      - execution_handoff
+    allowed_services:
+      - project_registry
+      - working_memory
+      - execution_state
+    policy_profile: internal_planner
+    workspace_access: read_only
+    zulip_visibility: internal_only
+    escalation_targets:
+      - morpheus
+      - agent_smith
+    memory_profile:
+      conversational_memory: none
+      project_memory: read_only
+      working_memory: read_write
+      execution_memory: read_only
+      working_ttl_hours: 24
   implementer:
-    display_name: "Implementer"
-    aliases: ["Software Engineer"]
-    role_type: "specialist"
-    visibility: "internal_only"
-    lifecycle: "task_scoped_spawned_by_morpheus"
-    scheduling:
-      lease_required: false
-      managed_by: "morpheus"
-    purpose: "Produce code changes according to the approved software plan."
-    owns:
-      - "code changes"
-      - "buildability of changed code"
-      - "implementation notes"
-    does_not_own:
-      - "test strategy"
-      - "project verification"
-      - "project routing"
-    accepts_tasks: ["IMPLEMENT_SOFTWARE_TASK"]
-    allowed_requesters: ["morpheus"]
-    primary_artifact: "code_change"
-    prompt_path: "prompts/implementer.md"
-
+    role_type: internal_implementer
+    runtime_mode: internal_control
+    purpose: internal implementation specialist for approved execution work
+    dm_surface: none
+    allowed_surfaces:
+      - control
+    allowed_skills:
+      - project_context
+      - workspace_ops
+      - execution_handoff
+    allowed_services:
+      - project_registry
+      - working_memory
+      - execution_state
+      - workspace_write
+      - command_runner
+    policy_profile: internal_implementer
+    workspace_access: read_write
+    zulip_visibility: internal_only
+    escalation_targets:
+      - morpheus
+      - niaobe
+    memory_profile:
+      conversational_memory: none
+      project_memory: read_only
+      working_memory: read_write
+      execution_memory: read_write
+      working_ttl_hours: 24
   tester:
-    display_name: "Tester"
-    aliases: ["Software Tester", "QA Agent"]
-    role_type: "specialist"
-    visibility: "internal_only"
-    lifecycle: "task_scoped_spawned_by_morpheus"
-    scheduling:
-      lease_required: false
-      managed_by: "morpheus"
-    purpose: "Create or update automated tests, run them, and produce reproducible quality evidence."
-    owns:
-      - "test code changes"
-      - "test execution"
-      - "failure classification for Morpheus"
-    does_not_own:
-      - "project verification"
-      - "project routing"
-      - "business requirement interpretation"
-    accepts_tasks: ["TEST_SOFTWARE_TASK"]
-    allowed_requesters: ["morpheus"]
-    primary_artifact: "test_execution_report"
-    prompt_path: "prompts/tester.md"
+    role_type: internal_tester
+    runtime_mode: internal_control
+    purpose: internal verification specialist for approved execution work
+    dm_surface: none
+    allowed_surfaces:
+      - control
+    allowed_skills:
+      - project_context
+      - workspace_ops
+      - execution_handoff
+    allowed_services:
+      - project_registry
+      - working_memory
+      - execution_state
+      - command_runner
+    policy_profile: internal_tester
+    workspace_access: read_only
+    zulip_visibility: internal_only
+    escalation_targets:
+      - morpheus
+      - niaobe
+      - agent_smith
+    memory_profile:
+      conversational_memory: none
+      project_memory: read_only
+      working_memory: read_write
+      execution_memory: read_write
+      working_ttl_hours: 24

@@ -1,55 +1,34 @@
-schema_version: "1.0.0"
-metadata:
-  note: "Local Ollama profiles are pinned to gemma4:31b by default. Concrete deployment values may override them per environment."
-
-profiles:
-  ollama_default:
-    runtime: "ollama"
-    model_hint: "gemma4:31b"
-    purpose: "Default local model for structured non-coding tasks."
-  ollama_reasoning:
-    runtime: "ollama"
-    model_hint: "gemma4:31b"
-    purpose: "Reasoning-heavy planning, routing, and verification."
-  ollama_coding:
-    runtime: "ollama"
-    model_hint: "gemma4:31b"
-    purpose: "Implementation and test-oriented tasks."
-  external_or_override:
-    runtime: "external_or_override"
-    model_hint: "gemma4:31b"
-    fallback_profile: "ollama_reasoning"
-    purpose: "Optional stronger model path when explicitly configured."
-
-assignments:
-  master:
-    profile: "ollama_reasoning"
+version: 3
+default:
+  provider: ollama
+  model: gemma4:31b
+  options:
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 64
+agents:
   neo:
-    profile: "external_or_override"
+    provider: ollama
+    model: gemma4:31b
   agent_smith:
-    profile: "ollama_reasoning"
+    provider: ollama
+    model: gemma4:31b
   niaobe:
-    profile: "ollama_reasoning"
-  architect:
-    profile: "ollama_reasoning"
+    provider: ollama
+    model: gemma4:31b
   morpheus:
-    profile: "ollama_reasoning"
-  oracle:
-    profile: "ollama_reasoning"
+    provider: ollama
+    model: gemma4:31b
   planner:
-    profile: "ollama_reasoning"
+    provider: ollama
+    model: gemma4:31b
   implementer:
-    profile: "ollama_coding"
+    provider: ollama
+    model: gemma4:31b
   tester:
-    profile: "ollama_coding"
-
-overrides:
-  by_task_type:
-    IMPLEMENT_SOFTWARE_TASK:
-      preferred_profile: "ollama_coding"
-    TEST_SOFTWARE_TASK:
-      preferred_profile: "ollama_coding"
-    VERIFY_PROJECT:
-      preferred_profile: "ollama_reasoning"
-    CLARIFY_GOAL:
-      preferred_profile: "external_or_override"
+    provider: ollama
+    model: gemma4:31b
+notes:
+  - Gemma 4 31B is the shared local runtime model for visible and internal agents.
+  - Thinking is enabled in the runtime by prefixing the system prompt with <|think|> for Gemma 4.
+  - Ollama best-practice sampling comes from the official gemma4:31b model page.
