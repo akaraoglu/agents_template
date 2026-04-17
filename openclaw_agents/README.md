@@ -1,33 +1,81 @@
-# OpenClaw Agents
+# OpenClaw Agents Foundation
 
-Template scaffold for the new integrated agentic workflow implementation.
+This directory contains the Zulip/plugin/skills foundation slice for the agentic software-development system.
 
-Repository boundary:
+## Local setup (fresh clone)
 
-- keep committed system definition here: code, prompts, schemas, templates, tests, runbooks, and unit templates
-- keep live runtime state outside this repository, under `/home/alik/workspace/claw_software_workspace`
-- do not store the control-plane database, Zulip credentials, gateway state, worker state, or live project workspaces under `openclaw_agents/`
+From repository root:
 
-Current implementation surface:
+```bash
+python3 -m venv env-python
+env-python/bin/python -m pip install --upgrade pip
+env-python/bin/python -m pip install -r openclaw_agents/requirements-dev.txt
+```
 
-- control-plane contracts in `config/`, `schemas/`, `orchestrators/`, and `database/`
-- scheduler and recovery logic in `scheduler/`
-- gateway normalization plus a long-running multi-bot Zulip daemon in `communication/`
-- runtime dispatch, worker execution, worker supervision, and response-ingestion adapters in `runtime/`
-- prompt-aware external execution adapter for subprocess backends in `runtime/external_executor.py`
-- a built-in local Ollama prompt runner in `runtime/ollama_prompt_runner.py`, with the repo's Ollama profiles pinned to `gemma4:31b` in `config/model_map.yaml`
-- a workspace-backed OpenClaw executor for real `implementer` and `tester` runs in `runtime/openclaw_workspace_executor.py`
-- builtin local execution for the first project loop path (`agent_smith -> niaobe -> architect -> morpheus -> oracle`) and the nested software loop (`morpheus -> planner -> implementer -> tester`) in `runtime/role_executor.py`, `orchestrators/niaobe_engine.py`, and `orchestrators/morpheus_engine.py`
-- automated regression coverage under `tests/`
-- workspace templates and operator runbooks in `templates/` and `operations/`
+## Run tests
 
-Recommended live state layout:
+```bash
+env-python/bin/python -m pytest -q openclaw_agents/tests
+```
 
-- `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/env/`
-- `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/db/`
-- `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/runtime/`
-- `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/zulip_gateway/`
-- `/home/alik/workspace/claw_software_workspace/.agents/state/openclaw_agents/zuliprc/`
-- `/home/alik/workspace/claw_software_workspace/projects/`
+## Run the Zulip bridge
 
-The committed environment examples live in `operations/examples/`.
+Visible agents use a local Ollama runtime backed by `gemma4:31b`.
+
+Bootstrap the runtime root first:
+
+```bash
+env-python/bin/python -m openclaw_agents.bootstrap_clawspace
+```
+
+Check that the model is present:
+
+```bash
+ollama list
+```
+
+If it is missing, install it before starting the bridge:
+
+```bash
+ollama pull gemma4:31b
+```
+
+Validate bot credentials and queue registration:
+
+```bash
+env-python/bin/python -m openclaw_agents.communication.zulip_gateway_service --check
+```
+
+Start the fresh foundation bridge:
+
+```bash
+env-python/bin/python -m openclaw_agents.communication.zulip_gateway_service
+```
+
+By default the runtime root is:
+
+```bash
+~/workspace/clawspace
+```
+
+Override it if needed:
+
+```bash
+OPENCLAW_ROOT=/some/other/root env-python/bin/python -m openclaw_agents.communication.zulip_gateway_service
+```
+
+This bridge uses the foundation config in `openclaw_agents/communication/zulip_gateway_config.yaml`
+and reads local bot credentials from `OPENCLAW_ROOT/system/config/zulip_bots_email_and_keys.txt`
+unless the configured env vars override them.
+
+## Notes
+
+- Foundation code uses standard library only; `pytest` is required for test execution.
+- The live Zulip bridge additionally requires `PyYAML` for local config loading.
+- Sprint 2 config uses `gemma4:31b` for Neo, AgentSmith, and Niaobe.
+- Gemma thinking mode is enabled by prefixing runtime system prompts with `<|think|>`.
+- Sampling is aligned with the official Ollama `gemma4:31b` best-practice guidance: `temperature=1.0`, `top_p=0.95`, `top_k=64`.
+- `openclaw_agents/` is source code only; runtime state and project workspaces live under `OPENCLAW_ROOT`.
+- Authoritative runtime state is persisted under `OPENCLAW_ROOT/system/state/`.
+- Project workspaces live under `OPENCLAW_ROOT/projects/<project_id>/`.
+- Niaobe and the internal worker agents are expected to execute inside a single project workspace rather than the whole multi-project tree.
