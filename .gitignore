@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+env-python/
+software_team_setup/
