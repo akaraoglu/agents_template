@@ -1,0 +1,90 @@
+{
+  "gateway": {
+    "port": 18789
+  },
+  "plugins": {
+    "entries": {
+      "mattermost": { "enabled": true },
+      "ollama": { "enabled": true }
+    }
+  },
+  "models": {
+    "providers": {
+      "ollama": {
+        "url": "http://localhost:11434"
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "ollama/gemma4:26b"
+      },
+      "workspace": "../projects",
+      "tools": {
+        "profile": "coding",
+        "alsoAllow": ["sessions_spawn", "web_search", "web_fetch", "image"]
+      },
+      "skills": ["plan-mode", "sdd-workflow", "delegation", "project-management"]
+    },
+    "list": [
+      {
+        "id": "neo",
+        "systemPrompt": "../agents/neo/system.md",
+        "workspace": "../agents/neo",
+        "skills": ["plan-mode"],
+        "tools": {
+          "alsoDeny": ["write", "edit", "apply_patch", "exec"]
+        }
+      },
+      {
+        "id": "smith",
+        "systemPrompt": "../agents/smith/system.md",
+        "workspace": "../agents/smith",
+        "skills": ["plan-mode", "sdd-workflow", "delegation", "project-management"]
+      },
+      {
+        "id": "niaobe",
+        "systemPrompt": "../agents/niaobe/system.md",
+        "workspace": "../agents/niaobe",
+        "skills": ["sdd-workflow", "delegation", "project-management"]
+      },
+      {
+        "id": "architect",
+        "systemPrompt": "../agents/architect/system.md",
+        "workspace": "../agents/architect",
+        "skills": ["sdd-workflow", "project-management"],
+        "tools": {
+          "alsoDeny": ["exec"]
+        }
+      },
+      {
+        "id": "morpheus",
+        "systemPrompt": "../agents/morpheus/system.md",
+        "workspace": "../agents/morpheus",
+        "skills": ["sdd-workflow", "project-management"]
+      },
+      {
+        "id": "oracle",
+        "systemPrompt": "../agents/oracle/system.md",
+        "workspace": "../agents/oracle",
+        "skills": ["sdd-workflow", "project-management"]
+      }
+    ]
+  },
+  "channels": {
+    "mattermost": {
+      "url": "${MATTERMOST_URL}",
+      "chatmode": "oncall",
+      "replyToMode": "all",
+      "accounts": [
+        { "token": "${MM_NEO_TOKEN}",       "agentId": "neo" },
+        { "token": "${MM_SMITH_TOKEN}",     "agentId": "smith" },
+        { "token": "${MM_NIAOBE_TOKEN}",    "agentId": "niaobe" },
+        { "token": "${MM_ARCHITECT_TOKEN}", "agentId": "architect" },
+        { "token": "${MM_MORPHEUS_TOKEN}",  "agentId": "morpheus" },
+        { "token": "${MM_ORACLE_TOKEN}",    "agentId": "oracle" }
+      ]
+    }
+  }
+}
