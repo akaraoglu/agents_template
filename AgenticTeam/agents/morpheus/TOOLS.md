@@ -1,39 +1,60 @@
-# Tools — Morpheus
+# Tools - Morpheus
 
-## sessions_spawn (your primary tool)
+## Current IMPLEMENT contract
 
-Spawn each sub-agent with a clear, complete prompt. Always include absolute file paths.
+- Morpheus handles the active implementation task directly
+- Morpheus may resolve the project, read task inputs, write project files, run project-native build/test commands, and report to Niaobe
+- Morpheus must verify each written artifact before claiming DONE
+- missing dependencies or missing tools must be escalated as BLOCKED
 
-```json
-{
-  "prompt": "Read SPEC_DETAILED.md at <absolute_path>. Write TASKS.md at <folder>/TASKS.md listing every implementation task in order. Each task: file path, function/class to write, test to add. Be exhaustive. No placeholders.",
-  "model": "ollama/gemma4:26b"
-}
+## Resolve project
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/resolve_project.sh "<PROJECT_ID>"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "<relative_path>"
 ```
 
-## sessions_send to Niaobe (DONE)
+Verify `RESOLVE_READY` before using `PROJECT_ROOT`.
+
+## Rooted project writes
+
+```text
+write: /home/alik/workspace/clawspace/workspaces/morpheus/drafts/<PROJECT_ID>/<relative_path>
+exec: bash /home/alik/workspace/clawspace/bin/project_mkdir.sh "<PROJECT_ID>" "<relative_dir>"
+exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "<project_relative_path>" --source-file "/home/alik/workspace/clawspace/workspaces/morpheus/drafts/<PROJECT_ID>/<project_relative_path>"
+exec: bash /home/alik/workspace/clawspace/bin/project_exec.sh "<PROJECT_ID>" morpheus <command...>
+```
+
+Use rooted helpers only. Never use `cat > file`, `printf > file`, `touch`, heredocs, pipes, or raw `mkdir` for project artifacts.
+
+## Verify reported artifact
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" IMPLEMENT "<relative artifact path>" --action morpheus-artifact-check
+```
+
+Proceed only when the helper returns `OUTCOME_JSON` with `status:"OK"`.
+
+## sessions_send - DONE to Niaobe
 
 ```json
 {
   "sessionKey": "agent:niaobe:main",
-  "message": "DONE: Build complete. All tests pass. Files created: <list of files>. Test output: <summary>."
+  "message": "{\"project_id\":\"<PROJECT_ID>\",\"task_id\":\"<TASK_ID>\",\"from\":\"morpheus\",\"to\":\"niaobe\",\"phase\":\"IMPLEMENT\",\"instructions\":\"DONE: Artifacts=<comma-separated relative artifact paths>. Test summary=<exact summary line>.\"}"
 }
 ```
 
-## sessions_send to Niaobe (BLOCKED)
+## sessions_send - BLOCKED to Niaobe
 
 ```json
 {
   "sessionKey": "agent:niaobe:main",
-  "message": "BLOCKED: Build failed after 3 fix cycles. Project: <folder_id>. Last error: <exact error>."
+  "message": "{\"project_id\":\"<PROJECT_ID>\",\"task_id\":\"<TASK_ID>\",\"from\":\"morpheus\",\"to\":\"niaobe\",\"phase\":\"IMPLEMENT\",\"instructions\":\"BLOCKED: Reason=<exact reason>. Evidence=<exact evidence>. Needs=<required unblock action>.\"}"
 }
 ```
 
-## Key file paths
+## Main-session limits
 
-```
-<folder>/design/SPEC_DETAILED.md   ← read this first
-<folder>/TASKS.md                  ← Planner writes this
-<folder>/tests/                    ← Tester writes tests here
-<folder>/TASKS.md                  ← verify exists before spawning Implementer
-```
+- Morpheus must not activate the next task
+- Morpheus must not claim success without rooted artifact verification
+- Any non-`OK` rooted helper result must become `BLOCKED`, not progress

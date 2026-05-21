@@ -1,59 +1,51 @@
-# Tools — Smith
+# Tools - Smith
 
-## Scripts (read allowed, NOT exec — use mm_post.sh via exec only for posting)
+## Rooted reads and state updates
 
-All scripts live in `/home/alik/workspace/clawspace/bin/`.
-
-
+```text
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT_STATE.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "CURRENT_TASK.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/PLAN.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/BACKLOG.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/validation/<TASK_ID>_REPORT.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/PLAN.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/PLAN.md" --action smith_plan_write
+exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/BACKLOG.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/BACKLOG.md" --action smith_backlog_write
+exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/<TASK_ID>.md" --action smith_task_write
+exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "CURRENT_TASK.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/CURRENT_TASK.md" --action smith_current_task_write
+exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" PLANNING "management/PLAN.md" --action smith-plan-check --contains "T001"
+exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" VERIFY "management/validation/<TASK_ID>_REPORT.md" --action smith-validation-check --contains "<TASK_ID>" --contains "PASS"
+exec: bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "PLANNING" "niaobe" --actor smith --expect-owner smith --active-task "<TASK_ID>" --task-phase "TASK_HANDOFF" --task-status "READY" --note "<note>"
+exec: bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "DONE" "none" --actor smith --expect-owner niaobe --set-owner smith --current-agent none --active-task "none" --task-phase "none" --task-status "DONE" --last-completed-task "<TASK_ID>" --last-task-result "PASS" --note "<note>"
+exec: bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "BLOCKED" "none" --actor smith --expect-owner niaobe --set-owner smith --current-agent none --task-status "BLOCKED" --last-task-result "BLOCKED" --increment-blocked --blocked-reason "<exact reason>" --note "<note>"
 ```
-exec: bash /home/alik/workspace/clawspace/bin/mm_post.sh smith "<message>"
+
+## Notification and delegation
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/handoff.sh smith niaobe "<PROJECT_ID>" "Task <TASK_ID> is ready. Read CURRENT_TASK.md and management/tasks/<TASK_ID>.md, then run Design -> Implement -> Verify for that task only. Report TASK_DONE or TASK_BLOCKED to Smith." TASK_HANDOFF "<TASK_ID>"
 ```
 
 ## sessions_send to Niaobe
 
-⚠️ PATH RULE: Always send the full exact path. The `/clawspace/` segment is mandatory — never drop it.
+Use the exact `ENVELOPE:` value returned by `handoff.sh`.
 
 ```json
 {
   "sessionKey": "agent:niaobe:main",
-  "message": "New project. Folder: /home/alik/workspace/clawspace/projects/active/<folder_id>. Read PROJECT.md + SPEC.md + STATE.md. Run Design→Build→Verify in order. Report DONE or BLOCKED when complete."
+  "message": "<ENVELOPE from handoff.sh>"
 }
 ```
 
-## sessions_send to Neo (DONE report)
+## sessions_send to Neo
 
 ```json
 {
   "sessionKey": "agent:neo:main",
-  "message": "Project [<folder_id>] is DONE. DONE.md is ready at <folder>/DONE.md."
+  "message": "{\"project_id\":\"<PROJECT_ID>\",\"from\":\"smith\",\"to\":\"neo\",\"phase\":\"DONE|BLOCKED\",\"instructions\":\"<exact outcome>\"}"
 }
 ```
 
-## sessions_send to Neo (BLOCKED escalation)
-
-```json
-{
-  "sessionKey": "agent:neo:main",
-  "message": "BLOCKED: Project [<folder_id>] failed twice. Last error: <reason>. STATE.md updated. Needs Master intervention."
-}
-```
-
-## STATE.md schema
-
-```markdown
-# STATE — <Project ID>
-
-phase: PLANNING | IN_PROGRESS | DONE | BLOCKED
-waiting_for: niaobe | none
-blocked_count: 0
-blocked_reason: none
-
-## Milestones
-- [ ] Design (Architect)
-- [ ] Build (Morpheus)
-- [ ] Verify (Oracle)
-
-## Log
-- <timestamp>: received from Neo
-- <timestamp>: delegated to Niaobe
-```
+After Niaobe accepts the current task handoff, Smith must not call `write_state.sh`
+again for that project until Niaobe returns `TASK_DONE` or `TASK_BLOCKED`.

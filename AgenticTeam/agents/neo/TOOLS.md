@@ -1,56 +1,39 @@
-# Tools — Neo
+# Tools - Neo
 
-## Scripts (use exec tool)
+## Project creation
 
-All scripts live in `/home/alik/workspace/clawspace/bin/`.
-
-```
+```text
 exec: bash /home/alik/workspace/clawspace/bin/new_project.sh "<Project Title>"
 ```
-Output: absolute folder path like `/home/alik/workspace/clawspace/projects/active/project_title_YYYYMMDD`
-This is the ONLY way to create a project folder. Never use mkdir.
 
+Capture `PROJECT_ID` from the `Project ID:` line in the output. `new_project.sh`
+must run before any rooted project helper.
+
+## Rooted project writes
+
+```text
+write: /home/alik/workspace/clawspace/workspaces/neo/drafts/<PROJECT_ID>/PROJECT.md
+exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "PROJECT.md" --source-file "/home/alik/workspace/clawspace/workspaces/neo/drafts/<PROJECT_ID>/PROJECT.md" --action neo_project_write
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"
 ```
-exec: bash /home/alik/workspace/clawspace/bin/mm_post.sh neo "<message>"
-exec: bash /home/alik/workspace/clawspace/bin/mm_post.sh neo "🚀 Neo: [<folder_id>] created — handing to Smith."
+
+Use rooted helpers only. Do not send project paths to other agents.
+
+## Handoff and notification
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/mm_post.sh neo "🚀 Neo: [<PROJECT_ID>] created and seeded. Handing to Smith."
+exec: bash /home/alik/workspace/clawspace/bin/handoff.sh neo smith "<PROJECT_ID>" "Read PROJECT.md and start sequential planning." HANDOFF
 ```
+
+`sessions_send` to Smith must use the exact `ENVELOPE:` value returned by
+`handoff.sh`.
 
 ## sessions_send to Smith
 
 ```json
 {
   "sessionKey": "agent:smith:main",
-  "message": "New project ready. Folder: /home/alik/workspace/clawspace/projects/active/<folder_id>. Read PROJECT.md and SPEC.md. Begin delivery."
+  "message": "<ENVELOPE from handoff.sh>"
 }
-```
-
-## Project file paths
-
-```
-<folder>/PROJECT.md   ← goal, tech stack, requirements, acceptance criteria, deadline
-<folder>/SPEC.md      ← architecture, components, APIs, data models, constraints
-```
-
-## File template: PROJECT.md
-
-```markdown
-# Project: <Title>
-
-## Goal
-<clear one-paragraph description>
-
-## Tech Stack
-<language, frameworks, libraries>
-
-## Requirements
-1. <requirement>
-2. <requirement>
-3. <requirement>
-
-## Acceptance Criteria
-- [ ] <criterion>
-- [ ] <criterion>
-
-## Folder
-<absolute path>
 ```

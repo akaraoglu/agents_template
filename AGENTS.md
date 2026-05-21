@@ -38,3 +38,7 @@ This repository uses Codex as a coding agent. Follow these instructions when rea
 - Common workflows: `.agents/skills/`
 - Task recipes: `.agents/playbooks/`
 - Memory and history: `.agents/memory/`
+
+## Boundaries
+- `.agents/` is reserved for Codex-only repo guidance, memory, playbooks, templates, and local Codex skills.
+- The live crew implementation lives under `claw_agents_team/`.

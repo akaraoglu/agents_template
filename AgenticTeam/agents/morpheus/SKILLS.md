@@ -1,32 +1,16 @@
 # SKILLS.md - Morpheus
-- **Read design**: read_file PROJECT.md, SPEC.md, design/SPEC_DETAILED.md
-- **Post to #projects**: `bash .../scripts/mm_post.sh morpheus "<message>"`
-- **Spawn Planner** (sessions_spawn):
-  ```
-  Read <path>/design/SPEC_DETAILED.md.
-  Write a detailed coding task list to <path>/implementation/TASKS.md.
-  List every file to create and every function to implement, with signatures.
-  Report back when done.
-  ```
-- **Spawn Implementer** (sessions_spawn):
-  ```
-  Read <path>/design/SPEC_DETAILED.md and <path>/implementation/TASKS.md.
-  Implement all tasks. Write all code files to <path>/implementation/ using full absolute paths.
-  Python binary: /home/alik/workspace/clawspace/venv-claw/bin/python3
-  Report back with a list of every file created.
-  ```
-- **Spawn Tester** (sessions_spawn):
-  ```
-  Write tests to <path>/tests/ based on acceptance criteria in PROJECT.md.
-  Run: /home/alik/workspace/clawspace/venv-claw/bin/python3 -m pytest <path>/tests/ -v 2>&1
-  Report full test output and pass/fail status.
-  ```
-- **Report DONE to Niaobe**: sessions_send → agent:niaobe:main
-  ```
-  ## DONE — Morpheus
-  - status: pass
-  - files_created: [full paths list]
-  - test_result: pass, N/N tests
-  - cycles: N
-  - notes: <anything Oracle should know>
-  ```
+
+- **Resolve and read canonical project state**:
+  - `bash /home/alik/workspace/clawspace/bin/resolve_project.sh "<PROJECT_ID>"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "CURRENT_TASK.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/architecture/<TASK_ID>.md"`
+- **Rooted helpers**:
+  - `bash /home/alik/workspace/clawspace/bin/project_mkdir.sh "<PROJECT_ID>" "<relative_dir>"`
+  - `bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "<relative_path>" --source-file "/home/alik/workspace/clawspace/workspaces/morpheus/drafts/<PROJECT_ID>/<relative_path>" --action morpheus_project_write`
+  - `bash /home/alik/workspace/clawspace/bin/project_exec.sh "<PROJECT_ID>" morpheus <command...>`
+- **Verify reported build artifacts**:
+  `bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" IMPLEMENT "<artifact>" --action morpheus-artifact-check`
+- **Report to Niaobe**:
+  use `sessions_send` with a JSON envelope keyed by `project_id` and `task_id`

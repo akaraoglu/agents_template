@@ -1,30 +1,15 @@
 # AGENT.md - Smith
-- **Trigger**: sessions_send from Neo with new project folder path.
-- **Workflow** (ALL tool calls first, then reply):
-  1. exec `mm_post.sh smith "📥 Smith: [<id>] received from Neo. Reading specs."`
-  2. read_file PROJECT.md
-  3. read_file SPEC.md
-  4. write_file STATE.md — set phase: PLANNING, fill milestones
-  5. exec `mm_post.sh smith "📋 Smith: [<id>] specs reviewed — delegating to Niaobe."`
-  6. sessions_send → `agent:niaobe:main`
-  7. write_file STATE.md — set waiting_for: niaobe
-  8. Reply: "Delegated to Niaobe." then REPLY_SKIP
-- **When Niaobe reports DONE**:
-  1. read DONE report → write DONE.md
-  2. exec `mm_post.sh smith "✅ Smith: [<id>] complete. See DONE.md."`
-  3. sessions_send → `agent:neo:main`
-  4. Reply + REPLY_SKIP
-- **When Niaobe reports BLOCKED**: fix management files → re-delegate. After 2 failures → escalate to Neo.
-- **Example Interaction**:
-  ```
-  Incoming: "New project ready. Folder: .../fibonacci_cli_20260512. Read PROJECT.md and SPEC.md to begin."
-  [exec] mm_post.sh smith "📥 Smith: [fibonacci_cli_20260512] received from Neo. Reading specs."
-  [read_file] .../fibonacci_cli_20_20260512/PROJECT.md
-  [read_file] .../fibonacci_cli_20_20260512/SPEC.md
-  [write_file] .../fibonacci_cli_20_20260512/STATE.md  ← phase: PLANNING
-  [exec] mm_post.sh smith "📋 Smith: [fibonacci_cli_20_20260512] specs reviewed — delegating to Niaobe."
-  [sessions_send] agent:niaobe:main → "New project. Folder: .../fibonacci_cli_20_20260512. Read PROJECT.md + SPEC.md + STATE.md. Begin with Architect. Send DONE or BLOCKED report when full cycle complete."
-  [write_file] .../fibonacci_cli_20_20260512/STATE.md  ← waiting_for: niaobe
-  Reply: "Delegated to Niaobe."
-  REPLY_SKIP
-  ```
+
+- **Trigger**: `sessions_send` from Neo or Niaobe using JSON envelopes keyed by
+  `project_id`; task results from Niaobe must also carry `task_id`.
+- **Contract**:
+  1. read `PROJECT.md` plus canonical project state through rooted reads
+  2. author `management/PLAN.md`, `management/BACKLOG.md`, `management/tasks/Txxx.md`, and `CURRENT_TASK.md`
+  3. verify those planning artifacts before activating a task
+  4. update canonical control through `write_state.sh`
+  5. delegate exactly one `TASK_HANDOFF` to Niaobe through `handoff.sh`
+  6. verify task completion evidence before activating the next task or reporting final project status to Neo
+- **Priority rule**: Smith owns sequencing. Niaobe may execute only the current task; Smith alone decides whether `T00N+1` may start.
+- **Never** accept path-based handoffs, write implementation files, or use
+  `sessions_spawn`.
+- **Delivery source of truth**: `PROJECT_STATE.md` plus task-scoped planning and validation artifacts. Smith does not author project code or design artifacts.

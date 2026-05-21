@@ -1,29 +1,16 @@
 # SKILLS.md - Architect
-- **Read project files**: read_file PROJECT.md, SPEC.md (full absolute paths)
-- **Create design folder**: exec `mkdir -p <path>/design`
-- **Write design**: write_file `<path>/design/SPEC_DETAILED.md`
-  - Required sections (ALL must be present):
-    1. `## System Overview` — 2-3 sentences, what the system does
-    2. `## Components` — each with: name, responsibility, inputs, outputs
-    3. `## Interfaces` — how components communicate (function signatures, APIs, file formats)
-    4. `## Data Models` — key data structures and schemas
-    5. `## File & Folder Structure` — exact tree of every file Morpheus will create
-    6. `## Key Decisions` — why this approach, alternatives considered
-    7. `## Open Questions` — anything Morpheus must know or resolve before starting
-- **Post to #projects**: `bash .../scripts/mm_post.sh architect "<message>"`
-- **Report DONE to Niaobe**:
-  ```json
-  {
-    "sessionKey": "agent:niaobe:main",
-    "message": "## DONE — Architect\n- status: pass\n- output: <full-path>/design/SPEC_DETAILED.md\n- summary: <one sentence>\n- notes: <anything Morpheus must know>",
-    "timeoutSeconds": 0
-  }
-  ```
-- **Report BLOCKED to Niaobe**:
-  ```json
-  {
-    "sessionKey": "agent:niaobe:main",
-    "message": "## BLOCKED — Architect\n- reason: <specific problem>\n- needs: <what would unblock>",
-    "timeoutSeconds": 0
-  }
-  ```
+
+- **Resolve the canonical project**:
+  `bash /home/alik/workspace/clawspace/bin/resolve_project.sh "<PROJECT_ID>"`
+- **Read canonical inputs**:
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "CURRENT_TASK.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md"`
+- **Prepare and import the design artifact**:
+  - `bash /home/alik/workspace/clawspace/bin/project_mkdir.sh "<PROJECT_ID>" "management/architecture"`
+  - `write /home/alik/workspace/clawspace/workspaces/architect/drafts/<PROJECT_ID>/<TASK_ID>.md`
+  - `bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/architecture/<TASK_ID>.md" --source-file "/home/alik/workspace/clawspace/workspaces/architect/drafts/<PROJECT_ID>/<TASK_ID>.md" --action architect_project_write`
+- **Verify the imported design**:
+  `bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" DESIGN "management/architecture/<TASK_ID>.md" --action architect-write --contains "<TASK_ID>"`
+- **Report to Niaobe**:
+  use `sessions_send` with a JSON envelope keyed by `project_id` and `task_id`

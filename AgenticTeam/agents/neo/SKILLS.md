@@ -1,18 +1,16 @@
 # SKILLS.md - Neo
-- **Project creation**: `bash /home/alik/workspace/agent_template_new/AgenticTeam/scripts/new_project.sh "<title>"`
-  - Creates: timestamped slug folder, PROJECT.md template, SPEC.md template, STATE.md, design/, implementation/, tests/
-  - Output: prints the full project path — capture this for all subsequent steps
-- **Post to #projects**: `bash /home/alik/workspace/agent_template_new/AgenticTeam/scripts/mm_post.sh neo "<message>"`
-- **Read files**: read PROJECT.md, SPEC.md after writing — self-check before delegating
-- **Delegate to Smith**: `sessions_send` with sessionKey `agent:smith:main`
-  ```json
-  {
-    "sessionKey": "agent:smith:main",
-    "message": "New project ready. Folder: /home/alik/workspace/clawspace/projects/active/<id>. Read PROJECT.md and SPEC.md to begin.",
-    "timeoutSeconds": 0
-  }
-  ```
-- **Control tools** (only when Master asks):
-  - List projects: `bash .../scripts/list_projects.sh`
-  - Team status: `bash .../scripts/team_status.sh`
-  - Stop stuck agent: `bash .../scripts/stop_agent.sh <agent>`
+
+- **Create the canonical project**:
+  `bash /home/alik/workspace/clawspace/bin/new_project.sh "<Project Title>"`
+- **Seed rooted project files**:
+  - `write /home/alik/workspace/clawspace/workspaces/neo/drafts/<PROJECT_ID>/PROJECT.md`
+  - `bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "PROJECT.md" --source-file "/home/alik/workspace/clawspace/workspaces/neo/drafts/<PROJECT_ID>/PROJECT.md" --action neo_project_write`
+- **Verify seeded files**:
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"`
+- **Post handoff notice**:
+  `bash /home/alik/workspace/clawspace/bin/mm_post.sh neo "<message>"`
+- **Prepare Smith handoff**:
+  `bash /home/alik/workspace/clawspace/bin/handoff.sh neo smith "<PROJECT_ID>" "Read PROJECT.md and start sequential planning." HANDOFF`
+- **Delegate to Smith**:
+  use `sessions_send` with sessionKey `agent:smith:main` and the exact
+  `ENVELOPE:` value returned by `handoff.sh`

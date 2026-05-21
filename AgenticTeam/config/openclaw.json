@@ -1,90 +1,236 @@
 {
-  "gateway": {
-    "port": 18789
-  },
-  "plugins": {
-    "entries": {
-      "mattermost": { "enabled": true },
-      "ollama": { "enabled": true }
-    }
-  },
-  "models": {
-    "providers": {
-      "ollama": {
-        "url": "http://localhost:11434"
-      }
-    }
-  },
   "agents": {
     "defaults": {
+      "compaction": {
+        "mode": "default",
+        "notifyUser": true
+      },
+      "maxConcurrent": 4,
       "model": {
+        "fallbacks": [],
         "primary": "ollama/gemma4:26b"
       },
-      "workspace": "../projects",
-      "tools": {
-        "profile": "coding",
-        "alsoAllow": ["sessions_spawn", "web_search", "web_fetch", "image"]
+      "models": {
+        "ollama/gemma4:26b": {}
       },
-      "skills": ["plan-mode", "sdd-workflow", "delegation", "project-management"]
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "workspace": "/home/alik/.openclaw/workspace"
     },
     "list": [
       {
+        "id": "main"
+      },
+      {
+        "agentDir": "/home/alik/.openclaw/agents/neo/agent",
         "id": "neo",
-        "systemPrompt": "../agents/neo/system.md",
-        "workspace": "../agents/neo",
-        "skills": ["plan-mode"],
+        "model": "ollama/gemma4:26b",
+        "name": "neo",
+        "workspace": "/home/alik/workspace/clawspace/workspaces/neo",
+        "skills": [
+          "plan-mode"
+        ],
         "tools": {
-          "alsoDeny": ["write", "edit", "apply_patch", "exec"]
+          "allow": [
+            "exec",
+            "read",
+            "write",
+            "sessions_send",
+            "sessions_spawn",
+            "sessions_list",
+            "sessions_history"
+          ],
+          "deny": [
+            "edit",
+            "apply_patch",
+            "browser",
+            "canvas",
+            "nodes",
+            "cron"
+          ]
         }
       },
       {
         "id": "smith",
-        "systemPrompt": "../agents/smith/system.md",
-        "workspace": "../agents/smith",
-        "skills": ["plan-mode", "sdd-workflow", "delegation", "project-management"]
+        "name": "smith",
+        "agentDir": "/home/alik/.openclaw/agents/smith/agent",
+        "model": "ollama/gemma4:26b",
+        "workspace": "/home/alik/workspace/clawspace/workspaces/smith",
+        "skills": [
+          "plan-mode"
+        ],
+        "tools": {
+          "allow": [
+            "exec",
+            "read",
+            "write",
+            "sessions_send",
+            "sessions_list",
+            "sessions_history"
+          ],
+          "deny": [
+            "edit",
+            "apply_patch",
+            "sessions_spawn",
+            "browser",
+            "canvas",
+            "nodes",
+            "cron"
+          ]
+        }
       },
       {
         "id": "niaobe",
-        "systemPrompt": "../agents/niaobe/system.md",
-        "workspace": "../agents/niaobe",
-        "skills": ["sdd-workflow", "delegation", "project-management"]
+        "name": "niaobe",
+        "agentDir": "/home/alik/.openclaw/agents/niaobe/agent",
+        "model": "ollama/gemma4:26b",
+        "workspace": "/home/alik/workspace/clawspace/workspaces/niaobe",
+        "skills": [
+          "plan-mode"
+        ],
+        "tools": {
+          "allow": [
+            "exec",
+            "read",
+            "write",
+            "sessions_send",
+            "sessions_list",
+            "sessions_history"
+          ],
+          "deny": [
+            "edit",
+            "apply_patch",
+            "sessions_spawn",
+            "browser",
+            "canvas",
+            "nodes",
+            "cron"
+          ]
+        }
       },
       {
         "id": "architect",
-        "systemPrompt": "../agents/architect/system.md",
-        "workspace": "../agents/architect",
-        "skills": ["sdd-workflow", "project-management"],
+        "name": "architect",
+        "agentDir": "/home/alik/.openclaw/agents/architect/agent",
+        "model": "ollama/gemma4:26b",
+        "workspace": "/home/alik/workspace/clawspace/workspaces/architect",
+        "skills": [
+          "plan-mode"
+        ],
         "tools": {
-          "alsoDeny": ["exec"]
+          "allow": [
+            "exec",
+            "read",
+            "write",
+            "sessions_send",
+            "sessions_list"
+          ],
+          "deny": [
+            "edit",
+            "apply_patch",
+            "sessions_spawn",
+            "sessions_history",
+            "browser",
+            "canvas",
+            "nodes",
+            "cron"
+          ]
         }
       },
       {
         "id": "morpheus",
-        "systemPrompt": "../agents/morpheus/system.md",
-        "workspace": "../agents/morpheus",
-        "skills": ["sdd-workflow", "project-management"]
+        "name": "morpheus",
+        "agentDir": "/home/alik/.openclaw/agents/morpheus/agent",
+        "model": "ollama/gemma4:26b",
+        "workspace": "/home/alik/workspace/clawspace/workspaces/morpheus",
+        "skills": [
+          "plan-mode"
+        ],
+        "tools": {
+          "allow": [
+            "exec",
+            "read",
+            "write",
+            "sessions_send",
+            "sessions_spawn",
+            "sessions_list",
+            "sessions_history"
+          ],
+          "deny": [
+            "edit",
+            "apply_patch",
+            "browser",
+            "canvas",
+            "nodes",
+            "cron"
+          ]
+        }
       },
       {
         "id": "oracle",
-        "systemPrompt": "../agents/oracle/system.md",
-        "workspace": "../agents/oracle",
-        "skills": ["sdd-workflow", "project-management"]
+        "name": "oracle",
+        "agentDir": "/home/alik/.openclaw/agents/oracle/agent",
+        "model": "ollama/gemma4:26b",
+        "workspace": "/home/alik/workspace/clawspace/workspaces/oracle",
+        "skills": [
+          "plan-mode"
+        ],
+        "tools": {
+          "allow": [
+            "exec",
+            "read",
+            "write",
+            "sessions_send",
+            "sessions_list"
+          ],
+          "deny": [
+            "edit",
+            "apply_patch",
+            "sessions_spawn",
+            "sessions_history",
+            "browser",
+            "canvas",
+            "nodes",
+            "cron"
+          ]
+        }
       }
     ]
   },
-  "channels": {
-    "mattermost": {
-      "url": "${MATTERMOST_URL}",
-      "chatmode": "oncall",
-      "replyToMode": "all",
-      "accounts": [
-        { "token": "${MM_NEO_TOKEN}",       "agentId": "neo" },
-        { "token": "${MM_SMITH_TOKEN}",     "agentId": "smith" },
-        { "token": "${MM_NIAOBE_TOKEN}",    "agentId": "niaobe" },
-        { "token": "${MM_ARCHITECT_TOKEN}", "agentId": "architect" },
-        { "token": "${MM_MORPHEUS_TOKEN}",  "agentId": "morpheus" },
-        { "token": "${MM_ORACLE_TOKEN}",    "agentId": "oracle" }
-      ]
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "ownerDisplay": "raw",
+    "restart": true
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions",
+    "groupChat": {
+      "visibleReplies": "message_tool"
+    }
+  },
+  "tools": {
+    "alsoAllow": [
+      "sessions_list",
+      "sessions_send",
+      "sessions_spawn",
+      "sessions_yield",
+      "subagents"
+    ],
+    "web": {
+      "fetch": {
+        "enabled": false
+      },
+      "search": {
+        "enabled": false
+      }
+    },
+    "sessions": {
+      "visibility": "all"
+    },
+    "agentToAgent": {
+      "enabled": true
     }
   }
 }

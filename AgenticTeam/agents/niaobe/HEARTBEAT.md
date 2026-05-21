@@ -2,8 +2,12 @@ tasks:
 - name: phase-watchdog
   interval: 10m
   prompt: |
-    Check the current project you are working on (look for STATE.md with phase
-    IN_PROGRESS or a specific phase like DESIGN/BUILD/VERIFY and waiting_for not 'none').
-    If a phase has been waiting for more than 15 minutes without a response, re-send
-    the delegation to the relevant agent (architect/morpheus/oracle).
+    Check the current project you are working on.
+    Only act on projects where owner is niaobe.
+    If owner is niaobe, task_phase is DESIGN/IMPLEMENT/VERIFY, waiting_for is
+    architect/morpheus/oracle, and the last state note is older than 15 minutes
+    with no matching DONE/BLOCKED outcome, treat that as
+    "timeout waiting for <agent>" and handle it exactly like a worker BLOCKED
+    event: retry the current phase or escalate to Smith according to the normal
+    blocked_count rule.
     If no active project or all phases are DONE, reply HEARTBEAT_OK.

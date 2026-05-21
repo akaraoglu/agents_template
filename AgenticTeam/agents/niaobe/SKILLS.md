@@ -1,35 +1,31 @@
 # SKILLS.md - Niaobe
-- **Post to #projects**: `bash .../scripts/mm_post.sh niaobe "<message>"`
-- **Update STATE.md**: write_file with full absolute path — always update at every phase change
-- **Delegate to Architect**:
-  ```json
-  {
-    "sessionKey": "agent:architect:main",
-    "message": "Project folder: <full-path>\nRead: <path>/PROJECT.md and <path>/SPEC.md\nWrite your design to: <path>/design/SPEC_DETAILED.md\nInclude: system overview, components, interfaces, data models, file structure, key decisions, open questions.\nSend DONE or BLOCKED via sessions_send to agent:niaobe:main when finished.",
-    "timeoutSeconds": 0
-  }
-  ```
-- **Delegate to Morpheus**:
-  ```json
-  {
-    "sessionKey": "agent:morpheus:main",
-    "message": "Project folder: <full-path>\nRead: PROJECT.md, SPEC.md, design/SPEC_DETAILED.md\nImplement per the design. Code → implementation/. Tests → tests/.\nSend DONE or BLOCKED via sessions_send to agent:niaobe:main when finished.",
-    "timeoutSeconds": 0
-  }
-  ```
-- **Delegate to Oracle**:
-  ```json
-  {
-    "sessionKey": "agent:oracle:main",
-    "message": "Project folder: <full-path>\nRead: PROJECT.md (acceptance criteria), SPEC.md, design/SPEC_DETAILED.md, implementation/, tests/\nRun pytest. Validate every acceptance criterion. Write VALIDATION.md.\nSend DONE (PASS or FAIL) via sessions_send to agent:niaobe:main.",
-    "timeoutSeconds": 0
-  }
-  ```
+
+- **Acknowledge Smith handoff**:
+  `bash /home/alik/workspace/clawspace/bin/ack_handoff.sh niaobe "<PROJECT_ID>" "TASK_HANDOFF" RECEIVED "Smith task handoff accepted."`
+- **Read canonical project context**:
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT_STATE.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "CURRENT_TASK.md"`
+  - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md"`
+- **Move canonical state**:
+  - `bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "IN_PROGRESS" "architect" --actor niaobe --expect-owner smith --set-owner niaobe --active-task "<TASK_ID>" --task-phase "DESIGN" --task-status "IN_PROGRESS" --note "<note>"`
+  - `bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "IN_PROGRESS" "morpheus" --actor niaobe --expect-owner niaobe --active-task "<TASK_ID>" --task-phase "IMPLEMENT" --task-status "IN_PROGRESS" --note "<note>"`
+  - `bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "IN_PROGRESS" "oracle" --actor niaobe --expect-owner niaobe --active-task "<TASK_ID>" --task-phase "VERIFY" --task-status "IN_PROGRESS" --note "<note>"`
+  - `bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "IN_PROGRESS" "smith" --actor niaobe --expect-owner niaobe --active-task "<TASK_ID>" --task-phase "TASK_DONE" --task-status "PASS" --note "<note>"`
+  - `bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "BLOCKED" "smith" --actor niaobe --expect-owner niaobe --active-task "<TASK_ID>" --task-phase "TASK_BLOCKED" --task-status "BLOCKED" --increment-blocked --blocked-reason "<exact reason>" --note "<note>"`
+- **Verify phase artifacts**:
+  - `bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" DESIGN "management/architecture/<TASK_ID>.md" --action niaobe-design-check --contains "<TASK_ID>"`
+  - `bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" IMPLEMENT "<artifact path reported by Morpheus>" --action niaobe-implement-check`
+  - `bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" VERIFY "management/validation/<TASK_ID>_REPORT.md" --action niaobe-verify-check --contains "<TASK_ID>"`
+- **Prepare worker delegation**:
+  - `bash /home/alik/workspace/clawspace/bin/handoff.sh niaobe architect "<PROJECT_ID>" "Read PROJECT.md, CURRENT_TASK.md, and management/tasks/<TASK_ID>.md. Write management/architecture/<TASK_ID>.md and report DONE or BLOCKED." DESIGN "<TASK_ID>"`
+  - `bash /home/alik/workspace/clawspace/bin/handoff.sh niaobe morpheus "<PROJECT_ID>" "Implement only task <TASK_ID> using CURRENT_TASK.md, management/tasks/<TASK_ID>.md, and management/architecture/<TASK_ID>.md. Report DONE or BLOCKED with exact artifact paths and test summary." IMPLEMENT "<TASK_ID>"`
+  - `bash /home/alik/workspace/clawspace/bin/handoff.sh niaobe oracle "<PROJECT_ID>" "Verify only task <TASK_ID>, write management/validation/<TASK_ID>_REPORT.md, and report PASS or FAIL." VERIFY "<TASK_ID>"`
+- **Delegate to workers**:
+  use `sessions_send` with the exact `ENVELOPE:` value returned by `handoff.sh`
 - **Report to Smith**:
-  ```json
-  {
-    "sessionKey": "agent:smith:main",
-    "message": "## DONE — Niaobe\n- status: pass\n- project_id: <id>\n- folder: <path>\n- cycles: N\n- validation: <path>/VALIDATION.md\n- summary: <one line>",
-    "timeoutSeconds": 0
-  }
-  ```
+  use `sessions_send` with sessionKey `agent:smith:main` and a JSON envelope
+  keyed by `project_id` and `task_id`
+- **Timeout rule**:
+  if a child phase goes stale, treat it like a worker BLOCKED event with the
+  exact reason `timeout waiting for <agent>`
