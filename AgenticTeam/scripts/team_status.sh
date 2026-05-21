@@ -83,11 +83,17 @@ def extract_state_field(state_text: str, names: tuple[str, ...]) -> str:
 for project_dir in sorted([p for p in projects_dir.iterdir() if p.is_dir()], key=lambda p: p.name):
     project_id = project_dir.name
     phase = "unknown"
+    owner = ""
     waiting = ""
-    state_file = project_dir / "STATE.md"
+    state_file = project_dir / "PROJECT_STATE.md"
+    if not state_file.exists():
+        state_file = project_dir / "STATE.md"
     if state_file.exists():
         state_text = state_file.read_text(encoding="utf-8")
+        owner = extract_state_field(state_text, ("owner",))
         phase = extract_state_field(state_text, ("phase",)) or "unknown"
+        active_task = extract_state_field(state_text, ("active_task",))
+        task_phase = extract_state_field(state_text, ("task_phase",))
         waiting = extract_state_field(state_text, ("waiting_for",))
 
     extras = []
@@ -107,10 +113,16 @@ for project_dir in sorted([p for p in projects_dir.iterdir() if p.is_dir()], key
             extras.append(f"receipt={label}:{target}")
 
     suffix = f" {' '.join(extras)}" if extras else ""
+    owner_prefix = f" owner={owner}" if owner else ""
+    task_suffix = ""
+    if active_task and active_task.lower() != "none":
+        task_suffix = f" task={active_task}"
+        if task_phase and task_phase.lower() != "none":
+            task_suffix += f" task_phase={task_phase}"
     if waiting:
-        print(f"  📁 {project_id:<35} phase={phase:<15} waiting={waiting}{suffix}")
+        print(f"  📁 {project_id:<35} phase={phase:<15}{owner_prefix}{task_suffix} waiting={waiting}{suffix}")
     else:
-        print(f"  📁 {project_id:<35} phase={phase}{suffix}")
+        print(f"  📁 {project_id:<35} phase={phase}{owner_prefix}{task_suffix}{suffix}")
 PYEOF
 
 echo ""
@@ -122,10 +134,11 @@ import json, os, datetime
 with open(os.path.expanduser('~/.openclaw/subagents/runs.json')) as f:
     d = json.load(f)
 runs = d.get('runs', {})
-active = [(rid, r) for rid, r in runs.items() if r.get('status') not in ('done','failed','cancelled','killed')]
+active = [(rid, r) for rid, r in runs.items() if r.get('outcome') is None]
 print(f"Sub-agent runs: {len(runs)} total, {len(active)} active")
 for rid, r in list(runs.items())[-3:]:
     req = r.get('request', {})
-    print(f"  {rid[:16]}  agent={req.get('agent','?')}  status={r.get('status','?')}")
+    status = r.get('outcome', {}).get('status') or r.get('status') or 'running'
+    print(f"  {rid[:16]}  agent={req.get('agent','?')}  status={status}")
 PYEOF
 fi

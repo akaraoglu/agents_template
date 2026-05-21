@@ -1,2 +1,0 @@
-"""Foundational shared skills."""
-

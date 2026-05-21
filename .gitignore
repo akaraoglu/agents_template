@@ -1,4 +1,10 @@
-__pycache__/
-*.pyc
+claw_agents_team/var/
+claw_agents_team/.venv/
+claw_agents_team/**/__pycache__/
+claw_agents_team/.pytest_cache/
+claw_agents_team/runtime/config/config.local.yaml
+
+# Local Python environment and backups
 env-python/
-software_team_setup/
+.antigravitycli/
+*.zip

@@ -30,7 +30,7 @@ description: Controls when an agent may read, propose, or execute changes. All a
 - You own your layer end-to-end. Do NOT report done until ALL sub-agents report back.
 - After delegating, reply to your manager with "IN PROGRESS — waiting for <agent>." Then go idle.
 - When a sub-agent reports back, read their DONE/BLOCKED report and decide next action.
-- Update STATE.md at every handoff and completion.
+- Update STATE.md only while you are the active control owner for that project.
 
 ## One-Shot Agent Rules (Architect, Oracle, Planner, Implementer, Tester)
 - You receive one task. You do it. You report back. Done.

@@ -1,0 +1,81 @@
+{
+  "defaults": {
+    "security": "full",
+    "ask": "off",
+    "askFallback": "full"
+  },
+  "agents": {
+    "neo": {
+      "security": "full",
+      "ask": "off",
+      "askFallback": "full"
+    },
+    "smith": {
+      "security": "allowlist",
+      "ask": "off",
+      "askFallback": "deny",
+      "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/mm_post.sh",
+        "/home/alik/workspace/clawspace/bin/list_projects.sh",
+        "/home/alik/workspace/clawspace/bin/resolve_project.sh",
+        "/home/alik/workspace/clawspace/bin/project_read.sh",
+        "/home/alik/workspace/clawspace/bin/project_write.sh",
+        "/home/alik/workspace/clawspace/bin/write_state.sh",
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh",
+        "/home/alik/workspace/clawspace/bin/handoff.sh"
+      ]
+    },
+    "niaobe": {
+      "security": "allowlist",
+      "ask": "off",
+      "askFallback": "deny",
+      "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/resolve_project.sh",
+        "/home/alik/workspace/clawspace/bin/project_read.sh",
+        "/home/alik/workspace/clawspace/bin/ack_handoff.sh",
+        "/home/alik/workspace/clawspace/bin/handoff.sh",
+        "/home/alik/workspace/clawspace/bin/write_state.sh",
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh"
+      ]
+    },
+    "architect": {
+      "security": "allowlist",
+      "ask": "off",
+      "askFallback": "deny",
+      "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/mm_post.sh",
+        "/home/alik/workspace/clawspace/bin/resolve_project.sh",
+        "/home/alik/workspace/clawspace/bin/project_read.sh",
+        "/home/alik/workspace/clawspace/bin/project_mkdir.sh",
+        "/home/alik/workspace/clawspace/bin/project_write.sh",
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh"
+      ]
+    },
+    "morpheus": {
+      "security": "allowlist",
+      "ask": "off",
+      "askFallback": "deny",
+      "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/resolve_project.sh",
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh",
+        "/home/alik/workspace/clawspace/bin/project_read.sh",
+        "/home/alik/workspace/clawspace/bin/project_mkdir.sh",
+        "/home/alik/workspace/clawspace/bin/project_write.sh",
+        "/home/alik/workspace/clawspace/bin/project_exec.sh"
+      ]
+    },
+    "oracle": {
+      "security": "allowlist",
+      "ask": "off",
+      "askFallback": "deny",
+      "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/mm_post.sh",
+        "/home/alik/workspace/clawspace/bin/resolve_project.sh",
+        "/home/alik/workspace/clawspace/bin/project_read.sh",
+        "/home/alik/workspace/clawspace/bin/project_write.sh",
+        "/home/alik/workspace/clawspace/bin/project_exec.sh",
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh"
+      ]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: bash new_project.sh "<project-title>"
-# Creates a new project folder in clawspace/projects/active/
-# Called by NEO when a new project is ready to hand off to Smith.
+# Creates a new task-oriented project folder in clawspace/projects/active/
+# Called by Neo when a new project is ready to hand off to Smith.
 
 set -euo pipefail
 
@@ -12,7 +12,9 @@ PROJECT_ID="${SLUG}-${DATE}"
 BASE="/home/alik/workspace/clawspace/projects/active/${PROJECT_ID}"
 TEMPLATES="/home/alik/workspace/agent_template_new/AgenticTeam/templates"
 
-mkdir -p "$BASE"/{design,implementation,tests}
+mkdir -p \
+  "$BASE"/management/{tasks,architecture,validation,DECISIONS,wayback} \
+  "$BASE"/{src,tests}
 
 # PROJECT.md — Neo fills this with goal, requirements, acceptance criteria
 cat > "$BASE/PROJECT.md" << HEREDOC
@@ -43,29 +45,40 @@ cat > "$BASE/PROJECT.md" << HEREDOC
 <!-- Any extra context -->
 HEREDOC
 
-# SPEC.md — Neo writes a draft architecture/planning document
-cat > "$BASE/SPEC.md" << HEREDOC
-# Spec Draft: ${TITLE}
+# PROJECT_STATE.md — canonical shared machine state
+sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${DATE}/g" \
+  "$TEMPLATES/PROJECT_STATE.md" > "$BASE/PROJECT_STATE.md"
+
+# CURRENT_TASK.md — active human-readable work order
+sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${DATE}/g" \
+  "$TEMPLATES/CURRENT_TASK.md" > "$BASE/CURRENT_TASK.md"
+
+# RESULT.md — final summary placeholder
+sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${DATE}/g" \
+  "$TEMPLATES/RESULT.md" > "$BASE/RESULT.md"
+
+# Planning scaffolding owned by Smith
+cat > "$BASE/management/PLAN.md" << HEREDOC
+# Plan: ${TITLE}
 **project_id**: ${PROJECT_ID}
 
-## System Overview
-<!-- High-level description of what gets built -->
+## Roadmap
+<!-- Smith turns the project into sequential tasks T001, T002, ... -->
 
-## Components
-<!-- List the main pieces -->
--
-
-## Data / File Structure
-<!-- What files/folders will be created by implementation -->
-
-## Open Questions
-<!-- Things Neo is unsure about — Smith or Architect should resolve -->
--
+| Task | Title | Status | Notes |
+| :--- | :---- | :----- | :---- |
+| T001 | Define initial task | pending | Created by Smith |
 HEREDOC
 
-# STATE.md — Smith will fill this in after receiving the project
-sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${DATE}/g" \
-  "$TEMPLATES/STATE.md" > "$BASE/STATE.md"
+cat > "$BASE/management/BACKLOG.md" << HEREDOC
+# Backlog: ${TITLE}
+**project_id**: ${PROJECT_ID}
+
+## Ready Queue
+<!-- Smith lists unstarted tasks here in sequence order -->
+
+- none
+HEREDOC
 
 REGISTRY="/home/alik/workspace/clawspace/projects/registry.json"
 CONTEXT="$BASE/CONTEXT.json"
@@ -77,15 +90,43 @@ import pathlib
 import sys
 
 project_id, base, title, now, registry_path, context_path, neo_anchor_path = sys.argv[1:]
+registry_file = pathlib.Path(registry_path)
+
+if registry_file.exists():
+    try:
+        registry = json.loads(registry_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        registry = {"version": 1, "projects": {}}
+else:
+    registry = {"version": 1, "projects": {}}
+
+projects = dict(registry.get("projects") or {})
+legacy = registry.get("active_project")
+if legacy and legacy.get("id") and legacy.get("path"):
+    projects.setdefault(
+        legacy["id"],
+        {
+            "path": legacy["path"],
+            "name": legacy.get("name", legacy["id"]),
+            "status": "active",
+            "created_at": legacy.get("started_at", now),
+            "last_updated": registry.get("last_updated", now),
+        },
+    )
+
+projects[project_id] = {
+    "path": base,
+    "project_root": base,
+    "name": title,
+    "status": "active",
+    "created_at": now,
+    "last_updated": now,
+}
 
 registry_payload = {
     "version": 1,
-    "active_project": {
-        "id": project_id,
-        "path": base,
-        "name": title,
-        "started_at": now,
-    },
+    "projects": projects,
+    "latest_project_id": project_id,
     "last_updated": now,
 }
 
@@ -104,7 +145,7 @@ anchor_payload = {
 }
 
 for target, payload in (
-    (registry_path, registry_payload),
+    (registry_file, registry_payload),
     (context_path, anchor_payload),
     (neo_anchor_path, anchor_payload),
 ):
@@ -119,12 +160,13 @@ else
   echo "⚠️  Registry/context update failed (project still created)"
 fi
 
+echo "✅ Project ID: $PROJECT_ID"
 echo "✅ Project created: $BASE"
-echo "   Files: PROJECT.md, SPEC.md, STATE.md, CONTEXT.json"
+echo "   Files: PROJECT.md, PROJECT_STATE.md, CURRENT_TASK.md, RESULT.md, CONTEXT.json"
 echo ""
 echo "Next steps for Neo:"
 echo "  1. Fill in $BASE/PROJECT.md (requirements, acceptance criteria)"
-echo "  2. Fill in $BASE/SPEC.md (draft architecture)"
-echo "  3. Run handoff.sh and use the printed ENVELOPE for sessions_send to Smith"
+echo "  2. Run handoff.sh and use the printed ENVELOPE for sessions_send to Smith"
+echo "  3. Smith will create PLAN.md, BACKLOG.md, and task files"
 echo "  4. Post to #projects: '🚀 Project ${PROJECT_ID} started. Handing to Smith.'"
 echo "  5. Go idle — do not follow up."
