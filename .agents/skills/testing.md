@@ -18,6 +18,19 @@ Use this skill when code changes affect behavior, bug fixes, or integration poin
 4. Keep fixtures simple and deterministic.
 5. Run the smallest relevant set first, then broader quality gates if needed.
 
+## OpenClaw agent-team rule
+- For agent-flow work under `AgenticTeam/`, start with the smallest matching
+  phase canary:
+  `bash AgenticTeam/scripts/run_openclaw_phase_canary.sh --phase <name>`
+- Use the same phase canary before and after the fix so the comparison is
+  stable.
+- Then rerun the fixed Fibonacci E2E canary:
+  `bash AgenticTeam/scripts/run_e2e_fibonacci_test.sh`
+- Treat the canaries as the default reproduction loop while stabilizing the
+  control plane, but do not assume one passing run proves the whole workflow.
+- Pair the canary with the OpenClaw-specific routine in
+  `.agents/playbooks/openclaw-canary-playbook.md`.
+
 ## Verification
 - New or updated tests fail before the fix when applicable
 - Tests pass after the change

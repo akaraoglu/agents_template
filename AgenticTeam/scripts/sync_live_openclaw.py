@@ -96,7 +96,7 @@ def relative_repo_path(path: Path, repo_root: Path) -> str:
     return path.relative_to(repo_root).as_posix()
 
 
-def sync_file(actions: list[Action], source: Path, destination: Path, *, apply: bool) -> None:
+def sync_file(actions: list[Action], source: Path, destination: Path, *, apply: bool, mode: int | None = None) -> None:
     content = source.read_bytes()
     if destination.exists() and destination.read_bytes() == content:
         actions.append(Action("unchanged", destination, f"matches {source}"))
@@ -105,6 +105,8 @@ def sync_file(actions: list[Action], source: Path, destination: Path, *, apply: 
     actions.append(Action(action_kind, destination, f"from {source}"))
     if apply:
         write_bytes_atomic(destination, content)
+        if mode is not None:
+            destination.chmod(mode)
 
 
 def validate_agent_dir_targets(agent: str, files: Iterable[str], manifest: dict) -> None:
@@ -137,10 +139,23 @@ def extract_scripts(text: str) -> set[str]:
     return set(SCRIPT_REFERENCE_RE.findall(text))
 
 
+def managed_helper_destinations(repo_root: Path, manifest: dict) -> dict[str, Path]:
+    live_bin_root = Path(manifest["paths"]["live_bin_root"])
+    destinations: dict[str, Path] = {}
+    for agent, names in manifest.get("helper_scripts", {}).items():
+        for name in names:
+            source = repo_root / "scripts" / name
+            if not source.exists():
+                raise RuntimeError(f"{agent}: missing managed helper source: {source}")
+            destinations[str(live_bin_root / name)] = source
+    return destinations
+
+
 def validate_prompt_contracts(repo_root: Path, manifest: dict) -> None:
     approvals = load_json(repo_root / "config" / "exec-approvals.json")
     baseline_agents = approvals.get("agents", {})
     configured_agents = manifest["agents"]
+    managed_helpers = managed_helper_destinations(repo_root, manifest)
 
     for agent in configured_agents:
         docs = load_agent_docs(repo_root, agent)
@@ -160,8 +175,11 @@ def validate_prompt_contracts(repo_root: Path, manifest: dict) -> None:
 
         all_scripts = workspace_scripts | agent_dir_scripts
         for script in sorted(all_scripts):
-            if not Path(script).exists():
-                raise RuntimeError(f"{agent}: referenced helper does not exist: {script}")
+            if Path(script).exists():
+                continue
+            if script in managed_helpers:
+                continue
+            raise RuntimeError(f"{agent}: referenced helper does not exist: {script}")
 
         baseline = baseline_agents.get(agent, {})
         if baseline.get("security") == "allowlist":
@@ -209,6 +227,21 @@ def sync_agent_files(repo_root: Path, manifest: dict, *, selected_agents: list[s
             destination = agent_dir / name
             sync_file(actions, source, destination, apply=apply)
 
+    return actions
+
+
+def sync_helper_scripts(repo_root: Path, manifest: dict, *, selected_agents: list[str], apply: bool) -> list[Action]:
+    actions: list[Action] = []
+    configured_agents = manifest["agents"]
+    helper_scripts = manifest.get("helper_scripts", {})
+    live_bin_root = Path(manifest["paths"]["live_bin_root"])
+    agent_names = selected_agents or list(configured_agents.keys())
+
+    for agent in agent_names:
+        for name in helper_scripts.get(agent, []):
+            source = repo_root / "scripts" / name
+            destination = live_bin_root / name
+            sync_file(actions, source, destination, apply=apply, mode=0o755)
     return actions
 
 
@@ -306,6 +339,7 @@ def main() -> int:
     actions: list[Action] = []
     if not args.config_only:
         actions.extend(sync_agent_files(repo_root, manifest, selected_agents=args.agents, apply=args.apply))
+        actions.extend(sync_helper_scripts(repo_root, manifest, selected_agents=args.agents, apply=args.apply))
     if not args.agents_only:
         actions.extend(sync_managed_config(repo_root, manifest, apply=args.apply))
 

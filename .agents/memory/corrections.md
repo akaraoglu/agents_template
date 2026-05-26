@@ -1,3 +1,7 @@
+## 2026-05-22
+- Mistake: Treating one red or green OpenClaw canary run as enough evidence encouraged prompt-level patching and first-visible-fault fixes.
+- Correction: Use the fixed Fibonacci E2E canary as the default reproduction loop, but classify the failure layer first (helper/guard, prompt contract, policy/allowlist, runtime validator/state-machine), rerun the same canary after the smallest relevant fix, and stop escalating prompt prose when the same fault survives repeated attempts.
+
 ## 2026-05-05
 - Mistake: Human workflow routing drifted into runtime keyword classification, which caused brittle phrase-specific fixes and contradicted the goal that managers reason about intent.
 - Correction: Keep runtime out of semantic keyword guessing. Human intake should be `agent_decides`; agents declare `intent` and `visibility`, and runtime validates only the declared action contract.
@@ -125,3 +129,15 @@
 - Writable-subagent contract bug:
   Morpheus subagents were instructed to write project files and tests even though spawned leaf sessions did not reliably expose the necessary write tools, causing planner failure before `TASKS.md` existed.
   Correction: BUILD ownership stays in the main Morpheus session; spawned subagents are advisory only unless runtime-grounded writable spawn support is added later.
+- OpenClaw canary stale-session caveat:
+  A full phase suite run can fail multiple later phases if an earlier agent session remains marked `running` even after useful work completed.
+  Correction: treat `preflight:target_session_quiescent` failures as suite hygiene first, clear/stop/archive the stale session, then rerun the affected phase in isolation before classifying a product regression.
+- Morpheus repair-policy gap:
+  Clean `morpheus_direct_implementation` can create required artifacts and run tests, but after `WORKER_RUNTIME_REPAIR_REQUIRED[test_failed]` it may repair tests to match buggy implementation output instead of fixing implementation to satisfy task semantics.
+  Correction: the next Morpheus runtime slice should preserve external canary tests or add repair guidance/guards so test-failure repair changes implementation first and does not weaken acceptance tests.
+- Morpheus graph pilot limitation:
+  The first LangGraph slice is intentionally not a full fix for model-authored implementation mistakes.
+  It makes the completion tail explicit and blocks test weakening after `test_failed`, but live canary improvement still requires enabling the graph engine in the agent environment/prompt and then validating whether the model follows the repair policy.
+- Morpheus repair parser mismatch:
+  The first live repair-mode run emitted the right `WORKER_RUNTIME_REPAIR_REQUIRED` / `NEXT_REQUIRED` flow, but the live helper rejected `repair` because the subcommand was added to the generic parser instead of the artifact-contract parser.
+  Correction: add `repair` to `build_artifact_parser`, verify `morpheus_run_task.py --help` includes `{prepare,read,complete,repair,block}`, and keep a focused test that the repair brief only works after `repair_needed` state.

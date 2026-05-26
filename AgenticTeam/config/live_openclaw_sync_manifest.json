@@ -3,7 +3,25 @@
   "paths": {
     "agenticteam_root": "/home/alik/workspace/agent_template_new/AgenticTeam",
     "openclaw_root": "/home/alik/.openclaw",
-    "workspace_root": "/home/alik/workspace/clawspace/workspaces"
+    "workspace_root": "/home/alik/workspace/clawspace/workspaces",
+    "live_bin_root": "/home/alik/workspace/clawspace/bin"
+  },
+  "helper_scripts": {
+    "architect": [
+      "architect_run_task.sh"
+    ],
+    "smith": [
+      "smith_plan_project.sh"
+    ],
+    "morpheus": [
+      "morpheus_run_task.sh"
+    ],
+    "niaobe": [
+      "niaobe_run_task.sh"
+    ],
+    "oracle": [
+      "oracle_run_task.sh"
+    ]
   },
   "deprecated_source_paths": [
     "workspaces"

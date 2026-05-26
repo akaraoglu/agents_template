@@ -23,20 +23,59 @@ the exact blocker in project state.
 ### Execution steps - On HANDOFF from Neo
 
 1. Parse the envelope. Extract `PROJECT_ID`.
-2. `exec` -> `bash /home/alik/workspace/clawspace/bin/project_read.sh "$PROJECT_ID" PROJECT.md`
-3. `write` -> workspace drafts for:
-   - `PLAN.md`
-   - `BACKLOG.md`
-   - `management/tasks/T001.md`
-   - `CURRENT_TASK.md`
-4. `exec` -> `project_write.sh` each artifact into the project root.
-5. `exec` -> `verify_artifact.sh` for `management/PLAN.md`,
-   `management/tasks/T001.md`, and `CURRENT_TASK.md`.
-6. `exec` -> `bash /home/alik/workspace/clawspace/bin/write_state.sh "$PROJECT_ID" PLANNING niaobe --actor smith --expect-owner smith --active-task T001 --task-phase TASK_HANDOFF --task-status READY --note "Sequential plan created. T001 ready for Niaobe."`
-7. `exec` -> `bash /home/alik/workspace/clawspace/bin/handoff.sh smith niaobe "$PROJECT_ID" "Task T001 is ready. Read CURRENT_TASK.md and management/tasks/T001.md, then run Design -> Implement -> Verify for that task only. Report TASK_DONE or TASK_BLOCKED to Smith." TASK_HANDOFF T001`
-8. `sessions_send` -> `agent:niaobe:main` using the exact `ENVELOPE:` value
-   returned by `handoff.sh`
-9. Reply: "Delegated [$PROJECT_ID:T001] to Niaobe." then REPLY_SKIP
+2. First try the runtime-owned deterministic planning command:
+   `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh autoplan '<ENVELOPE_JSON>'`
+3. If `autoplan` prints `RESULT_FILE=...`, planning and handoff are complete;
+   reply with a short completion note and `REPLY_SKIP`.
+4. If `autoplan` reports that no deterministic `## Required Plan` exists, do not
+   run `prepare` again. Continue with the printed `WORK_ORDER_BEGIN` /
+   `WORK_ORDER_END`, `RUN_DIR`, `DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`.
+5. Use the printed `WORK_ORDER_BEGIN` / `WORK_ORDER_END`, `RUN_DIR`,
+   `DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`.
+6. `write` -> full planning drafts only under the printed `DRAFT_WRITE_ROOT`:
+   - `<DRAFT_WRITE_ROOT>/management/PLAN.md`
+   - `<DRAFT_WRITE_ROOT>/management/BACKLOG.md`
+   - `<DRAFT_WRITE_ROOT>/management/tasks/T001.md`
+   - `<DRAFT_WRITE_ROOT>/management/tasks/T002.md`
+   - additional task files only if the project truly needs them
+   - `<DRAFT_WRITE_ROOT>/CURRENT_TASK.md`
+   - append only the listed suffixes to the exact printed `DRAFT_WRITE_ROOT`; do not
+     retype or edit any other path segment
+   - never introduce spaces, `*`, altered timestamps, alternate roots, or
+     misspelled task ids in draft paths
+7. `write` -> `MANIFEST_WRITE_FILE` as JSON:
+   ```json
+   {
+     "artifacts": [
+       {"path": "management/PLAN.md"},
+       {"path": "management/BACKLOG.md"},
+       {"path": "management/tasks/T001.md"},
+       {"path": "management/tasks/T002.md"},
+       {"path": "CURRENT_TASK.md"}
+     ],
+     "active_task": "T001"
+   }
+   ```
+8. `exec` -> `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh complete "<RUN_DIR>"`
+9. If full planning cannot be completed, `exec` ->
+   `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh block "<RUN_DIR>" --code "<missing_input|ambiguous_spec|envelope_invalid|capability_gap|verification_failed|delivery_failed|other>" --reason "<exact reason>"`
+10. Reply only with a short completion note, then `REPLY_SKIP`
+
+### Initial-planning runtime rule
+
+- `smith_plan_project.sh` owns:
+  - rooted `PROJECT.md` read
+  - artifact import
+  - planning verification
+  - `write_state.sh`
+  - `handoff.sh smith -> niaobe`
+  - `sessions_send` delivery to Niaobe
+- For the initial Neo -> Smith planning handoff, do **not** call those lower-level
+  helpers directly.
+- Copy `DRAFT_WRITE_ROOT` exactly. Never invent alternate draft paths such as
+  `CA_T001_DRAFT` or project-root writes during initial planning.
+- Before `complete`, make sure every manifest artifact path exists exactly under
+  the printed `DRAFT_WRITE_ROOT`.
 
 ### Execution steps - On TASK_DONE from Niaobe
 
@@ -73,6 +112,8 @@ the exact blocker in project state.
 - NEVER use `sessions_spawn`.
 - NEVER activate more than one task at a time.
 - NEVER let a Mattermost post replace or delay the actual Niaobe task handoff.
+- NEVER call `project_write.sh`, `write_state.sh`, `handoff.sh`, or `sessions_send`
+  directly for the initial planning handoff. Use `smith_plan_project.sh`.
 
 ### Execute-Verify-Report
 

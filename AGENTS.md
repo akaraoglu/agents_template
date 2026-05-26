@@ -15,6 +15,7 @@ This repository uses Codex as a coding agent. Follow these instructions when rea
 - Keep solutions simple and maintainable. Introduce new abstractions only when they clearly reduce complexity.
 - Do not use `rm -r` or `rm -rf` unless the user explicitly asks for it.
 - If a request conflicts with repo rules, prefer repo rules and explain the conflict.
+- For OpenClaw agent-flow defects, follow `.agents/playbooks/openclaw-canary-playbook.md`: reproduce with the fixed canary first, classify the fault by layer, make the smallest relevant fix, and rerun the same canary before broadening scope.
 
 ## Working Style
 - Be direct and concise.

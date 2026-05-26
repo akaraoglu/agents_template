@@ -15,6 +15,7 @@
       "ask": "off",
       "askFallback": "deny",
       "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/smith_plan_project.sh",
         "/home/alik/workspace/clawspace/bin/mm_post.sh",
         "/home/alik/workspace/clawspace/bin/list_projects.sh",
         "/home/alik/workspace/clawspace/bin/resolve_project.sh",
@@ -30,6 +31,7 @@
       "ask": "off",
       "askFallback": "deny",
       "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/niaobe_run_task.sh",
         "/home/alik/workspace/clawspace/bin/resolve_project.sh",
         "/home/alik/workspace/clawspace/bin/project_read.sh",
         "/home/alik/workspace/clawspace/bin/ack_handoff.sh",
@@ -43,6 +45,7 @@
       "ask": "off",
       "askFallback": "deny",
       "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/architect_run_task.sh",
         "/home/alik/workspace/clawspace/bin/mm_post.sh",
         "/home/alik/workspace/clawspace/bin/resolve_project.sh",
         "/home/alik/workspace/clawspace/bin/project_read.sh",
@@ -56,6 +59,7 @@
       "ask": "off",
       "askFallback": "deny",
       "allow_patterns": [
+        "/home/alik/workspace/clawspace/bin/morpheus_run_task.sh",
         "/home/alik/workspace/clawspace/bin/resolve_project.sh",
         "/home/alik/workspace/clawspace/bin/verify_artifact.sh",
         "/home/alik/workspace/clawspace/bin/project_read.sh",
@@ -70,6 +74,7 @@
       "askFallback": "deny",
       "allow_patterns": [
         "/home/alik/workspace/clawspace/bin/mm_post.sh",
+        "/home/alik/workspace/clawspace/bin/oracle_run_task.sh",
         "/home/alik/workspace/clawspace/bin/resolve_project.sh",
         "/home/alik/workspace/clawspace/bin/project_read.sh",
         "/home/alik/workspace/clawspace/bin/project_write.sh",

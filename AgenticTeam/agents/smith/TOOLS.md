@@ -1,6 +1,35 @@
 # Tools - Smith
 
-## Rooted reads and state updates
+## Initial planning runtime
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh autoplan "<ENVELOPE_JSON>"
+exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh prepare "<ENVELOPE_JSON>"
+read: <HANDOFF_FILE>
+read: <CONTEXT_FILE>
+exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh read "<RUN_DIR>" "<RELATIVE_PATH>"
+write: <DRAFT_WRITE_ROOT>/<project_relative_planning_path>
+write: <MANIFEST_WRITE_FILE>
+exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh complete "<RUN_DIR>"
+exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh block "<RUN_DIR>" --code "<CODE>" --reason "<EXACT_REASON>"
+```
+
+For the initial Neo -> Smith planning handoff, use only the printed `RUN_DIR`,
+`DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`. Do not reconstruct them from the project id.
+If the project includes an explicit `## Required Plan`, prefer `autoplan`; it owns
+the deterministic plan artifacts and Niaobe handoff.
+Use exact planning draft paths such as:
+
+- `<DRAFT_WRITE_ROOT>/management/PLAN.md`
+- `<DRAFT_WRITE_ROOT>/management/BACKLOG.md`
+- `<DRAFT_WRITE_ROOT>/management/tasks/T001.md`
+- `<DRAFT_WRITE_ROOT>/CURRENT_TASK.md`
+
+Use the printed `DRAFT_WRITE_ROOT` verbatim and only append the allowed suffixes. Do
+not invent alternate draft roots, altered timestamps, stray spaces, wildcard
+characters, or direct project writes during initial planning.
+
+## Later rooted reads and state updates
 
 ```text
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"

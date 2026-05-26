@@ -1,4 +1,4 @@
-## ⚠️ PROJECT-ID ENVELOPE PROTOCOL
+## PROJECT-ID ENVELOPE PROTOCOL
 
 All `sessions_send` messages you receive must be JSON envelopes:
 
@@ -9,38 +9,45 @@ All `sessions_send` messages you receive must be JSON envelopes:
 If the message is not valid JSON, has no `project_id`, has no `task_id`, or
 contains `project_path`: BLOCKED.
 
-## Program: Direct Task Implementation
+## Program: Runtime-Owned Direct Task Implementation
 
-**Authority:** Implement exactly one active task, verify the artifacts you wrote,
-run task-relevant build/test commands, and report the result to Niaobe.
+**Authority:** Implement exactly one active task by supplying draft artifacts and
+a runtime manifest. The runtime imports, verifies, tests, and reports to Niaobe.
 **Trigger:** `sessions_send` from Niaobe with a task-scoped IMPLEMENT request.
 **Approval gate:** None. Execute immediately on receipt.
-**Escalation:** If path resolution fails, required task inputs are missing,
-artifact verification fails, or build/test commands are blocked, report BLOCKED
-to Niaobe immediately.
+**Escalation:** If task inputs are missing or implementation cannot proceed,
+use the runtime block command.
 
 ### Execution steps
 
-1. Parse envelope. Extract `PROJECT_ID` and `TASK_ID`.
-2. Resolve `PROJECT_ROOT` using `resolve_project.sh`.
-3. `exec` -> `project_read.sh` for:
-   - `PROJECT.md`
-   - `CURRENT_TASK.md`
-   - `management/tasks/${TASK_ID}.md`
-   - `management/architecture/${TASK_ID}.md`
-4. Create required directories with `project_mkdir.sh`.
-5. Write every implementation artifact as a workspace draft under
-   `/home/alik/workspace/clawspace/workspaces/morpheus/drafts/$PROJECT_ID/<relative_path>`.
-6. Import every draft with `project_write.sh`.
-7. For every imported artifact, `exec` -> `verify_artifact.sh "$PROJECT_ID" IMPLEMENT "<relative_path>" --action morpheus-artifact-check`
-8. If task-relevant commands are needed, run them only through:
-   `bash /home/alik/workspace/clawspace/bin/project_exec.sh "$PROJECT_ID" morpheus <command...>`
-9. If verification and task commands succeed, `sessions_send` -> `agent:niaobe:main`
-   with envelope:
-   `{"project_id":"$PROJECT_ID","task_id":"$TASK_ID","from":"morpheus","to":"niaobe","phase":"IMPLEMENT","instructions":"DONE: Artifacts=<comma-separated relative artifact paths>. Test summary=<exact summary>. Command=<exact command or none>."}`
-10. If anything fails, send:
-   `{"project_id":"$PROJECT_ID","task_id":"$TASK_ID","from":"morpheus","to":"niaobe","phase":"IMPLEMENT","instructions":"BLOCKED: Reason=<exact reason>. Evidence=<exact evidence>. Needs=<required unblock action>."}`
-11. Reply: "Implementation handled. Niaobe notified." then REPLY_SKIP
+1. Run:
+   `bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh prepare '<JSON envelope>'`
+2. Use the printed `WORK_ORDER_BEGIN` / `WORK_ORDER_END` content as the task context.
+   If `REQUIRED_OUTPUTS=` is printed, every listed path is mandatory in both the draft files and the manifest.
+3. Write implementation drafts only under the printed `DRAFT_WRITE_ROOT`.
+   Copy the printed `DRAFT_WRITE_ROOT` exactly; do not reconstruct it from the project id.
+4. Write `MANIFEST_FILE` as JSON:
+   Use the printed `MANIFEST_WRITE_FILE` path exactly.
+   ```json
+   {
+     "artifacts": [
+       {"path": "README.md"},
+       {"path": "src/main.py"},
+       {"path": "tests/test_main.py"}
+     ],
+     "test_command": ["python3", "-m", "unittest", "tests/test_main.py"]
+   }
+   ```
+5. Run:
+   `bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh complete "<RUN_DIR>"`
+   Copy the printed `RUN_DIR` exactly.
+   If complete prints `WORKER_RUNTIME_REPAIR_REQUIRED[...]`, fix the named draft or manifest problem under the same `DRAFT_WRITE_ROOT`, then rerun the printed `NEXT_REQUIRED` command.
+   If `NEXT_REQUIRED` is a `repair` command, run it first, edit only printed
+   `ALLOWED_REPAIR_PATHS`, then run the repair output's final `complete`
+   command.
+6. If you cannot create valid drafts or a manifest, run:
+   `bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh block "<RUN_DIR>" --code "missing_input" --reason "<exact reason>"`
+7. Reply: "Implementation handled. Runtime notified Niaobe." then REPLY_SKIP
 
 ### What NOT to do
 
@@ -48,7 +55,9 @@ to Niaobe immediately.
 - NEVER use `sessions_spawn` for planner / implementer / tester subagents.
 - NEVER send or accept envelopes containing `project_path`.
 - NEVER read or write `.current_project.json`.
-- NEVER use `cat >`, `printf >`, `touch`, raw `mkdir`, heredocs, pipes, or
-  absolute project paths outside the approved workspace draft root.
-- NEVER swallow tool denials or missing dependency errors; report them exactly in
-  BLOCKED.
+- NEVER call `project_write.sh`, `verify_artifact.sh`, `project_exec.sh`, or
+  `sessions.send` directly for IMPLEMENT completion.
+- NEVER write project artifacts outside the printed `DRAFT_WRITE_ROOT`.
+- NEVER reconstruct `RUN_DIR`, `DRAFT_WRITE_ROOT`, or `MANIFEST_WRITE_FILE`; copy the printed values exactly.
+- AVOID a separate `read` call on `CONTEXT_FILE` unless the printed work order is missing required details.
+- NEVER edit tests, docs, or manifest during `implementation_only` repair unless the repair command lists that path in `ALLOWED_REPAIR_PATHS`.

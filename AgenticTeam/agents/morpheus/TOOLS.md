@@ -2,59 +2,71 @@
 
 ## Current IMPLEMENT contract
 
-- Morpheus handles the active implementation task directly
-- Morpheus may resolve the project, read task inputs, write project files, run project-native build/test commands, and report to Niaobe
-- Morpheus must verify each written artifact before claiming DONE
-- missing dependencies or missing tools must be escalated as BLOCKED
+- Morpheus handles the active implementation task directly.
+- Morpheus writes draft artifacts and a runtime manifest.
+- `morpheus_run_task.sh` imports artifacts, verifies them, runs project tests, and reports to Niaobe.
+- missing dependencies or missing tools must be escalated through the runtime block command.
 
-## Resolve project
-
-```text
-exec: bash /home/alik/workspace/clawspace/bin/resolve_project.sh "<PROJECT_ID>"
-exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "<relative_path>"
-```
-
-Verify `RESOLVE_READY` before using `PROJECT_ROOT`.
-
-## Rooted project writes
+## Runtime prepare
 
 ```text
-write: /home/alik/workspace/clawspace/workspaces/morpheus/drafts/<PROJECT_ID>/<relative_path>
-exec: bash /home/alik/workspace/clawspace/bin/project_mkdir.sh "<PROJECT_ID>" "<relative_dir>"
-exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "<project_relative_path>" --source-file "/home/alik/workspace/clawspace/workspaces/morpheus/drafts/<PROJECT_ID>/<project_relative_path>"
-exec: bash /home/alik/workspace/clawspace/bin/project_exec.sh "<PROJECT_ID>" morpheus <command...>
+exec: bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh prepare '<JSON envelope>'
 ```
 
-Use rooted helpers only. Never use `cat > file`, `printf > file`, `touch`, heredocs, pipes, or raw `mkdir` for project artifacts.
+Use the printed `WORK_ORDER_BEGIN` / `WORK_ORDER_END`, `RUN_DIR`, `RUNTIME_DIR`, `DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`.
+Copy these paths exactly; do not reconstruct them from the project id.
+`MANIFEST_WRITE_FILE` is inside `DRAFT_WRITE_ROOT`, so all model-written files share one base directory.
+If `REQUIRED_OUTPUTS=` is printed, those paths are mandatory draft and manifest entries.
 
-## Verify reported artifact
+## Draft artifacts
 
 ```text
-exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" IMPLEMENT "<relative artifact path>" --action morpheus-artifact-check
+write: <DRAFT_WRITE_ROOT>/<project_relative_path>
+write: <MANIFEST_WRITE_FILE>
 ```
 
-Proceed only when the helper returns `OUTCOME_JSON` with `status:"OK"`.
-
-## sessions_send - DONE to Niaobe
+`MANIFEST_FILE` must contain:
 
 ```json
 {
-  "sessionKey": "agent:niaobe:main",
-  "message": "{\"project_id\":\"<PROJECT_ID>\",\"task_id\":\"<TASK_ID>\",\"from\":\"morpheus\",\"to\":\"niaobe\",\"phase\":\"IMPLEMENT\",\"instructions\":\"DONE: Artifacts=<comma-separated relative artifact paths>. Test summary=<exact summary line>.\"}"
+  "artifacts": [
+    {"path": "README.md"},
+    {"path": "src/main.py"},
+    {"path": "tests/test_main.py"}
+  ],
+  "test_command": ["python3", "-m", "unittest", "tests/test_main.py"]
 }
 ```
 
-## sessions_send - BLOCKED to Niaobe
+## Runtime complete
 
-```json
-{
-  "sessionKey": "agent:niaobe:main",
-  "message": "{\"project_id\":\"<PROJECT_ID>\",\"task_id\":\"<TASK_ID>\",\"from\":\"morpheus\",\"to\":\"niaobe\",\"phase\":\"IMPLEMENT\",\"instructions\":\"BLOCKED: Reason=<exact reason>. Evidence=<exact evidence>. Needs=<required unblock action>.\"}"
-}
+```text
+exec: bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh complete "<RUN_DIR>"
+```
+
+If this prints `WORKER_RUNTIME_REPAIR_REQUIRED[...]`, fix the named draft or manifest issue and rerun the printed `NEXT_REQUIRED`.
+If `NEXT_REQUIRED` is a `repair` command, run it first, edit only printed
+`ALLOWED_REPAIR_PATHS`, then run the final printed `complete` command.
+
+## Runtime repair
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh repair "<RUN_DIR>"
+```
+
+During `implementation_only` repair, do not edit tests, docs, or manifest
+unless the repair output lists that path in `ALLOWED_REPAIR_PATHS`.
+
+## Runtime block
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh block "<RUN_DIR>" --code "<code>" --reason "<reason>"
 ```
 
 ## Main-session limits
 
 - Morpheus must not activate the next task
-- Morpheus must not claim success without rooted artifact verification
-- Any non-`OK` rooted helper result must become `BLOCKED`, not progress
+- Morpheus must not claim success directly
+- Morpheus must not call lower-level project helpers for IMPLEMENT completion
+- Morpheus must copy printed runtime paths exactly
+- Morpheus should not spend a separate turn reading `CONTEXT_FILE` unless the printed work order is insufficient

@@ -1,51 +1,27 @@
 # Tools - Oracle
 
-## Return contract to Niaobe
+## Current VERIFY contract
 
-Use only JSON envelopes keyed by `project_id` and `task_id`.
+- Oracle handles one verification task directly through the runtime.
+- Oracle does not call lower-level project helpers directly for VERIFY completion.
+- `oracle_run_task.sh` reads inputs, checks required artifacts, runs project
+  tests, writes/imports/verifies the validation report, and reports PASS or
+  FAIL to Niaobe.
 
-- Never send plain text PASS/FAIL messages.
-- Never include `project_path` or absolute project file paths in the envelope.
-
-## Run tests
-
-```text
-exec: bash /home/alik/workspace/clawspace/bin/resolve_project.sh "<PROJECT_ID>"
-exec: bash /home/alik/workspace/clawspace/bin/project_exec.sh "<PROJECT_ID>" oracle <project-native verification command>
-```
-
-Capture the FULL `STDOUT_BEGIN` / `STDERR_BEGIN` output. Every line matters.
-
-## File operations
+## Runtime verify
 
 ```text
-exec: bash /home/alik/workspace/clawspace/bin/resolve_project.sh "<PROJECT_ID>"
-exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"
-exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "CURRENT_TASK.md"
-exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md"
-exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/architecture/<TASK_ID>.md"
-write: /home/alik/workspace/clawspace/workspaces/oracle/drafts/<PROJECT_ID>/<TASK_ID>_REPORT.md
-exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/validation/<TASK_ID>_REPORT.md" --source-file "/home/alik/workspace/clawspace/workspaces/oracle/drafts/<PROJECT_ID>/<TASK_ID>_REPORT.md" --action oracle_project_write
-exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" VERIFY "management/validation/<TASK_ID>_REPORT.md" --action oracle-write --contains "<TASK_ID>"
+exec: bash /home/alik/workspace/clawspace/bin/oracle_run_task.sh verify '<JSON envelope>'
 ```
 
-Treat any rooted helper result with `OUTCOME_JSON.status != "OK"` as BLOCKED or FAIL, not success.
-Never use heredocs, pipes, or shell redirection with project file writes.
+The envelope must be the exact JSON message from Niaobe. Never add
+`project_path`.
 
-## sessions_send to Niaobe (PASS)
+## Main-session limits
 
-```json
-{
-  "sessionKey": "agent:niaobe:main",
-  "message": "{\"project_id\":\"<PROJECT_ID>\",\"task_id\":\"<TASK_ID>\",\"from\":\"oracle\",\"to\":\"niaobe\",\"phase\":\"VERIFY\",\"instructions\":\"PASS: task verification complete. Evidence: <brief summary>.\"}"
-}
-```
-
-## sessions_send to Niaobe (FAIL)
-
-```json
-{
-  "sessionKey": "agent:niaobe:main",
-  "message": "{\"project_id\":\"<PROJECT_ID>\",\"task_id\":\"<TASK_ID>\",\"from\":\"oracle\",\"to\":\"niaobe\",\"phase\":\"VERIFY\",\"instructions\":\"FAIL: <summary of failed criteria and tests>.\"}"
-}
-```
+- Oracle must not activate the next task.
+- Oracle must not fix implementation code.
+- Oracle must not claim PASS/FAIL directly.
+- Oracle must not contact Smith, Neo, Morpheus, or Architect.
+- Oracle should reply only after the runtime exits:
+  `Validation handled. Runtime notified Niaobe.` then `REPLY_SKIP`.

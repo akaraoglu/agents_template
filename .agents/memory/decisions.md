@@ -1,3 +1,24 @@
+## 2026-05-22
+- For this repository, Python commands should run inside `./env-python`.
+  When running repo-local Python scripts, tests, sync tools, or wrappers from the
+  repository root, activate `./env-python/bin/activate` first. This is a
+  repository-specific execution rule, not a general default for other repos.
+
+## 2026-05-22
+- OpenClaw stabilization should use phase canaries before the full Fibonacci E2E rerun.
+  The default baseline order is now: `neo_project_create`, `smith_planning`, `smith_niaobe_handoff`, `architect_worker_runtime`, `morpheus_direct_implementation`, `oracle_verification`, then `run_e2e_fibonacci_test`. Phase canaries must stay diagnostic-only, emit structured reports, and surface preflight, delivery, session, and fault-layer evidence before prompting any fix.
+
+## 2026-05-25
+- Canary baseline hygiene now requires **fresh, quiescent main sessions**, not just "no sync drift". `run_canary_suite.sh --preflight-only` should fail if any canary agent main session is missing, stale, or still draining. After live prompt sync, rotate affected main sessions, warm them with a minimal READY check, and only trust phase canaries once preflight reports `sync_drift=no` and `already_quiescent` across the target agents.
+
+## 2026-05-22
+- For this project, fix proposals must be approved before implementation.
+  When investigating a failure, the default flow is: run the canary or reproduction, identify the failing boundary, prepare a fix plan, and ask the user for explicit permission before changing code, prompts, configs, or live runtime files. Do not implement the fix immediately after diagnosis unless the user explicitly says to proceed.
+
+## 2026-05-22
+- OpenClaw workflow stabilization should use a fixed E2E canary loop before any broader redesign or prompt tweaking.
+  The default loop is: run `AgenticTeam/scripts/run_e2e_fibonacci_test.sh`, capture the report, classify the fault by layer (helper/guard, prompt contract, policy/allowlist, or runtime validator/state-machine), make the smallest relevant fix in that layer, and rerun the same canary. The Fibonacci canary is the baseline reproduction surface for AgenticTeam work, while prompt wording remains secondary to helper support, explicit workflow contracts, and tool/allowlist correctness.
+
 ## 2026-05-20
 - Shared project control remains in `STATE.md` for now, but ownership is now explicit and guarded.
   The incremental hardening sprint keeps the existing markdown state file instead of introducing a new control-plane store, but `STATE.md` is now treated as guarded shared control rather than a free-form note. Smith records only the pre-ack handoff state, Niaobe becomes the sole control owner on its first acknowledged transition, and `write_state.sh` rejects stale writes or worker-authored control updates through actor/owner checks.
@@ -334,3 +355,22 @@
 - Best-effort pulse visibility rule:
   Project progress pulses should use `extra_messages` with `delivery_mode=best_effort` and optional `dedupe_key` rather than inline delivery-recovery messaging.
   The runtime should queue those sends as standalone `send_message` jobs so milestone visibility stays fire-and-forget and delivery failures do not reopen or block the agent turn.
+- AgenticTeam runtime-owned tail rule:
+  For OpenClaw phase workers, prose prompts are not trusted to complete tail protocol steps.
+  Smith deterministic planning can route through runtime-owned `autoplan`; Niaobe child results route through `niaobe_run_task.sh child`; Morpheus completion enforces project Required Outputs before import/test; Oracle verification routes through `oracle_run_task.sh verify`.
+  Agent models provide judgment/content where needed, while runtime owns import, verification, project execution, report writing, state transitions, and deterministic PASS/DONE/BLOCKED envelopes.
+- Morpheus LangGraph pilot rule:
+  LangGraph adoption starts as an optional Morpheus-only completion engine behind `MORPHEUS_RUNTIME_ENGINE=langgraph`.
+  The graph must not replace OpenClaw envelopes, project helper scripts, Niaobe ownership, or the classic runtime by default.
+  Initial graph nodes stay deterministic and do not call the LLM; they only make the existing runtime tail explicit and testable.
+- Morpheus LangGraph default rule:
+  As of 2026-05-26, Morpheus' wrapper defaults to `MORPHEUS_RUNTIME_ENGINE=langgraph`.
+  The classic runtime remains available by explicitly setting `MORPHEUS_RUNTIME_ENGINE=classic`.
+  Future Morpheus repair work should extend the graph instead of adding more ad hoc completion branching.
+- Morpheus implementation-only repair rule:
+  After a LangGraph-owned `test_failed` completion attempt, Morpheus must run the runtime `repair` subcommand before the next `complete`.
+  The repair window is implementation-only: tests, docs, and manifests remain locked unless explicitly listed in `ALLOWED_REPAIR_PATHS`.
+  The graph should block test weakening and non-allowed artifact changes before re-running verification.
+- Morpheus repair validation rule:
+  Repair-loop changes should be validated with the dedicated `morpheus_forced_repair` phase canary before broader phase-suite or Fibonacci E2E runs.
+  A normal `morpheus_direct_implementation` PASS is not enough repair evidence because the model may pass on the first completion attempt.

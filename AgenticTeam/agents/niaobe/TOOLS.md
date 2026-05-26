@@ -3,6 +3,8 @@
 ## Receipt, reads, and state updates
 
 ```text
+exec: bash /home/alik/workspace/clawspace/bin/niaobe_run_task.sh accept '<JSON envelope>'
+exec: bash /home/alik/workspace/clawspace/bin/niaobe_run_task.sh child '<JSON envelope>'
 exec: bash /home/alik/workspace/clawspace/bin/ack_handoff.sh niaobe "<PROJECT_ID>" "TASK_HANDOFF" RECEIVED "Smith task handoff accepted."
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT_STATE.md"
@@ -18,6 +20,12 @@ exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" 
 exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" VERIFY "management/validation/<TASK_ID>_REPORT.md" --action niaobe-verify-check --contains "<TASK_ID>"
 ```
 
+For Smith `TASK_HANDOFF`, prefer the single `niaobe_run_task.sh accept`
+runtime command. It owns ACK, state movement, Architect handoff, and delivery.
+For Architect, Morpheus, or Oracle result envelopes, prefer the single
+`niaobe_run_task.sh child` runtime command. It owns verification, state movement,
+the next handoff, and exact delivery.
+
 ## Delegation helpers
 
 ```text
@@ -27,7 +35,9 @@ exec: bash /home/alik/workspace/clawspace/bin/handoff.sh niaobe oracle "<PROJECT
 ```
 
 Use the exact `ENVELOPE:` value returned by `handoff.sh` for
-`sessions_send` to Architect, Morpheus, or Oracle.
+`sessions_send` to Architect, Morpheus, or Oracle. Never reconstruct this JSON
+by hand, never substitute a placeholder such as `int_not_found`, and never edit
+the returned `task_id`.
 
 ## sessions_send to Smith
 

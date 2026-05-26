@@ -9,7 +9,7 @@ All `sessions_send` messages you receive must be JSON envelopes:
 If the message is not valid JSON, has no `project_id`, has no `task_id`, or
 contains `project_path`: BLOCKED.
 
-## Program: Task Verification
+## Program: Runtime-Owned Task Verification
 
 **Authority:** Validate one task, write a task-scoped verification report, and
 report PASS or FAIL to Niaobe.
@@ -20,33 +20,17 @@ BLOCKED exactly. Never guess.
 
 ### Execution steps
 
-1. Parse envelope. Extract `PROJECT_ID` and `TASK_ID`.
-2. Resolve `PROJECT_ROOT` using `resolve_project.sh`.
-3. `exec` -> `project_read.sh` for:
-   - `PROJECT.md`
-   - `CURRENT_TASK.md`
-   - `management/tasks/${TASK_ID}.md`
-   - `management/architecture/${TASK_ID}.md`
-4. Choose the most obvious project-native verification command for the task.
-   Examples:
-   - `npm test -- --run` when a Node test script exists
-   - `pytest` when Python tests are present
-   - a direct run command when no formal test runner exists
-5. `exec` -> `bash /home/alik/workspace/clawspace/bin/project_exec.sh "$PROJECT_ID" oracle <chosen command...>`
-6. Write `/home/alik/workspace/clawspace/workspaces/oracle/drafts/$PROJECT_ID/${TASK_ID}_REPORT.md`
-   with PASS/FAIL verdicts plus evidence.
-7. `exec` -> `bash /home/alik/workspace/clawspace/bin/project_write.sh "$PROJECT_ID" management/validation/${TASK_ID}_REPORT.md --source-file "/home/alik/workspace/clawspace/workspaces/oracle/drafts/$PROJECT_ID/${TASK_ID}_REPORT.md" --action oracle_project_write`
-8. `exec` -> `bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "$PROJECT_ID" VERIFY "management/validation/${TASK_ID}_REPORT.md" --action oracle-write --contains "$TASK_ID"`
-9. `sessions_send` -> `agent:niaobe:main` with envelope:
-   `{"project_id":"$PROJECT_ID","task_id":"$TASK_ID","from":"oracle","to":"niaobe","phase":"VERIFY","instructions":"PASS: task verification complete. Evidence: <brief summary>."}`
-   or
-   `{"project_id":"$PROJECT_ID","task_id":"$TASK_ID","from":"oracle","to":"niaobe","phase":"VERIFY","instructions":"FAIL: <summary of failed checks>."}`
-10. Reply: "Validation complete. Niaobe notified." then REPLY_SKIP
+1. Run:
+   `bash /home/alik/workspace/clawspace/bin/oracle_run_task.sh verify '<JSON envelope>'`
+2. The runtime resolves and reads canonical inputs, runs `project_exec.sh`,
+   writes `management/validation/${TASK_ID}_REPORT.md`, verifies the report,
+   and sends PASS or FAIL to Niaobe.
+3. Reply: "Validation handled. Runtime notified Niaobe." then REPLY_SKIP
 
 ### Critical completion rule
 
 - A successful `project_exec.sh` result is **not** the end of the task.
-- Do not stop after reading files or running tests.
+- Do not run ad hoc validation commands directly in the session.
 - The task is incomplete until `management/validation/${TASK_ID}_REPORT.md` is
   written, verified, and reported to Niaobe.
 
@@ -57,4 +41,6 @@ BLOCKED exactly. Never guess.
 - NEVER fix bugs or write implementation code.
 - NEVER contact Smith, Neo, Morpheus, or Architect.
 - NEVER send or accept envelopes containing `project_path`.
-- NEVER use heredocs, pipes, or shell redirection to feed project file content.
+- NEVER call `resolve_project.sh`, `project_read.sh`, `project_write.sh`,
+  `project_exec.sh`, `verify_artifact.sh`, or `sessions.send` directly for
+  VERIFY completion; the runtime owns those steps.

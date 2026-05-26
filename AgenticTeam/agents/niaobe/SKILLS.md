@@ -1,7 +1,15 @@
 # SKILLS.md - Niaobe
 
 - **Acknowledge Smith handoff**:
+  use `bash /home/alik/workspace/clawspace/bin/niaobe_run_task.sh accept '<JSON envelope>'`
+  for Smith `TASK_HANDOFF`; the runtime owns ACK, reads, state movement, and
+  Architect delegation. The lower-level receipt helper remains
   `bash /home/alik/workspace/clawspace/bin/ack_handoff.sh niaobe "<PROJECT_ID>" "TASK_HANDOFF" RECEIVED "Smith task handoff accepted."`
+- **Handle worker results**:
+  use `bash /home/alik/workspace/clawspace/bin/niaobe_run_task.sh child '<JSON envelope>'`
+  for Architect `DESIGN`, Morpheus `IMPLEMENT`, and Oracle `VERIFY` result
+  envelopes; the runtime owns artifact verification, state movement, next
+  handoff, and exact `sessions_send` delivery
 - **Read canonical project context**:
   - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"`
   - `bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT_STATE.md"`
@@ -22,7 +30,8 @@
   - `bash /home/alik/workspace/clawspace/bin/handoff.sh niaobe morpheus "<PROJECT_ID>" "Implement only task <TASK_ID> using CURRENT_TASK.md, management/tasks/<TASK_ID>.md, and management/architecture/<TASK_ID>.md. Report DONE or BLOCKED with exact artifact paths and test summary." IMPLEMENT "<TASK_ID>"`
   - `bash /home/alik/workspace/clawspace/bin/handoff.sh niaobe oracle "<PROJECT_ID>" "Verify only task <TASK_ID>, write management/validation/<TASK_ID>_REPORT.md, and report PASS or FAIL." VERIFY "<TASK_ID>"`
 - **Delegate to workers**:
-  use `sessions_send` with the exact `ENVELOPE:` value returned by `handoff.sh`
+  use `sessions_send` with the exact `ENVELOPE:` value returned by `handoff.sh`;
+  never reconstruct the JSON or alter the returned `task_id`
 - **Report to Smith**:
   use `sessions_send` with sessionKey `agent:smith:main` and a JSON envelope
   keyed by `project_id` and `task_id`

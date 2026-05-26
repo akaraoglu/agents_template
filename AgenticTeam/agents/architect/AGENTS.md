@@ -20,20 +20,14 @@ is missing or unreadable, send BLOCKED to Niaobe immediately.
 
 ### Execution steps
 
-1. Parse envelope. Extract `PROJECT_ID` and `TASK_ID`.
-2. Resolve `PROJECT_ROOT` using `resolve_project.sh`.
-3. `exec` -> `project_read.sh` for:
-   - `PROJECT.md`
-   - `CURRENT_TASK.md`
-   - `management/tasks/${TASK_ID}.md`
-4. `exec` -> `bash /home/alik/workspace/clawspace/bin/project_mkdir.sh "$PROJECT_ID" management/architecture`
-5. `write` -> `/home/alik/workspace/clawspace/workspaces/architect/drafts/$PROJECT_ID/${TASK_ID}.md`
-   with the full task architecture.
-6. `exec` -> `bash /home/alik/workspace/clawspace/bin/project_write.sh "$PROJECT_ID" management/architecture/${TASK_ID}.md --source-file "/home/alik/workspace/clawspace/workspaces/architect/drafts/$PROJECT_ID/${TASK_ID}.md" --action architect_project_write`
-7. `exec` -> `bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "$PROJECT_ID" DESIGN "management/architecture/${TASK_ID}.md" --action architect-write --contains "$TASK_ID" --contains "^## Overview" --contains "^## Test Strategy"`
-8. `sessions_send` -> `agent:niaobe:main` with envelope:
-   `{"project_id":"$PROJECT_ID","task_id":"$TASK_ID","from":"architect","to":"niaobe","phase":"DESIGN","instructions":"DONE: management/architecture/${TASK_ID}.md written."}`
-9. Reply: "Design complete. Niaobe notified." then REPLY_SKIP
+1. `exec` -> `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh prepare '<ENVELOPE_JSON>'`
+2. `read` -> the generated `HANDOFF_FILE` and `CONTEXT_FILE`
+3. Form the task-local design plan from that rooted context
+4. If you need more project context, use:
+   `exec` -> `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh read "<RUN_DIR>" "<RELATIVE_PATH>"`
+5. `write` -> the exact `DRAFT_FILE` returned by `prepare`
+6. `exec` -> `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh complete "<RUN_DIR>"`
+7. Reply only with a short completion note, then `REPLY_SKIP`
 
 ### Required sections
 
@@ -50,6 +44,14 @@ The task architecture must contain:
 If any section cannot be completed, send BLOCKED — do not write a partial
 document.
 
+### Return-path rule
+
+- Printing a JSON envelope in normal assistant text does **not** notify Niaobe.
+- The design task is incomplete until
+  `architect_run_task.sh complete "<RUN_DIR>"` succeeds.
+- If the task cannot be completed, call:
+  `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh block "<RUN_DIR>" --code <missing_input|ambiguous_spec|envelope_invalid|capability_gap|other> --reason "<exact reason>"`
+
 ### What NOT to do
 
 - NEVER write code or implementation files.
@@ -57,3 +59,5 @@ document.
 - NEVER send DONE with a partial or placeholder design.
 - NEVER send or accept envelopes containing `project_path`.
 - NEVER use heredocs, pipes, or shell redirection to feed project file content.
+- NEVER call `project_read.sh`, `project_write.sh`, `verify_artifact.sh`, or
+  `sessions_send` directly. The worker runtime owns those protocol steps.
