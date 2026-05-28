@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -13,7 +15,7 @@ if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
 from worker_contracts import ARCHITECT_CONTRACT, MORPHEUS_CONTRACT, SMITH_PLANNING_CONTRACT
-from morpheus_graph_runtime import complete_artifact_run_graph, print_repair_brief
+from agent_runner import complete_artifact_run_graph, print_repair_brief
 from niaobe_run_task import accept_task_handoff, continue_child_result
 from oracle_run_task import verify_task
 from worker_runtime import (
@@ -22,6 +24,9 @@ from worker_runtime import (
     complete_planning_run,
     complete_run,
     autoplan_required_planning_project,
+    main_for_contract,
+    main_for_artifact_contract,
+    main_for_planning_contract,
     parse_envelope,
     parse_planning_envelope,
     prepare_artifact_run,
@@ -54,6 +59,31 @@ def helper_ok_output(action: str) -> str:
         "retryable": False,
     }
     return f"OUTCOME_JSON: {json.dumps(payload, separators=(',', ':'))}\n"
+
+
+def valid_architect_draft() -> str:
+    return (
+        "\n".join(
+            [
+                "# T001",
+                "## Overview",
+                "Overview text.",
+                "## Approach",
+                "Approach text.",
+                "## File Changes",
+                "File changes text.",
+                "## Interfaces",
+                "Interfaces text.",
+                "## Risks",
+                "Risks text.",
+                "## Implementation Notes",
+                "Notes text.",
+                "## Test Strategy",
+                "Strategy text.",
+            ]
+        )
+        + "\n"
+    )
 
 
 class WorkerRuntimeTests(unittest.TestCase):
@@ -213,6 +243,30 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertIn("PROJECT.md", prepared.context_file.read_text(encoding="utf-8"))
 
     @mock.patch("worker_runtime.subprocess.run")
+    def test_architect_prepare_prints_work_order_and_template(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "architect",
+                "phase": "DESIGN",
+                "instructions": "Design the task.",
+            }
+        )
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            prepare_run(ARCHITECT_CONTRACT, envelope)
+
+        output = stdout.getvalue()
+        self.assertIn("WORK_ORDER_BEGIN", output)
+        self.assertIn("--- PROJECT.md ---", output)
+        self.assertIn("DRAFT_TEMPLATE_BEGIN", output)
+        self.assertIn("## Test Strategy", output)
+
+    @mock.patch("worker_runtime.subprocess.run")
     def test_complete_sends_done_after_import_and_verify(self, run_mock: mock.Mock) -> None:
         run_mock.side_effect = self._fake_run
         envelope = json.dumps(
@@ -226,33 +280,101 @@ class WorkerRuntimeTests(unittest.TestCase):
             }
         )
         prepared = prepare_run(ARCHITECT_CONTRACT, envelope)
-        prepared.draft_file.write_text(
-            "\n".join(
-                [
-                    "# T001",
-                    "## Overview",
-                    "Overview text.",
-                    "## Approach",
-                    "Approach text.",
-                    "## File Changes",
-                    "File changes text.",
-                    "## Interfaces",
-                    "Interfaces text.",
-                    "## Risks",
-                    "Risks text.",
-                    "## Implementation Notes",
-                    "Notes text.",
-                    "## Test Strategy",
-                    "Strategy text.",
-                ]
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        prepared.draft_file.write_text(valid_architect_draft(), encoding="utf-8")
         state = complete_run(ARCHITECT_CONTRACT, prepared.run_dir)
         self.assertEqual(state["status"], "sent")
         result = json.loads((prepared.run_dir / "result.json").read_text(encoding="utf-8"))
         self.assertEqual(result["payload"]["to"], "niaobe")
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_architect_cli_complete_uses_langgraph_runtime(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "architect",
+                "phase": "DESIGN",
+                "instructions": "Design the task.",
+            }
+        )
+        prepared = prepare_run(ARCHITECT_CONTRACT, envelope)
+        prepared.draft_file.write_text(valid_architect_draft(), encoding="utf-8")
+
+        exit_code = main_for_contract(ARCHITECT_CONTRACT, ["complete", str(prepared.run_dir)])
+
+        self.assertEqual(exit_code, 0)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "sent")
+        self.assertEqual(state["runtime_engine"], "langgraph")
+        result = json.loads((prepared.run_dir / "result.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["engine"], "langgraph")
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_architect_langgraph_first_invalid_draft_requests_repair(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "architect",
+                "phase": "DESIGN",
+                "instructions": "Design the task.",
+            }
+        )
+        prepared = prepare_run(ARCHITECT_CONTRACT, envelope)
+        prepared.draft_file.write_text("# T001\n## Overview\nOnly overview.\n", encoding="utf-8")
+
+        exit_code = main_for_contract(ARCHITECT_CONTRACT, ["complete", str(prepared.run_dir)])
+
+        self.assertEqual(exit_code, 20)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "repair_needed")
+        self.assertEqual(state["runtime_engine"], "langgraph")
+        self.assertEqual(state["last_error"]["code"], "verification_failed")
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_architect_langgraph_missing_draft_repair_then_complete(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "architect",
+                "phase": "DESIGN",
+                "instructions": "Design the task.",
+            }
+        )
+        prepared = prepare_run(ARCHITECT_CONTRACT, envelope)
+
+        first_exit = main_for_contract(ARCHITECT_CONTRACT, ["complete", str(prepared.run_dir)])
+
+        self.assertEqual(first_exit, 20)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "repair_needed")
+        self.assertEqual(state["last_error"]["code"], "missing_draft")
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            repair_exit = main_for_contract(ARCHITECT_CONTRACT, ["repair", str(prepared.run_dir)])
+
+        self.assertEqual(repair_exit, 0)
+        repair_output = stdout.getvalue()
+        self.assertIn("REPAIR_MODE=architecture_draft", repair_output)
+        self.assertIn("DRAFT_FILE=", repair_output)
+        self.assertIn("NEXT_REQUIRED=", repair_output)
+
+        prepared.draft_file.write_text(valid_architect_draft(), encoding="utf-8")
+        second_exit = main_for_contract(ARCHITECT_CONTRACT, ["complete", str(prepared.run_dir)])
+
+        self.assertEqual(second_exit, 0)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "sent")
+        self.assertEqual(state["runtime_engine"], "langgraph")
+        self.assertEqual(state["completion_attempts"], 2)
 
     @mock.patch("worker_runtime.subprocess.run")
     def test_complete_marks_verification_failed_when_required_heading_is_missing(self, run_mock: mock.Mock) -> None:
@@ -293,6 +415,7 @@ class WorkerRuntimeTests(unittest.TestCase):
             state_after_prepare["manifest_write_file"],
             str(Path(state_after_prepare["draft_write_root"]) / "manifest.json"),
         )
+        self.assertEqual(Path(state_after_prepare["draft_write_root"]).name, prepared.run_dir.name)
         self.assertEqual(state_after_prepare["required_output_paths"], ["README.md", "src/main.py", "tests/test_main.py"])
         artifacts = {
             "README.md": "# Demo\n",
@@ -327,6 +450,119 @@ class WorkerRuntimeTests(unittest.TestCase):
             if call.args and call.args[0][:2] == ["bash", str(self.bin_root / "ack_handoff.sh")]
         ]
         self.assertEqual(ack_calls, [])
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_morpheus_prepare_extracts_required_outputs_from_task_inputs(self, run_mock: mock.Mock) -> None:
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> mock.Mock:
+            if cmd[:2] == ["bash", str(self.bin_root / "project_read.sh")]:
+                requested = cmd[3]
+                content = {
+                    "PROJECT.md": "# Demo Project\n\nNo required output section here.\n",
+                    "CURRENT_TASK.md": "# Current Task\n",
+                    "management/tasks/T001.md": "\n".join(
+                        [
+                            "# Task T001",
+                            "",
+                            "## Required Outputs",
+                            "- README.md",
+                            "- src/main.py",
+                            "- tests/test_main.py",
+                            "",
+                        ]
+                    ),
+                    "management/architecture/T001.md": "# Architecture T001\n",
+                }[requested]
+                return mock.Mock(returncode=0, stdout=helper_read_output(requested, content), stderr="")
+            return self._fake_run(cmd, *args, **kwargs)
+
+        run_mock.side_effect = fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "morpheus",
+                "phase": "IMPLEMENT",
+                "instructions": "Implement the task.",
+            }
+        )
+
+        prepared = prepare_artifact_run(MORPHEUS_CONTRACT, envelope)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(state["required_output_paths"], ["README.md", "src/main.py", "tests/test_main.py"])
+        self.assertFalse(state["subteam_required"])
+        self.assertTrue(state["virtual_team_enabled"])
+        self.assertIn("planner_evidence_file", state["team"])
+        self.assertIn("tester_review_file", state["team"])
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_morpheus_prepare_prints_virtual_team_paths_without_spawn_blocks(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "morpheus",
+                "phase": "IMPLEMENT",
+                "instructions": "Implement the task.",
+            }
+        )
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            prepare_artifact_run(MORPHEUS_CONTRACT, envelope)
+
+        output = stdout.getvalue()
+        self.assertIn("TEAM_MODE=langgraph_virtual", output)
+        self.assertIn("PLANNER_EVIDENCE_FILE=", output)
+        self.assertIn("IMPLEMENTER_CHECKLIST_FILE=", output)
+        self.assertIn("TESTER_REVIEW_FILE=", output)
+        self.assertIn("ACTION_REQUIRED=", output)
+        self.assertIn("BLOCK_COMMAND=", output)
+        self.assertIn("NEXT_ACTIONS_BEGIN", output)
+        self.assertIn("WORK_ORDER_TRUNCATED=no", output)
+        self.assertNotIn("SUBTEAM_MODE=", output)
+        self.assertNotIn("SPAWN_TASK_BEGIN", output)
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_morpheus_prepare_marks_truncated_work_order(self, run_mock: mock.Mock) -> None:
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> mock.Mock:
+            if cmd[:2] == ["bash", str(self.bin_root / "project_read.sh")] and cmd[3] == "management/architecture/T001.md":
+                return mock.Mock(
+                    returncode=0,
+                    stdout=helper_read_output(
+                        "management/architecture/T001.md",
+                        "# Architecture T001\n\n" + ("Long implementation detail.\n" * 400),
+                    ),
+                    stderr="",
+                )
+            return self._fake_run(cmd, *args, **kwargs)
+
+        run_mock.side_effect = fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "morpheus",
+                "phase": "IMPLEMENT",
+                "instructions": "Implement the task.",
+            }
+        )
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            prepared = prepare_artifact_run(MORPHEUS_CONTRACT, envelope)
+
+        output = stdout.getvalue()
+        context_text = prepared.context_file.read_text(encoding="utf-8")
+        self.assertIn("WORK_ORDER_TRUNCATED=yes", output)
+        self.assertIn("If WORK_ORDER_TRUNCATED=yes", output)
+        self.assertIn("## Full Input Copies", context_text)
+        self.assertIn("full source", context_text)
+        self.assertLess(len(context_text), 5000)
 
     @mock.patch("worker_runtime.subprocess.run")
     def test_morpheus_artifact_complete_requires_project_outputs(self, run_mock: mock.Mock) -> None:
@@ -411,6 +647,86 @@ class WorkerRuntimeTests(unittest.TestCase):
         result = json.loads((prepared.run_dir / "result.json").read_text(encoding="utf-8"))
         self.assertEqual(result["engine"], "langgraph")
         self.assertTrue(result["payload"]["instructions"].startswith("DONE: Artifacts="))
+        self.assertEqual(state["planner_result"]["status"], "recorded")
+        self.assertEqual(state["implementer_result"]["status"], "recorded")
+        self.assertEqual(state["tester_result"]["status"], "approved")
+        self.assertIn("Planner Evidence", Path(state["team"]["planner_evidence_file"]).read_text(encoding="utf-8"))
+        self.assertIn("Tester Review", Path(state["team"]["tester_review_file"]).read_text(encoding="utf-8"))
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_morpheus_langgraph_complete_does_not_require_spawned_subteam_results(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        prepared = self._prepare_morpheus_artifacts()
+
+        state = complete_artifact_run_graph(MORPHEUS_CONTRACT, prepared.run_dir)
+
+        self.assertEqual(state["status"], "sent")
+        self.assertEqual(state["tester_result"]["status"], "approved")
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_morpheus_artifact_cli_uses_langgraph_even_if_classic_env_is_set(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        prepared = self._prepare_morpheus_artifacts()
+
+        with mock.patch.dict(os.environ, {"MORPHEUS_RUNTIME_ENGINE": "classic"}, clear=False):
+            exit_code = main_for_artifact_contract(MORPHEUS_CONTRACT, ["complete", str(prepared.run_dir)])
+
+        self.assertEqual(exit_code, 0)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "sent")
+        self.assertEqual(state["runtime_engine"], "langgraph")
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_morpheus_langgraph_missing_drafts_stay_recoverable_until_budget(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "morpheus",
+                "phase": "IMPLEMENT",
+                "instructions": "Implement the task.",
+            }
+        )
+        prepared = prepare_artifact_run(MORPHEUS_CONTRACT, envelope)
+
+        with self.assertRaises(WorkerRuntimeError):
+            complete_artifact_run_graph(MORPHEUS_CONTRACT, prepared.run_dir)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "repair_needed")
+        self.assertEqual(state["last_error"]["code"], "missing_draft")
+        self.assertEqual(state["repair_guard"]["mode"], "missing_outputs")
+        self.assertIn("manifest.json", state["repair_guard"]["missing_paths"])
+        self.assertIn("src/main.py", state["repair_guard"]["missing_paths"])
+        self.assertFalse((prepared.run_dir / "result.json").exists())
+
+        prepared.manifest_file.write_text(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {"path": "README.md"},
+                        {"path": "src/main.py"},
+                        {"path": "tests/test_main.py"},
+                    ],
+                    "test_command": ["python3", "-m", "unittest", "tests/test_main.py"],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(WorkerRuntimeError):
+            complete_artifact_run_graph(MORPHEUS_CONTRACT, prepared.run_dir)
+        state = json.loads((prepared.run_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "repair_needed")
+        self.assertEqual(state["completion_attempts"], 2)
+        self.assertEqual(state["repair_guard"]["mode"], "missing_outputs")
+        self.assertNotIn("manifest.json", state["repair_guard"]["missing_paths"])
+        self.assertEqual(
+            state["repair_guard"]["missing_paths"],
+            ["README.md", "src/main.py", "tests/test_main.py"],
+        )
+        self.assertFalse((prepared.run_dir / "result.json").exists())
 
     @mock.patch("worker_runtime.subprocess.run")
     def test_morpheus_langgraph_first_test_failure_requests_repair(self, run_mock: mock.Mock) -> None:
@@ -690,8 +1006,10 @@ class WorkerRuntimeTests(unittest.TestCase):
         state = verify_task(envelope)
 
         self.assertEqual(state["status"], "sent")
+        self.assertEqual(state["runtime_engine"], "langgraph")
         self.assertEqual(state["verdict"], "PASS")
         self.assertEqual(state["report"], "management/validation/T001_REPORT.md")
+        self.assertEqual(state["result_payload"]["engine"], "langgraph")
         write_calls = [
             call
             for call in run_mock.call_args_list
@@ -790,6 +1108,29 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(state["task_ids"], ["T001", "T002"])
         self.assertIn("management/tasks/T001.md", state["artifacts"])
         self.assertIn("management/tasks/T002.md", state["artifacts"])
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_smith_cli_autoplan_uses_langgraph_runtime(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "from": "neo",
+                "to": "smith",
+                "phase": "HANDOFF",
+                "instructions": "Create the deterministic 4-task plan.",
+            }
+        )
+
+        exit_code = main_for_planning_contract(SMITH_PLANNING_CONTRACT, ["autoplan", envelope])
+
+        self.assertEqual(exit_code, 0)
+        runs = sorted((self.workspace_root / "smith" / "runs" / "demo-project" / "planning").iterdir())
+        self.assertTrue(runs)
+        state = json.loads((runs[-1] / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["status"], "sent")
+        self.assertEqual(state["runtime_engine"], "langgraph")
+        self.assertEqual(state["task_ids"], ["T001", "T002"])
 
     @mock.patch("worker_runtime.subprocess.run")
     def test_smith_planning_first_verification_failure_sets_repair_needed(self, run_mock: mock.Mock) -> None:

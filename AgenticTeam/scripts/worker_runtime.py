@@ -21,6 +21,9 @@ from uuid import uuid4
 from worker_contracts import ArtifactWorkerContract, PlanningProjectContract, WorkerContract
 
 RUN_DEADLINE_SECONDS = 1800
+ARTIFACT_WORK_ORDER_MAX_CHARS = 2000
+ARTIFACT_CONTEXT_SOURCE_MAX_CHARS = 1200
+ARTIFACT_CONTEXT_MAX_CHARS = 3200
 
 
 class WorkerRuntimeError(RuntimeError):
@@ -67,6 +70,96 @@ def write_text(path: Path, content: str) -> None:
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def write_morpheus_virtual_team_contracts(
+    *,
+    run_dir: Path,
+    context_file: Path,
+    draft_write_root: Path,
+    manifest_write_file: Path,
+    required_outputs: list[str],
+    suggested_test_command: list[str],
+) -> dict[str, str]:
+    team_dir = run_dir / "team"
+    team_dir.mkdir(parents=True, exist_ok=True)
+    planner_note = team_dir / "planner.md"
+    implementer_checklist = team_dir / "implementer_checklist.md"
+    tester_review = team_dir / "tester_review.md"
+    required = required_outputs or ["README.md"]
+    test_command_text = " ".join(suggested_test_command)
+    write_text(
+        planner_note,
+        "\n".join(
+            [
+                "# Planner Evidence",
+                "",
+                "Status: pending",
+                "",
+                "## Required Outputs",
+                *[f"- {path}" for path in required],
+                "",
+                "## Artifact Plan",
+                *[f"- {path}: pending implementation responsibility" for path in required],
+                "",
+                "## Test Command",
+                test_command_text,
+                "",
+                "## Acceptance Checks",
+                "- pending runtime completion",
+                "",
+                f"Work order: {context_file}",
+            ]
+        )
+        + "\n",
+    )
+    write_text(
+        implementer_checklist,
+        "\n".join(
+            [
+                "# Implementer Checklist",
+                "",
+                "Status: pending",
+                "",
+                "Required outputs:",
+                *[f"- {path}" for path in required],
+                "",
+                f"Draft root: {draft_write_root}",
+                f"Manifest: {manifest_write_file}",
+                f"Test command: {test_command_text}",
+            ]
+        )
+        + "\n",
+    )
+    write_text(
+        tester_review,
+        "\n".join(
+            [
+                "# Tester Review",
+                "",
+                "Status: pending",
+                "",
+                "## Reviewed Artifacts",
+                *[f"- {path}" for path in required],
+                "",
+                "## Test Command",
+                test_command_text,
+                "",
+                "## Findings",
+                "- pending runtime completion",
+                "",
+                f"Draft root: {draft_write_root}",
+                f"Manifest: {manifest_write_file}",
+            ]
+        )
+        + "\n",
+    )
+    return {
+        "team_dir": str(team_dir),
+        "planner_evidence_file": str(planner_note),
+        "implementer_checklist_file": str(implementer_checklist),
+        "tester_review_file": str(tester_review),
+    }
 
 
 def ensure_directory_alias(target: Path, alias: Path) -> Path:
@@ -344,7 +437,23 @@ def build_phase_run_dir(role: str, project_id: str, phase_slug: str) -> Path:
     return workspace_root() / role / "runs" / project_id / phase_slug / run_id
 
 
-def build_context_markdown(envelope: dict[str, str], inputs: list[dict[str, str]]) -> str:
+def truncate_context_preview(content: str, *, max_chars: int, trailer: str) -> tuple[str, bool]:
+    text = content.rstrip()
+    if len(text) <= max_chars:
+        return text, False
+    reserve = max(80, len(trailer) + 2)
+    clipped = text[: max_chars - reserve].rstrip()
+    return clipped + trailer, True
+
+
+def build_context_markdown(
+    envelope: dict[str, str],
+    inputs: list[dict[str, str]],
+    *,
+    source_max_chars: int | None = None,
+    total_max_chars: int | None = None,
+    include_full_input_index: bool = False,
+) -> str:
     lines = [
         "# Worker Context",
         "",
@@ -356,28 +465,68 @@ def build_context_markdown(envelope: dict[str, str], inputs: list[dict[str, str]
         "## Rooted Inputs",
         "",
     ]
+    if include_full_input_index:
+        lines.extend(["## Full Input Copies", ""])
+        for item in inputs:
+            audit_copy = item.get("audit_copy")
+            if audit_copy:
+                lines.append(f"- `{item['path']}` -> `{audit_copy}`")
+        lines.extend(["", "## Source Excerpts", ""])
+    current_length = len("\n".join(lines))
+    remaining_inputs = False
     for item in inputs:
+        content = item["content"].rstrip()
+        if source_max_chars:
+            trailer = "\n\n[truncated; read the matching full input copy above if you need the full source]"
+            content, _ = truncate_context_preview(content, max_chars=source_max_chars, trailer=trailer)
+        block_lines = [f"## Source: {item['path']}", "", content, ""]
+        block_text = "\n".join(block_lines)
+        if total_max_chars and current_length + len(block_text) > total_max_chars:
+            remaining_inputs = True
+            remaining = total_max_chars - current_length
+            if remaining > 240:
+                trailer = "\n\n[context truncated; read the matching full input copy above if you need more detail]"
+                clipped, _ = truncate_context_preview(content, max_chars=remaining - 64, trailer=trailer)
+                block_lines = [f"## Source: {item['path']}", "", clipped, ""]
+                lines.extend(block_lines)
+            break
+        lines.extend(block_lines)
+        current_length += len(block_text)
+    if remaining_inputs:
         lines.extend(
             [
-                f"## Source: {item['path']}",
-                "",
-                item["content"].rstrip(),
+                "[additional rooted inputs omitted from CONTEXT_FILE; use the full input copy list above for targeted follow-up reads]",
                 "",
             ]
         )
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_work_order_summary(inputs: list[dict[str, str]], *, max_chars: int = 5000) -> str:
+def build_work_order_summary(inputs: list[dict[str, str]], *, max_chars: int = 5000) -> tuple[str, bool]:
     lines = ["WORK_ORDER_BEGIN"]
     for item in inputs:
         lines.append(f"--- {item['path']} ---")
         lines.append(item["content"].strip())
         lines.append("")
     text = "\n".join(lines).rstrip()
+    truncated = False
     if len(text) > max_chars:
+        truncated = True
         text = text[: max_chars - 80].rstrip() + "\n\n[truncated; use CONTEXT_FILE only if more detail is required]"
-    return text + "\nWORK_ORDER_END"
+    return text + "\nWORK_ORDER_END", truncated
+
+
+def build_worker_draft_template(contract: WorkerContract, *, task_id: str) -> str:
+    headings = [
+        pattern.removeprefix("^## ")
+        for pattern in contract.render_verify_patterns(task_id=task_id)
+        if pattern.startswith("^## ")
+    ]
+    lines = ["DRAFT_TEMPLATE_BEGIN", f"# {task_id} Architecture", ""]
+    for heading in headings:
+        lines.extend([f"## {heading}", "", f"{heading} content for {task_id}.", ""])
+    lines.append("DRAFT_TEMPLATE_END")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def prepare_run(contract: WorkerContract, envelope_raw: str) -> PreparedRun:
@@ -438,7 +587,16 @@ def prepare_run(contract: WorkerContract, envelope_raw: str) -> PreparedRun:
             write_text(audit_copy, content if content.endswith("\n") else content + "\n")
             inputs.append({"path": relative_path, "content": content, "audit_copy": str(audit_copy)})
 
-        write_text(context_file, build_context_markdown(envelope, inputs))
+        write_text(
+            context_file,
+            build_context_markdown(
+                envelope,
+                inputs,
+                source_max_chars=ARTIFACT_CONTEXT_SOURCE_MAX_CHARS,
+                total_max_chars=ARTIFACT_CONTEXT_MAX_CHARS,
+                include_full_input_index=True,
+            ),
+        )
         handoff_payload = {
             "run_dir": str(run_dir),
             "context_file": str(context_file),
@@ -471,6 +629,9 @@ def prepare_run(contract: WorkerContract, envelope_raw: str) -> PreparedRun:
     print(f"CONTEXT_FILE={context_file}")
     print(f"DRAFT_FILE={draft_file}")
     print(f"NEXT_REQUIRED=bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\"")
+    work_order_text, _ = build_work_order_summary(inputs)
+    print(work_order_text)
+    print(build_worker_draft_template(contract, task_id=envelope["task_id"]))
     return PreparedRun(run_dir=run_dir, handoff_file=handoff_file, context_file=context_file, draft_file=draft_file)
 
 
@@ -566,7 +727,7 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
     manifest_file = draft_dir / contract.manifest_file_name
     draft_write_root = ensure_directory_alias(
         draft_dir,
-        workspace_root() / contract.role / "draft-aliases" / "current",
+        workspace_root() / contract.role / "draft-aliases" / run_dir.name,
     )
     manifest_write_file = draft_write_root / contract.manifest_file_name
     handoff_file = run_dir / "handoff.json"
@@ -642,20 +803,38 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
 
         required_output_paths: list[str] = []
         for item in inputs:
-            if item["path"] == "PROJECT.md":
-                required_output_paths = [
-                    normalize_artifact_path(path)
-                    for path in extract_required_outputs(item["content"])
-                ]
-                break
+            for path in extract_required_outputs(item["content"]):
+                normalized = normalize_artifact_path(path)
+                if normalized not in required_output_paths:
+                    required_output_paths.append(normalized)
         manifest_artifacts = required_output_paths or ["README.md"]
         suggested_test_command = (
             ["python3", "-m", "unittest", "tests/test_main.py"]
             if "tests/test_main.py" in manifest_artifacts
             else ["python3", "-m", "unittest"]
         )
+        team_contracts: dict[str, str] = {}
+        virtual_team_enabled = contract.role == "morpheus"
+        if virtual_team_enabled:
+            team_contracts = write_morpheus_virtual_team_contracts(
+                run_dir=run_dir,
+                context_file=context_file,
+                draft_write_root=draft_write_root,
+                manifest_write_file=manifest_write_file,
+                required_outputs=manifest_artifacts,
+                suggested_test_command=suggested_test_command,
+            )
 
-        write_text(context_file, build_context_markdown(envelope, inputs))
+        write_text(
+            context_file,
+            build_context_markdown(
+                envelope,
+                inputs,
+                source_max_chars=ARTIFACT_CONTEXT_SOURCE_MAX_CHARS,
+                total_max_chars=ARTIFACT_CONTEXT_MAX_CHARS,
+                include_full_input_index=True,
+            ),
+        )
         handoff_payload = {
             "run_dir": str(run_dir),
             "context_file": str(context_file),
@@ -672,6 +851,7 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
                 "artifacts": [{"path": path} for path in manifest_artifacts],
                 "test_command": suggested_test_command,
             },
+            "team": team_contracts,
             "next_command": f"bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\"",
         }
         write_json(handoff_file, handoff_payload)
@@ -683,6 +863,11 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
             draft_write_root=str(draft_write_root),
             manifest_write_file=str(manifest_write_file),
             required_output_paths=required_output_paths,
+            subteam_required=False,
+            subteam={},
+            virtual_team_enabled=virtual_team_enabled,
+            team=team_contracts,
+            team_test_command=suggested_test_command,
             inputs=[{"path": item["path"], "audit_copy": item["audit_copy"]} for item in inputs],
             last_error=None,
         )
@@ -703,8 +888,34 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
     prepared_state = load_state(run_dir)
     if prepared_state.get("required_output_paths"):
         print("REQUIRED_OUTPUTS=" + ", ".join(prepared_state["required_output_paths"]))
+    if prepared_state.get("virtual_team_enabled"):
+        team = prepared_state.get("team") if isinstance(prepared_state.get("team"), dict) else {}
+        print("TEAM_MODE=langgraph_virtual")
+        for key in (
+            "planner_evidence_file",
+            "implementer_checklist_file",
+            "tester_review_file",
+        ):
+            if team.get(key):
+                print(f"{key.upper()}={team[key]}")
+    block_command = (
+        f"bash {live_bin_root() / (contract.role + '_run_task.sh')} block "
+        f"\"{run_dir}\" --code \"<code>\" --reason \"<exact reason>\""
+    )
+    print(f"BLOCK_COMMAND={block_command}")
     print(f"NEXT_REQUIRED=bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\"")
-    print(build_work_order_summary(inputs))
+    print("ACTION_REQUIRED=Do not stop after prepare. Either write drafts plus manifest and run NEXT_REQUIRED, or run BLOCK_COMMAND.")
+    print("WORK_ORDER_GUIDANCE=Use WORK_ORDER as a preview only. If WORK_ORDER_TRUNCATED=yes or details are missing, read CONTEXT_FILE before drafting. If a source excerpt there is still truncated, read only the matching full input copy you need.")
+    print("NEXT_ACTIONS_BEGIN")
+    print("1. If WORK_ORDER_TRUNCATED=yes or required details are missing, read CONTEXT_FILE. If an excerpt there is truncated, read only the matching full input copy you need.")
+    print("2. Write every REQUIRED_OUTPUTS path under DRAFT_WRITE_ROOT.")
+    print("3. Write MANIFEST_WRITE_FILE with the artifact list and test_command.")
+    print("4. Run NEXT_REQUIRED only after every required draft and MANIFEST_WRITE_FILE exist.")
+    print("5. If you cannot continue from the available inputs, run BLOCK_COMMAND with an exact reason.")
+    print("NEXT_ACTIONS_END")
+    work_order_text, work_order_truncated = build_work_order_summary(inputs, max_chars=ARTIFACT_WORK_ORDER_MAX_CHARS)
+    print(f"WORK_ORDER_TRUNCATED={'yes' if work_order_truncated else 'no'}")
+    print(work_order_text)
     return PreparedArtifactRun(
         run_dir=run_dir,
         handoff_file=handoff_file,
@@ -839,7 +1050,8 @@ def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -
     print(f"DRAFT_WRITE_ROOT={draft_write_root}")
     print(f"MANIFEST_WRITE_FILE={manifest_write_file}")
     print(f"NEXT_REQUIRED=bash {live_bin_root() / 'smith_plan_project.sh'} complete \"{run_dir}\"")
-    print(build_work_order_summary(inputs))
+    work_order_text, _ = build_work_order_summary(inputs)
+    print(work_order_text)
     return PreparedArtifactRun(
         run_dir=run_dir,
         handoff_file=handoff_file,
@@ -1842,12 +2054,19 @@ def build_parser(contract: WorkerContract) -> argparse.ArgumentParser:
     prepare.add_argument("envelope_json", nargs="?")
     prepare.add_argument("--envelope-file")
 
+    run_parser = subparsers.add_parser("run")
+    run_parser.add_argument("envelope_json", nargs="?")
+    run_parser.add_argument("--envelope-file")
+
     read_parser = subparsers.add_parser("read")
     read_parser.add_argument("run_dir")
     read_parser.add_argument("relative_path")
 
     complete = subparsers.add_parser("complete")
     complete.add_argument("run_dir")
+
+    repair = subparsers.add_parser("repair")
+    repair.add_argument("run_dir")
 
     block = subparsers.add_parser("block")
     block.add_argument("run_dir")
@@ -1916,10 +2135,24 @@ def main_for_contract(contract: WorkerContract, argv: list[str] | None = None) -
     try:
         if args.command == "prepare":
             prepare_run(contract, read_envelope_arg(args))
+        elif args.command == "run":
+            prepare_run(contract, read_envelope_arg(args))
         elif args.command == "read":
             sys.stdout.write(read_run(contract, Path(args.run_dir), args.relative_path))
         elif args.command == "complete":
-            complete_run(contract, Path(args.run_dir))
+            if contract.role == "architect":
+                from agent_runner import complete_run_graph
+
+                complete_run_graph(contract, Path(args.run_dir))
+            else:
+                complete_run(contract, Path(args.run_dir))
+        elif args.command == "repair":
+            if contract.role == "architect":
+                from agent_runner import complete_run_graph
+
+                complete_run_graph(contract, Path(args.run_dir))
+            else:
+                raise WorkerRuntimeError(f"{contract.role} does not support repair", code="envelope_invalid")
         elif args.command == "block":
             block_run(contract, Path(args.run_dir), code=args.code, reason=args.reason)
         else:
@@ -1937,11 +2170,22 @@ def main_for_planning_contract(contract: PlanningProjectContract, argv: list[str
         if args.command == "prepare":
             envelope_raw = read_envelope_arg(args)
             if should_autoplan_planning_envelope(contract, envelope_raw):
-                autoplan_required_planning_project(contract, envelope_raw)
+                if contract.role == "smith":
+                    from smith_graph_runtime import autoplan_required_planning_project_graph
+
+                    autoplan_required_planning_project_graph(contract, envelope_raw)
+                else:
+                    autoplan_required_planning_project(contract, envelope_raw)
             else:
                 prepare_planning_run(contract, envelope_raw)
         elif args.command == "autoplan":
-            autoplan_required_planning_project(contract, read_envelope_arg(args))
+            envelope_raw = read_envelope_arg(args)
+            if contract.role == "smith":
+                from smith_graph_runtime import autoplan_required_planning_project_graph
+
+                autoplan_required_planning_project_graph(contract, envelope_raw)
+            else:
+                autoplan_required_planning_project(contract, envelope_raw)
         elif args.command == "read":
             sys.stdout.write(read_run(contract, Path(args.run_dir), args.relative_path))  # type: ignore[arg-type]
         elif args.command == "complete":
@@ -1965,19 +2209,19 @@ def main_for_artifact_contract(contract: ArtifactWorkerContract, argv: list[str]
         elif args.command == "read":
             sys.stdout.write(read_run(contract, Path(args.run_dir), args.relative_path))  # type: ignore[arg-type]
         elif args.command == "complete":
-            if contract.role == "morpheus" and os.environ.get("MORPHEUS_RUNTIME_ENGINE", "classic").strip().lower() == "langgraph":
-                from morpheus_graph_runtime import complete_artifact_run_graph
+            if contract.role == "morpheus":
+                from agent_runner import complete_artifact_run_graph
 
                 complete_artifact_run_graph(contract, Path(args.run_dir))
             else:
                 complete_artifact_run(contract, Path(args.run_dir))
         elif args.command == "repair":
-            if contract.role == "morpheus" and os.environ.get("MORPHEUS_RUNTIME_ENGINE", "classic").strip().lower() == "langgraph":
-                from morpheus_graph_runtime import print_repair_brief
+            if contract.role == "morpheus":
+                from agent_runner import complete_artifact_run_graph
 
-                print_repair_brief(contract, Path(args.run_dir))
+                complete_artifact_run_graph(contract, Path(args.run_dir))
             else:
-                raise WorkerRuntimeError("repair is only available for Morpheus LangGraph runtime", code="unsupported_command")
+                raise WorkerRuntimeError("repair is only available for Morpheus", code="unsupported_command")
         elif args.command == "block":
             block_run(contract, Path(args.run_dir), code=args.code, reason=args.reason)  # type: ignore[arg-type]
         else:

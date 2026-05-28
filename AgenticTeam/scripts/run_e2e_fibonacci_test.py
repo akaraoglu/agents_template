@@ -183,6 +183,7 @@ def collect_faults(project_id: str, project_dir: Path, state_text: str, *, timed
     waiting_for = parse_state_field(state_text, "waiting_for") or "missing"
     task_phase = parse_state_field(state_text, "task_phase") or "missing"
     blocked_reason = parse_state_field(state_text, "blocked_reason") or "none"
+    morpheus_worker = load_latest_worker_state(project_id, "morpheus")
 
     if timed_out:
         faults.append(
@@ -202,6 +203,17 @@ def collect_faults(project_id: str, project_dir: Path, state_text: str, *, timed
     missing_outputs = [path for path in REQUIRED_OUTPUTS if not (project_dir / path).exists()]
     if missing_outputs:
         faults.append("Missing required outputs: " + ", ".join(missing_outputs) + ".")
+        if (
+            waiting_for == "morpheus"
+            and task_phase == "IMPLEMENT"
+            and isinstance(morpheus_worker, dict)
+            and str(morpheus_worker.get("status", "")).strip() == "awaiting_artifacts"
+            and not morpheus_worker.get("last_error")
+        ):
+            faults.append(
+                "Morpheus prepare succeeded but no draft artifacts were produced afterward; "
+                "worker state is awaiting_artifacts with no runtime error."
+            )
 
     reports = validation_report_paths(project_dir)
     if not reports:
@@ -235,6 +247,7 @@ def format_report(project_id: str, project_dir: Path, state_text: str, faults: l
     task_phase = parse_state_field(state_text, "task_phase") or "missing"
     blocked_reason = parse_state_field(state_text, "blocked_reason") or "none"
     architect_worker = load_latest_worker_state(project_id, "architect")
+    morpheus_worker = load_latest_worker_state(project_id, "morpheus")
 
     lines = [
         "# Fibonacci E2E Report",
@@ -265,6 +278,20 @@ def format_report(project_id: str, project_dir: Path, state_text: str, faults: l
                 f"- **output_path**: `{architect_worker.get('output_path', 'missing')}`",
                 f"- **state_file**: `{architect_worker.get('state_file', 'missing')}`",
                 f"- **last_error**: `{architect_worker.get('last_error')}`",
+            ]
+        )
+    if morpheus_worker:
+        lines.extend(
+            [
+                "",
+                "## Latest Morpheus Worker State",
+                "",
+                f"- **status**: `{morpheus_worker.get('status')}`",
+                f"- **task_id**: `{morpheus_worker.get('task_id')}`",
+                f"- **draft_write_root**: `{morpheus_worker.get('draft_write_root')}`",
+                f"- **manifest_write_file**: `{morpheus_worker.get('manifest_write_file')}`",
+                f"- **state_file**: `{morpheus_worker.get('state_file')}`",
+                f"- **last_error**: `{morpheus_worker.get('last_error')}`",
             ]
         )
     return "\n".join(lines) + "\n"

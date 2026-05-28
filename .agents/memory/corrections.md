@@ -141,3 +141,51 @@
 - Morpheus repair parser mismatch:
   The first live repair-mode run emitted the right `WORKER_RUNTIME_REPAIR_REQUIRED` / `NEXT_REQUIRED` flow, but the live helper rejected `repair` because the subcommand was added to the generic parser instead of the artifact-contract parser.
   Correction: add `repair` to `build_artifact_parser`, verify `morpheus_run_task.py --help` includes `{prepare,read,complete,repair,block}`, and keep a focused test that the repair brief only works after `repair_needed` state.
+- Phase-suite quiescence bug:
+  The suite preflight treated stable `running` or `timeout` sessions as non-quiescent even when their transcript line counts stopped changing, creating false hard failures after useful work had already completed.
+  Correction: `wait_for_session_quiescence` should count stable no-line-change polls regardless of status, while the suite records stale sessions as warnings when sync drift is clean and sessions are inert.
+- Oracle canary timing bug:
+  The Oracle isolated canary could observe the validation report before the graph had sent its final result and updated worker state, producing a timing-sensitive false failure.
+  Correction: wait for terminal Oracle worker state/result evidence, not just report-file existence.
+- Architect E2E stall:
+  After isolated Architect LangGraph canary PASS, the Fibonacci E2E still stalled with Architect state `awaiting_draft` and no `management/architecture/T001.md`.
+  Correction: classify this as a live Architect agent-turn/activation problem, not an Oracle or Morpheus runtime-tail failure; fix and re-run isolated Fibonacci before moving LangGraph adoption to Smith or Niaobe.
+- Architect stale prompt surfaces:
+  Updating only Architect `AGENTS.md` and `TOOLS.md` was not enough; live Architect also consumed `.openclaw/agents/architect/agent/AGENT.md` and `SKILLS.md`, which still advertised the old `prepare` flow.
+  Correction: keep all four Architect prompt surfaces aligned on `run -> write(path, content) -> complete -> repair if requested`, and grep all live/source prompt files for stale `prepare` guidance before E2E classification.
+- Smith initial planning fallback risk:
+  Leaving `prepare` prominent in Smith prompt surfaces lets the model bypass deterministic `autoplan` and produce incomplete planning artifacts, which can stall E2E before Niaobe.
+  Correction: make `autoplan` the only first instruction for Neo->Smith initial planning; manual drafting should continue only from an `autoplan` no-Required-Plan fallback, never by re-running `prepare`.
+- Morpheus missing-output recovery gap:
+  The Fibonacci E2E failure showed Morpheus could call `complete` before writing all required drafts, then keep writing after the runtime had already sent BLOCKED.
+  Correction: missing drafts now stay in a shared self-healing `missing_outputs` repair state until a retry budget is exhausted, and Morpheus uses run-specific draft aliases to isolate late writes.
+- Morpheus required-output extraction gap:
+  The forced repair canary initially stalled because `REQUIRED_OUTPUTS` was absent when outputs were listed in `management/tasks/T001.md` rather than `PROJECT.md`.
+  Correction: artifact prepare now extracts required outputs from all rooted inputs; the forced repair canary then reached and passed the intended test-failure repair loop.
+- Morpheus stale-session production gap:
+  After several live canary turns in the same main session, Morpheus began preparing correctly but stopping with partial or empty output before writing all drafts or calling `complete`.
+  Correction: do not move this pattern to Architect yet; the next generic fix should address session freshness/rotation or a watchdog/resume loop for `awaiting_artifacts` runs that never reach runtime completion.
+- OpenClaw canary session-key gap:
+  Arbitrary fresh keys such as `agent:morpheus:canary:<project_id>` fail with `GatewayClientRequestError: session not found` because `sessions.send` requires an existing registered session key.
+  Correction: rotate the existing main key by archiving the old entry and reseeding a clean `agent:<role>:main` entry; removing the key entirely also breaks `send_envelope.sh`.
+- Stable-running quiescence false positive:
+  Treating unchanged transcript line counts as drained regardless of status can hide an agent that is still marked `running`.
+  Correction: `wait_for_session_quiescence` should count stability only when the current session status is `done` or `idle`; stable `running` should time out or be stopped/rotated explicitly.
+- Morpheus self-authored test inconsistency gap:
+  With a rotated clean session, Morpheus produced all required files but generated tests whose expected word counts contradicted simple whitespace counting and the seeded architecture's `main(argv)` contract, then repeated the same implementation during repair.
+  Correction: the next Morpheus self-healing slice should distinguish implementation failures from self-authored test/spec inconsistencies before locking repair to implementation-only changes.
+- Morpheus subagent placeholder task gap:
+  The first subteam canary spawned Planner with literal placeholder names like `PLANNER_TASK_FILE`, then sent a separate follow-up message with real paths and stopped after a summary.
+  Correction: runtime prepare now prints exact `PLANNER_SPAWN_TASK`, `IMPLEMENTER_SPAWN_TASK`, and `TESTER_SPAWN_TASK` blocks with absolute paths; prompts forbid placeholder spawns followed by `sessions_send`.
+- Morpheus subagent write-compliance gap:
+  After exact spawn blocks, Implementer eventually wrote artifacts, but Planner did not produce `planner_result.json`; the LangGraph runtime blocked with `planner_result_missing`.
+  Correction: the next slice should make subagent completion file-backed by construction, either through a runtime helper/ack command or a main-session watchdog that verifies each subteam result file immediately after child completion and respawns only the failed role with a bounded retry budget.
+- Morpheus subagent Markdown attempt gap:
+  JSON planner/tester results were too brittle and would invite overwrites during repair.
+  Correction: Planner and Tester now use append-only Markdown attempts with runtime-owned `latest.json` pointers; `check-subteam` validates the attempt before advancing the pointer and allocates a new numbered attempt for invalid results.
+- Morpheus subagent execution gap:
+  Live canaries show spawned subagents can receive a full role/task block but still reply with intent ("I will execute") instead of writing the requested file.
+  Correction: prompts now avoid the unavailable `sessions_yield` tool and use automatic child completion events, but the next runtime slice should not depend on child prose as completion evidence; it should require a file-backed child ack or provide a runtime-mediated child execution path.
+- Morpheus virtual-team simplification:
+  Spawned Planner/Implementer/Tester sessions added protocol surface but did not reliably produce required files, so they made IMPLEMENT less stable instead of more self-healing.
+  Correction: keep Morpheus in one main session and let LangGraph record planner/implementer/tester evidence as virtual team nodes. Treat any future spawned-agent reintroduction as a separate capability project requiring runtime-grounded file/tool execution, not as the default Morpheus path.

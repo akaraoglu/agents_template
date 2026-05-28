@@ -9,6 +9,7 @@ SCRIPT_ROOT = Path(__file__).resolve().parents[1] / "AgenticTeam" / "scripts"
 if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
+import canaries.common as common
 from canaries.common import classify_failure, first_failed_invariant, parse_state_field, token_from_paths
 from canaries.common import build_delivery_evidence, detect_empty_stop, extract_inbound_project_ids
 
@@ -110,6 +111,43 @@ class CanaryCommonTests(unittest.TestCase):
         )
         self.assertEqual(evidence["contaminated"], "yes")
         self.assertEqual(evidence["unexpected_project_ids_seen"], ["canary-b"])
+
+    def test_rotate_main_session_archives_registry_and_keeps_transcripts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sessions_dir = root / "agents" / "morpheus" / "sessions"
+            sessions_dir.mkdir(parents=True)
+            session_file = sessions_dir / "session-1.jsonl"
+            trajectory_file = sessions_dir / "session-1.trajectory.jsonl"
+            session_file.write_text('{"type":"message"}\n', encoding="utf-8")
+            trajectory_file.write_text('{"type":"trace"}\n', encoding="utf-8")
+            sessions_json = sessions_dir / "sessions.json"
+            sessions_json.write_text(
+                '{"agent:morpheus:main":{"sessionId":"session-1","sessionFile":"'
+                + str(session_file)
+                + '","status":"done","sessionStartedAt":1,"updatedAt":2}}\n',
+                encoding="utf-8",
+            )
+            original_root = common.OPENCLAW_ROOT
+            common.OPENCLAW_ROOT = root
+            try:
+                result = common.rotate_main_session("morpheus", reason="canary-test")
+            finally:
+                common.OPENCLAW_ROOT = original_root
+
+            self.assertTrue(result["rotated"])
+            updated = common.load_json(sessions_json)
+            self.assertIn("agent:morpheus:main", updated)
+            self.assertNotEqual(updated["agent:morpheus:main"]["sessionId"], "session-1")
+            self.assertEqual(updated["agent:morpheus:main"]["status"], "done")
+            self.assertTrue(Path(updated["agent:morpheus:main"]["sessionFile"]).exists())
+            self.assertTrue(session_file.exists())
+            self.assertTrue(trajectory_file.exists())
+            archive_dir = Path(result["archive_dir"])
+            self.assertTrue((archive_dir / "sessions.json").exists())
+            self.assertTrue((archive_dir / "session-1.jsonl").exists())
+            self.assertTrue((archive_dir / "session-1.trajectory.jsonl").exists())
+            self.assertTrue((archive_dir / "rotation.json").exists())
 
 
 if __name__ == "__main__":

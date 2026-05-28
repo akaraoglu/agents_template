@@ -4,20 +4,18 @@
 
 ```text
 exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh autoplan "<ENVELOPE_JSON>"
-exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh prepare "<ENVELOPE_JSON>"
-read: <HANDOFF_FILE>
-read: <CONTEXT_FILE>
 exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh read "<RUN_DIR>" "<RELATIVE_PATH>"
-write: <DRAFT_WRITE_ROOT>/<project_relative_planning_path>
-write: <MANIFEST_WRITE_FILE>
+write: path=<DRAFT_WRITE_ROOT>/<project_relative_planning_path> content=<planning markdown>
+write: path=<MANIFEST_WRITE_FILE> content=<manifest json>
 exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh complete "<RUN_DIR>"
 exec: bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh block "<RUN_DIR>" --code "<CODE>" --reason "<EXACT_REASON>"
 ```
 
-For the initial Neo -> Smith planning handoff, use only the printed `RUN_DIR`,
-`DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`. Do not reconstruct them from the project id.
-If the project includes an explicit `## Required Plan`, prefer `autoplan`; it owns
-the deterministic plan artifacts and Niaobe handoff.
+For the initial Neo -> Smith planning handoff, call `autoplan` first. If it
+prints `RESULT_FILE=...`, stop; it already owns the deterministic plan artifacts
+and Niaobe handoff. If it reports no deterministic `## Required Plan`, continue
+from its printed `RUN_DIR`, `DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`. Do
+not run `prepare` again and do not reconstruct paths from the project id.
 Use exact planning draft paths such as:
 
 - `<DRAFT_WRITE_ROOT>/management/PLAN.md`

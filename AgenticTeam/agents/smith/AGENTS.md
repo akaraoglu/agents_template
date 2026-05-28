@@ -43,6 +43,7 @@ the exact blocker in project state.
      retype or edit any other path segment
    - never introduce spaces, `*`, altered timestamps, alternate roots, or
      misspelled task ids in draft paths
+   - every write tool call must include both `path` and `content`
 7. `write` -> `MANIFEST_WRITE_FILE` as JSON:
    ```json
    {

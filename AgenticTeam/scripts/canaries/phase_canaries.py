@@ -28,10 +28,13 @@ from canaries.common import (
     project_file_exists,
     project_file_text,
     run,
+    run_process,
     send_envelope_to_agent,
     session_delta,
+    session_delta_for_key,
     session_freshness,
     session_snapshot,
+    rotate_main_session,
     state_path,
     state_summary,
     token_from_paths,
@@ -70,12 +73,12 @@ FIBONACCI_TASK_FILES = (
 )
 
 
-def project_token(project_dir: Path, extra_paths: list[str], *, agent: str | None = None) -> str:
+def project_token(project_dir: Path, extra_paths: list[str], *, agent: str | None = None, session_key: str | None = None) -> str:
     paths = [state_path(project_dir), project_dir / ".openclaw" / "handoffs.jsonl"]
     paths.extend(project_dir / relative for relative in extra_paths)
     token = token_from_paths(paths)
     if agent:
-        snapshot = session_snapshot(agent)
+        snapshot = session_snapshot(agent, session_key=session_key)
         if snapshot:
             token = f"{token}|session:{snapshot.updated_at}:{snapshot.status}"
     return token
@@ -128,10 +131,17 @@ def seed_task_inputs(
         write_project_file(project_dir, "tests/test_main.py", test_py_text)
 
 
-def preflight_target_session(agent: str, checked: list[dict[str, Any]], preflight: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-    drain = wait_for_session_quiescence(agent)
+def preflight_target_session(
+    agent: str,
+    checked: list[dict[str, Any]],
+    preflight: dict[str, Any],
+    *,
+    session_key: str | None = None,
+    allow_no_session: bool = False,
+) -> tuple[bool, dict[str, Any]]:
+    drain = wait_for_session_quiescence(agent, session_key=session_key)
     preflight["target_session_before_start"] = drain
-    clean = drain["outcome"] == "already_quiescent"
+    clean = drain["outcome"] == "already_quiescent" or (allow_no_session and drain["outcome"] == "no_session")
     add_invariant(
         checked,
         "preflight:target_session_quiescent",
@@ -141,8 +151,8 @@ def preflight_target_session(agent: str, checked: list[dict[str, Any]], prefligh
     return clean, drain
 
 
-def postrun_target_session(agent: str, checked: list[dict[str, Any]]) -> dict[str, Any]:
-    drain = wait_for_session_quiescence(agent)
+def postrun_target_session(agent: str, checked: list[dict[str, Any]], *, session_key: str | None = None) -> dict[str, Any]:
+    drain = wait_for_session_quiescence(agent, session_key=session_key)
     add_invariant(
         checked,
         "postrun:target_session_drained",
@@ -383,6 +393,96 @@ def smith_planning(timeout_seconds: int | None = None, stall_seconds: int | None
         delivery_evidence=build_delivery_evidence(send_response, session_detail),
         session_detail=session_detail,
         drain=drain,
+    )
+
+
+def smith_langgraph_autoplan_required_plan(timeout_seconds: int | None = None, stall_seconds: int | None = None) -> dict[str, Any]:
+    del timeout_seconds, stall_seconds
+    project_id, project_dir = create_project("canary_smith_langgraph_autoplan_required_plan", "fibonacci_tree_visualizer.md")
+    contract = {
+        "starting_state": "Fresh Fibonacci project with direct Smith LangGraph autoplan invocation.",
+        "allowed_agents": ["smith"],
+        "expected_files": ["management/PLAN.md", "management/BACKLOG.md", *FIBONACCI_TASK_FILES, "CURRENT_TASK.md"],
+        "expected_state_fields": {
+            "owner": "smith",
+            "phase": "PLANNING",
+            "waiting_for": "niaobe",
+            "active_task": "T001",
+            "task_phase": "TASK_HANDOFF",
+            "task_status": "READY",
+        },
+        "expected_handoffs": [
+            {"event_type": "handoff_sent", "from": "smith", "to": "niaobe", "phase": "TASK_HANDOFF", "task_id": "T001"},
+        ],
+        "expected_terminal_state": "smith_langgraph_task_ready",
+        "failure_timeout_seconds": 120,
+        "stall_timeout_seconds": 60,
+    }
+    checked: list[dict[str, Any]] = []
+    sync = detect_sync_drift(["smith"])
+    freshness = session_freshness("smith")
+    preflight = build_preflight(
+        gateway_required=True,
+        sync_drift=sync["sync_drift"],
+        session_freshness_value=freshness,
+        mattermost_needed=False,
+    )
+    handoff_output = direct_handoff_output(
+        "neo",
+        "smith",
+        project_id,
+        "Create the deterministic 4-task sequential plan.",
+        "HANDOFF",
+        "",
+    )
+    envelope = parse_envelope(handoff_output)
+    autoplan_output = run(
+        [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "smith_plan_project.py"), "autoplan", envelope],
+        timeout=120,
+        cwd=REPO_ROOT,
+    )
+    final_state = state_summary(project_dir)
+    events = load_handoff_events(project_dir)
+    worker_state = load_latest_worker_state(project_id, "smith")
+    for relative_path in contract["expected_files"]:
+        add_invariant(checked, f"file:{relative_path}", project_file_exists(project_dir, relative_path), f"{relative_path} {'exists' if project_file_exists(project_dir, relative_path) else 'is missing'}")
+    plan_text = project_file_text(project_dir, "management/PLAN.md") if project_file_exists(project_dir, "management/PLAN.md") else ""
+    for token in FIBONACCI_PLAN_STRINGS:
+        add_invariant(
+            checked,
+            f"plan:{token}",
+            token in plan_text,
+            f"management/PLAN.md contains {token}" if token in plan_text else f"management/PLAN.md is missing {token}",
+        )
+    for field, expected in contract["expected_state_fields"].items():
+        actual = final_state.get(field, "missing")
+        add_invariant(checked, f"state:{field}", actual == expected, f"{field}={actual}")
+    for item in contract["expected_handoffs"]:
+        passed = handoff_exists(
+            events,
+            event_type=item["event_type"],
+            from_agent=item["from"],
+            to_agent=item["to"],
+            phase=item["phase"],
+            task_id=item.get("task_id"),
+        )
+        add_invariant(checked, f"handoff:{item['from']}->{item['to']}:{item['phase']}", passed, json.dumps(item, sort_keys=True))
+    add_invariant(checked, "runtime:langgraph", bool(worker_state) and worker_state.get("runtime_engine") == "langgraph", f"runtime_engine={worker_state.get('runtime_engine') if worker_state else 'missing'}")
+    add_invariant(checked, "runtime:status", bool(worker_state) and worker_state.get("status") == "sent", f"worker status={worker_state.get('status') if worker_state else 'missing'}")
+    add_invariant(checked, "autoplan:result_file", "RESULT_FILE=" in autoplan_output, "autoplan output contains RESULT_FILE")
+    return finalize_summary(
+        canary="smith_langgraph_autoplan_required_plan",
+        contract=contract,
+        project_id=project_id,
+        project_dir=project_dir,
+        checked_invariants=checked,
+        final_state=final_state,
+        latest_handoff=events[-1] if events else None,
+        latest_worker_state=worker_state,
+        sync_drift=sync["sync_drift"],
+        session_freshness_value=freshness,
+        preflight=preflight,
+        delivery_evidence=build_delivery_evidence((worker_state or {}).get("last_send_response"), None),
     )
 
 
@@ -676,6 +776,124 @@ def architect_worker_runtime(timeout_seconds: int | None = None, stall_seconds: 
     )
 
 
+def architect_missing_draft_repair(timeout_seconds: int | None = None, stall_seconds: int | None = None) -> dict[str, Any]:
+    del timeout_seconds, stall_seconds
+    project_id, project_dir = create_project("canary_architect_missing_draft_repair", "single_file_markdown_counter.md")
+    contract = {
+        "starting_state": "Fresh project with deterministic task files and direct Architect runtime invocation that forces missing-draft repair.",
+        "allowed_agents": ["architect"],
+        "expected_files": ["management/tasks/T001.md", "CURRENT_TASK.md", "management/architecture/T001.md"],
+        "expected_state_fields": {"owner": "niaobe", "phase": "IN_PROGRESS", "waiting_for": "architect", "active_task": "T001", "task_phase": "DESIGN"},
+        "expected_handoffs": [],
+        "expected_terminal_state": "architect_done_after_missing_draft_repair",
+        "failure_timeout_seconds": 120,
+        "stall_timeout_seconds": 60,
+    }
+    checked: list[dict[str, Any]] = []
+    sync = detect_sync_drift(["architect"])
+    freshness = session_freshness("architect")
+    preflight = build_preflight(
+        gateway_required=True,
+        sync_drift=sync["sync_drift"],
+        session_freshness_value=freshness,
+        mattermost_needed=False,
+    )
+    seed_task_inputs(
+        project_dir,
+        task_text=task_t001_markdown_counter(),
+        current_task_text=current_task_t001(),
+    )
+    write_state(
+        project_id,
+        "IN_PROGRESS",
+        "architect",
+        "--actor",
+        "niaobe",
+        "--expect-owner",
+        "smith",
+        "--set-owner",
+        "niaobe",
+        "--active-task",
+        "T001",
+        "--task-phase",
+        "DESIGN",
+        "--task-status",
+        "IN_PROGRESS",
+        "--note",
+        "Canary seeded direct Architect missing-draft repair task.",
+    )
+    envelope = {
+        "project_id": project_id,
+        "task_id": "T001",
+        "from": "niaobe",
+        "to": "architect",
+        "phase": "DESIGN",
+        "instructions": "Write management/architecture/T001.md for the active task.",
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        envelope_path = Path(tmp) / "envelope.json"
+        envelope_path.write_text(json.dumps(envelope), encoding="utf-8")
+        prepare_output = run(
+            [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "architect_run_task.py"), "run", "--envelope-file", str(envelope_path)],
+            timeout=120,
+            cwd=REPO_ROOT,
+        )
+    values = dict(line.split("=", 1) for line in prepare_output.splitlines() if "=" in line)
+    run_dir = Path(values["RUN_DIR"])
+    draft_file = Path(values["DRAFT_FILE"])
+
+    first_complete = run_process(
+        [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "architect_run_task.py"), "complete", str(run_dir)],
+        timeout=120,
+        cwd=REPO_ROOT,
+    )
+    first_output = "\n".join(part for part in ((first_complete.stdout or "").strip(), (first_complete.stderr or "").strip()) if part)
+    repair_output = run(
+        [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "architect_run_task.py"), "repair", str(run_dir)],
+        timeout=120,
+        cwd=REPO_ROOT,
+    )
+    draft_file.write_text(architecture_t001_markdown_counter(), encoding="utf-8")
+    complete_error = ""
+    try:
+        run(
+            [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "architect_run_task.py"), "complete", str(run_dir)],
+            timeout=120,
+            cwd=REPO_ROOT,
+        )
+    except CanaryError as exc:
+        complete_error = str(exc)
+
+    worker_state = load_latest_worker_state(project_id, "architect")
+    final_state = state_summary(project_dir)
+    attempts = int((worker_state or {}).get("completion_attempts", 0) or 0)
+    add_invariant(checked, "prepare:work_order", "WORK_ORDER_BEGIN" in prepare_output and "DRAFT_TEMPLATE_BEGIN" in prepare_output, "prepare output contains work order and draft template")
+    add_invariant(checked, "prepare:run_dir", run_dir.exists(), f"run_dir={run_dir}")
+    add_invariant(checked, "first_complete:repair_required", first_complete.returncode == 20 and "WORKER_RUNTIME_REPAIR_REQUIRED[missing_draft]" in first_output, f"returncode={first_complete.returncode}; output={first_output}")
+    add_invariant(checked, "repair:brief", "REPAIR_MODE=architecture_draft" in repair_output and "DRAFT_FILE=" in repair_output, "repair brief printed")
+    add_invariant(checked, "file:management/architecture/T001.md", project_file_exists(project_dir, "management/architecture/T001.md"), "management/architecture/T001.md exists" if project_file_exists(project_dir, "management/architecture/T001.md") else "management/architecture/T001.md is missing")
+    add_invariant(checked, "complete:succeeded", not complete_error, complete_error or "complete succeeded")
+    add_invariant(checked, "worker:status", bool(worker_state) and worker_state.get("status") == "sent", f"worker status={worker_state.get('status') if worker_state else 'missing'}")
+    add_invariant(checked, "worker:runtime_engine", bool(worker_state) and worker_state.get("runtime_engine") == "langgraph", f"runtime_engine={worker_state.get('runtime_engine') if worker_state else 'missing'}")
+    add_invariant(checked, "repair:attempts", attempts == 2, f"completion_attempts={attempts}")
+    add_invariant(checked, "state:owner", final_state["owner"] == "niaobe", f"owner={final_state['owner']}")
+    add_invariant(checked, "state:task_phase", final_state["task_phase"] == "DESIGN", f"task_phase={final_state['task_phase']}")
+    return finalize_summary(
+        canary="architect_missing_draft_repair",
+        contract=contract,
+        project_id=project_id,
+        project_dir=project_dir,
+        checked_invariants=checked,
+        final_state=worker_state or final_state,
+        latest_handoff=None,
+        latest_worker_state=worker_state,
+        sync_drift=sync["sync_drift"],
+        session_freshness_value=freshness,
+        preflight=preflight,
+        delivery_evidence=build_delivery_evidence((worker_state or {}).get("last_send_response"), None),
+    )
+
+
 def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_seconds: int | None = None) -> dict[str, Any]:
     timeout_seconds = timeout_seconds or 420
     stall_seconds = stall_seconds or 90
@@ -692,7 +910,7 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
     }
     checked: list[dict[str, Any]] = []
     sync = detect_sync_drift(["morpheus"])
-    freshness = session_freshness("morpheus")
+    freshness = "rotated_main_session"
     preflight = build_preflight(
         gateway_required=True,
         sync_drift=sync["sync_drift"],
@@ -713,9 +931,10 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
             sync_drift=sync["sync_drift"],
             session_freshness_value=freshness,
             preflight=preflight,
-            session_detail=session_delta(None, expected_project_id=project_id),
+            session_detail=session_delta_for_key("morpheus", expected_project_id=project_id),
         )
-    ready, _ = preflight_target_session("morpheus", checked, preflight)
+    preflight["target_session_rotation"] = rotate_main_session("morpheus", reason=project_id)
+    ready, _ = preflight_target_session("morpheus", checked, preflight, allow_no_session=True)
     morpheus_before = session_snapshot("morpheus")
     if not ready:
         return finalize_summary(
@@ -730,7 +949,7 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
             sync_drift=sync["sync_drift"],
             session_freshness_value=freshness,
             preflight=preflight,
-            session_detail=session_delta(morpheus_before, expected_project_id=project_id),
+            session_detail=session_delta_for_key("morpheus", snapshot=morpheus_before, expected_project_id=project_id),
         )
     seed_task_inputs(
         project_dir,
@@ -789,7 +1008,7 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
     )
     final_state = current.get("state", state_summary(project_dir))
     events = current.get("events", load_handoff_events(project_dir))
-    session_detail = session_delta(morpheus_before, expected_project_id=project_id)
+    session_detail = session_delta_for_key("morpheus", snapshot=morpheus_before, expected_project_id=project_id)
     session_state = latest_session_state("morpheus", morpheus_before)
     worker_state = current.get("worker_state") or load_latest_worker_state(project_id, "morpheus")
     raw_text = (session_detail or {}).get("raw_text", "")
@@ -849,7 +1068,7 @@ def morpheus_forced_repair(timeout_seconds: int | None = None, stall_seconds: in
     }
     checked: list[dict[str, Any]] = []
     sync = detect_sync_drift(["morpheus"])
-    freshness = session_freshness("morpheus")
+    freshness = "rotated_main_session"
     preflight = build_preflight(
         gateway_required=True,
         sync_drift=sync["sync_drift"],
@@ -870,9 +1089,10 @@ def morpheus_forced_repair(timeout_seconds: int | None = None, stall_seconds: in
             sync_drift=sync["sync_drift"],
             session_freshness_value=freshness,
             preflight=preflight,
-            session_detail=session_delta(None, expected_project_id=project_id),
+            session_detail=session_delta_for_key("morpheus", expected_project_id=project_id),
         )
-    ready, _ = preflight_target_session("morpheus", checked, preflight)
+    preflight["target_session_rotation"] = rotate_main_session("morpheus", reason=project_id)
+    ready, _ = preflight_target_session("morpheus", checked, preflight, allow_no_session=True)
     morpheus_before = session_snapshot("morpheus")
     if not ready:
         return finalize_summary(
@@ -887,7 +1107,7 @@ def morpheus_forced_repair(timeout_seconds: int | None = None, stall_seconds: in
             sync_drift=sync["sync_drift"],
             session_freshness_value=freshness,
             preflight=preflight,
-            session_detail=session_delta(morpheus_before, expected_project_id=project_id),
+            session_detail=session_delta_for_key("morpheus", snapshot=morpheus_before, expected_project_id=project_id),
         )
     seed_task_inputs(
         project_dir,
@@ -947,7 +1167,7 @@ def morpheus_forced_repair(timeout_seconds: int | None = None, stall_seconds: in
     )
     final_state = current.get("state", state_summary(project_dir))
     events = current.get("events", load_handoff_events(project_dir))
-    session_detail = session_delta(morpheus_before, expected_project_id=project_id)
+    session_detail = session_delta_for_key("morpheus", snapshot=morpheus_before, expected_project_id=project_id)
     session_state = latest_session_state("morpheus", morpheus_before)
     worker_state = current.get("worker_state") or load_latest_worker_state(project_id, "morpheus")
     raw_text = (session_detail or {}).get("raw_text", "")
@@ -1094,11 +1314,15 @@ def oracle_verification(timeout_seconds: int | None = None, stall_seconds: int |
             "token": project_token(project_dir, contract["expected_files"], agent="oracle"),
             "state": state_summary(project_dir),
             "events": load_handoff_events(project_dir),
+            "worker_state": load_latest_worker_state(project_id, "oracle"),
         }
 
     status, current = poll_until(
         snapshot,
-        lambda snap: project_file_exists(project_dir, "management/validation/T001_REPORT.md"),
+        lambda snap: (
+            project_file_exists(project_dir, "management/validation/T001_REPORT.md")
+            and ((snap.get("worker_state") or {}).get("status") in {"sent", "failed"})
+        ),
         timeout_seconds=timeout_seconds,
         stall_seconds=stall_seconds,
         poll_seconds=5,
@@ -1107,7 +1331,11 @@ def oracle_verification(timeout_seconds: int | None = None, stall_seconds: int |
     events = current.get("events", load_handoff_events(project_dir))
     session_detail = session_delta(oracle_before, expected_project_id=project_id)
     session_state = latest_session_state("oracle", oracle_before)
+    worker_state = load_latest_worker_state(project_id, "oracle")
     raw_text = (session_detail or {}).get("raw_text", "")
+    worker_project_exec = str((worker_state or {}).get("project_exec", ""))
+    worker_payload = (worker_state or {}).get("result_payload") or {}
+    worker_verdict = str((worker_state or {}).get("verdict", ""))
     report_text = project_file_text(project_dir, "management/validation/T001_REPORT.md") if project_file_exists(project_dir, "management/validation/T001_REPORT.md") else ""
     for relative_path in contract["expected_files"]:
         add_invariant(checked, f"file:{relative_path}", project_file_exists(project_dir, relative_path), f"{relative_path} {'exists' if project_file_exists(project_dir, relative_path) else 'is missing'}")
@@ -1115,8 +1343,19 @@ def oracle_verification(timeout_seconds: int | None = None, stall_seconds: int |
     add_invariant(checked, "state:task_phase", final_state["task_phase"] == "VERIFY", f"task_phase={final_state['task_phase']}")
     add_invariant(checked, "handoff:niaobe->oracle", handoff_exists(events, event_type="handoff_sent", from_agent="niaobe", to_agent="oracle", phase="VERIFY", task_id="T001"), "niaobe->oracle handoff recorded")
     add_invariant(checked, "report:verdict", "PASS" in report_text or "FAIL" in report_text, "validation report contains PASS/FAIL" if "PASS" in report_text or "FAIL" in report_text else "validation report does not contain PASS/FAIL")
-    add_invariant(checked, "session:project_exec", f'project_exec.sh "{project_id}"' in raw_text or f"project_exec.sh \\\"{project_id}\\\"" in raw_text, "session trace contains project_exec" if f'project_exec.sh "{project_id}"' in raw_text or f"project_exec.sh \\\"{project_id}\\\"" in raw_text else "session trace does not show project_exec")
-    add_invariant(checked, "session:verdict_message", "PASS:" in raw_text or "FAIL:" in raw_text, "session trace contains PASS/FAIL return" if "PASS:" in raw_text or "FAIL:" in raw_text else "session trace does not contain PASS/FAIL return")
+    project_exec_seen = (
+        f'project_exec.sh "{project_id}"' in raw_text
+        or f"project_exec.sh \\\"{project_id}\\\"" in raw_text
+        or f"project_exec.sh {project_id}" in worker_project_exec
+    )
+    verdict_seen = (
+        "PASS:" in raw_text
+        or "FAIL:" in raw_text
+        or worker_verdict in {"PASS", "FAIL"}
+        or str(worker_payload.get("verdict", "")) in {"PASS", "FAIL"}
+    )
+    add_invariant(checked, "session:project_exec", project_exec_seen, "runtime/session trace contains project_exec" if project_exec_seen else "session trace does not show project_exec")
+    add_invariant(checked, "session:verdict_message", verdict_seen, "runtime/session trace contains PASS/FAIL return" if verdict_seen else "session trace does not contain PASS/FAIL return")
     add_invariant(checked, "execution:terminal", status == "success", f"poll status={status}")
     drain = postrun_target_session("oracle", checked)
     return finalize_summary(
@@ -1127,7 +1366,7 @@ def oracle_verification(timeout_seconds: int | None = None, stall_seconds: int |
         checked_invariants=checked,
         final_state=final_state,
         latest_handoff=events[-1] if events else None,
-        latest_worker_state=session_state,
+        latest_worker_state=worker_state or session_state,
         sync_drift=sync["sync_drift"],
         session_freshness_value=freshness,
         preflight=preflight,
@@ -1140,8 +1379,10 @@ def oracle_verification(timeout_seconds: int | None = None, stall_seconds: int |
 CANARY_RUNNERS = {
     "neo_project_create": neo_project_create,
     "smith_planning": smith_planning,
+    "smith_langgraph_autoplan_required_plan": smith_langgraph_autoplan_required_plan,
     "smith_niaobe_handoff": smith_niaobe_handoff,
     "architect_worker_runtime": architect_worker_runtime,
+    "architect_missing_draft_repair": architect_missing_draft_repair,
     "morpheus_direct_implementation": morpheus_direct_implementation,
     "morpheus_forced_repair": morpheus_forced_repair,
     "oracle_verification": oracle_verification,

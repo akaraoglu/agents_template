@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: bash architect_run_task.sh <prepare|read|complete|block> ...
+# Usage: bash architect_run_task.sh <run|prepare|read|complete|repair|block> ...
 
 set -euo pipefail
 

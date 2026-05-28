@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -36,6 +37,7 @@ class CanaryError(RuntimeError):
 @dataclass(frozen=True)
 class SessionSnapshot:
     agent: str
+    session_key: str
     session_id: str
     session_file: Path
     status: str
@@ -241,8 +243,106 @@ def send_session_message(session_key: str, message: str, *, timeout_ms: int = 20
     )
 
 
-def send_envelope_to_agent(agent: str, envelope: dict[str, Any] | str, *, timeout: int = 120) -> str:
+def default_session_key(agent: str) -> str:
+    return f"agent:{agent.strip().lower()}:main"
+
+
+def rotate_main_session(agent: str, *, reason: str) -> dict[str, Any]:
+    """Archive the current main session and seed a clean registered main entry.
+
+    `sessions.send` can only target registered keys. For canaries that need a
+    clean live model context, rotate the normal main key by preserving the old
+    entry and transcript files under `.openclaw/session-resets/`, then replacing
+    the live entry with a new empty transcript file under the same registered key.
+    """
+    normalized_agent = agent.strip().lower()
+    session_key = default_session_key(normalized_agent)
+    sessions_dir = OPENCLAW_ROOT / "agents" / normalized_agent / "sessions"
+    sessions_path = sessions_dir / "sessions.json"
+    if not sessions_path.exists():
+        return {
+            "agent": normalized_agent,
+            "session_key": session_key,
+            "rotated": False,
+            "reason": "sessions_json_missing",
+        }
+    payload = load_json(sessions_path)
+    entry = payload.get(session_key)
+    if not isinstance(entry, dict):
+        entry = {}
+    session_id = str(entry.get("sessionId", "")).strip()
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    safe_reason = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", reason.strip() or "canary").strip("-")
+    archive_dir = OPENCLAW_ROOT / "session-resets" / f"{stamp}-{safe_reason[:80]}" / normalized_agent
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sessions_path, archive_dir / "sessions.json")
+    copied_files: list[str] = []
+    for source in sorted(sessions_dir.glob(f"{session_id}*")) if session_id else []:
+        if not source.is_file():
+            continue
+        destination = archive_dir / source.name
+        shutil.copy2(source, destination)
+        copied_files.append(str(destination))
+    new_session_id = str(uuid4())
+    new_session_file = sessions_dir / f"{new_session_id}.jsonl"
+    new_session_file.write_text("", encoding="utf-8")
+    now_ms = int(time.time() * 1000)
+    new_entry = {
+        **entry,
+        "sessionId": new_session_id,
+        "updatedAt": now_ms,
+        "sessionStartedAt": now_ms,
+        "lastInteractionAt": now_ms,
+        "systemSent": False,
+        "abortedLastRun": False,
+        "usageFamilyKey": session_key,
+        "sessionFile": str(new_session_file),
+        "compactionCount": 0,
+        "totalTokens": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "status": "done",
+    }
+    metadata = {
+        "agent": normalized_agent,
+        "session_key": session_key,
+        "previous_session_id": session_id,
+        "new_session_id": new_session_id,
+        "reason": reason,
+        "rotated_at_ms": now_ms,
+        "archive_dir": str(archive_dir),
+        "copied_files": copied_files,
+    }
+    (archive_dir / "rotation.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    payload[session_key] = new_entry
+    tmp_path = sessions_path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp_path.replace(sessions_path)
+    return {**metadata, "rotated": True}
+
+
+def send_envelope_to_agent(
+    agent: str,
+    envelope: dict[str, Any] | str,
+    *,
+    timeout: int = 120,
+    session_key: str | None = None,
+) -> str:
     payload = envelope if isinstance(envelope, str) else json.dumps(envelope, separators=(",", ":"))
+    if session_key:
+        output = send_session_message(session_key, payload, timeout_ms=max(20000, timeout * 1000))
+        parsed = json.loads(payload)
+        lines = [
+            "SEND_READY",
+            f"SESSION_KEY: {session_key}",
+            f"PROJECT_ID: {parsed.get('project_id', 'unknown')}",
+        ]
+        if parsed.get("task_id"):
+            lines.append(f"TASK_ID: {parsed['task_id']}")
+        lines.append(f"PHASE: {parsed.get('phase', 'unknown')}")
+        if output:
+            lines.append(f"DELIVERY: {output}")
+        return "\n".join(lines)
     return run(["bash", str(CLAWSPACE_ROOT / "bin" / "send_envelope.sh"), agent, payload], timeout=timeout, cwd=REPO_ROOT)
 
 
@@ -251,12 +351,13 @@ def write_state(project_id: str, phase: str, waiting_for: str, *args: str, timeo
     return run(cmd, timeout=timeout, cwd=REPO_ROOT)
 
 
-def session_snapshot(agent: str) -> SessionSnapshot | None:
+def session_snapshot(agent: str, *, session_key: str | None = None) -> SessionSnapshot | None:
     sessions_path = OPENCLAW_ROOT / "agents" / agent / "sessions" / "sessions.json"
     if not sessions_path.exists():
         return None
     payload = load_json(sessions_path)
-    entry = payload.get(f"agent:{agent}:main")
+    key = session_key or default_session_key(agent)
+    entry = payload.get(key)
     if not isinstance(entry, dict):
         return None
     session_file = Path(str(entry.get("sessionFile", "")))
@@ -265,6 +366,7 @@ def session_snapshot(agent: str) -> SessionSnapshot | None:
     line_count = len(session_file.read_text(encoding="utf-8").splitlines())
     return SessionSnapshot(
         agent=agent,
+        session_key=key,
         session_id=str(entry.get("sessionId", "")),
         session_file=session_file,
         status=str(entry.get("status", "unknown")),
@@ -331,7 +433,7 @@ def detect_empty_stop(raw_lines: list[str]) -> bool:
 def session_delta(snapshot: SessionSnapshot | None, *, expected_project_id: str | None = None) -> dict[str, Any] | None:
     if snapshot is None:
         return None
-    current = session_snapshot(snapshot.agent)
+    current = session_snapshot(snapshot.agent, session_key=snapshot.session_key)
     if current is None:
         return None
     if current.session_file == snapshot.session_file:
@@ -361,6 +463,42 @@ def session_delta(snapshot: SessionSnapshot | None, *, expected_project_id: str 
         "contaminated": bool(unexpected_project_ids),
         "raw_text": raw_text,
         "excerpt": "\n".join(excerpt_lines),
+    }
+
+
+def session_delta_for_key(
+    agent: str,
+    *,
+    session_key: str | None = None,
+    snapshot: SessionSnapshot | None = None,
+    expected_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    if snapshot is not None:
+        return session_delta(snapshot, expected_project_id=expected_project_id)
+    current = session_snapshot(agent, session_key=session_key)
+    if current is None:
+        return None
+    raw_lines = current.session_file.read_text(encoding="utf-8").splitlines()
+    raw_text = "\n".join(raw_lines)
+    delta_project_ids = extract_inbound_project_ids(raw_lines)
+    unexpected_project_ids = [project_id for project_id in delta_project_ids if expected_project_id and project_id != expected_project_id]
+    return {
+        "agent": agent,
+        "session_id": current.session_id,
+        "session_file": str(current.session_file),
+        "status": current.status,
+        "session_started_at": current.session_started_at,
+        "updated_at": current.updated_at,
+        "line_count_delta": len(raw_lines),
+        "started": True,
+        "responded": len(raw_lines) > 0,
+        "stopped": current.status == "done",
+        "empty_stop": detect_empty_stop(raw_lines),
+        "delta_envelope_project_ids": delta_project_ids,
+        "unexpected_project_ids_seen": unexpected_project_ids,
+        "contaminated": bool(unexpected_project_ids),
+        "raw_text": raw_text,
+        "excerpt": "\n".join(raw_lines[-30:]),
     }
 
 
@@ -486,8 +624,8 @@ def poll_until(
     return "timeout", latest
 
 
-def latest_session_state(agent: str, snapshot: SessionSnapshot | None = None) -> dict[str, Any] | None:
-    current = session_snapshot(agent)
+def latest_session_state(agent: str, snapshot: SessionSnapshot | None = None, *, session_key: str | None = None) -> dict[str, Any] | None:
+    current = session_snapshot(agent, session_key=session_key or (snapshot.session_key if snapshot else None))
     if current is None:
         return None
     payload = asdict(current)
@@ -502,12 +640,13 @@ def latest_session_state(agent: str, snapshot: SessionSnapshot | None = None) ->
 def wait_for_session_quiescence(
     agent: str,
     *,
+    session_key: str | None = None,
     timeout_seconds: int = 30,
     poll_seconds: int = 2,
     stable_polls: int = 3,
 ) -> dict[str, Any]:
     started_at = int(time.time())
-    initial = session_snapshot(agent)
+    initial = session_snapshot(agent, session_key=session_key)
     if initial is None:
         return {
             "agent": agent,
@@ -530,7 +669,7 @@ def wait_for_session_quiescence(
     saw_change = False
     while time.time() < deadline:
         polls += 1
-        current = session_snapshot(agent)
+        current = session_snapshot(agent, session_key=session_key)
         if current is None:
             finished_at = int(time.time())
             return {
@@ -584,7 +723,7 @@ def wait_for_session_quiescence(
             }
         last_state = state
         time.sleep(poll_seconds)
-    current = session_snapshot(agent) or initial
+    current = session_snapshot(agent, session_key=session_key) or initial
     finished_at = int(time.time())
     return {
         "agent": agent,

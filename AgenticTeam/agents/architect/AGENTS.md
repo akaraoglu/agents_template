@@ -20,14 +20,22 @@ is missing or unreadable, send BLOCKED to Niaobe immediately.
 
 ### Execution steps
 
-1. `exec` -> `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh prepare '<ENVELOPE_JSON>'`
-2. `read` -> the generated `HANDOFF_FILE` and `CONTEXT_FILE`
-3. Form the task-local design plan from that rooted context
-4. If you need more project context, use:
-   `exec` -> `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh read "<RUN_DIR>" "<RELATIVE_PATH>"`
-5. `write` -> the exact `DRAFT_FILE` returned by `prepare`
-6. `exec` -> `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh complete "<RUN_DIR>"`
-7. Reply only with a short completion note, then `REPLY_SKIP`
+1. Run:
+   `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh run '<JSON envelope>'`
+2. Use the printed `WORK_ORDER_BEGIN` / `WORK_ORDER_END` content as the task context.
+   Use the printed `DRAFT_TEMPLATE_BEGIN` / `DRAFT_TEMPLATE_END` shape for the design document.
+3. Write the architecture document only to the printed `DRAFT_FILE`.
+   Copy the printed path exactly; do not reconstruct it from the project id.
+   The write tool call must include both `path` and `content`.
+4. Run:
+   `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh complete "<RUN_DIR>"`
+   Copy the printed `RUN_DIR` exactly.
+   If complete prints `WORKER_RUNTIME_REPAIR_REQUIRED[...]`, run the printed
+   `NEXT_REQUIRED` repair command, update only the printed `DRAFT_FILE`, then
+   run the repair output's final `complete` command.
+5. If you cannot create a valid complete draft, run:
+   `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh block "<RUN_DIR>" --code "missing_input" --reason "<exact reason>"`
+6. Reply: "Architecture handled. Runtime notified Niaobe." then `REPLY_SKIP`
 
 ### Required sections
 
@@ -49,8 +57,6 @@ document.
 - Printing a JSON envelope in normal assistant text does **not** notify Niaobe.
 - The design task is incomplete until
   `architect_run_task.sh complete "<RUN_DIR>"` succeeds.
-- If the task cannot be completed, call:
-  `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh block "<RUN_DIR>" --code <missing_input|ambiguous_spec|envelope_invalid|capability_gap|other> --reason "<exact reason>"`
 
 ### What NOT to do
 
@@ -61,3 +67,5 @@ document.
 - NEVER use heredocs, pipes, or shell redirection to feed project file content.
 - NEVER call `project_read.sh`, `project_write.sh`, `verify_artifact.sh`, or
   `sessions_send` directly. The worker runtime owns those protocol steps.
+- AVOID a separate `read` call on `CONTEXT_FILE` unless the printed work order
+  is missing required details.

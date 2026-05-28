@@ -1,3 +1,15 @@
+## 2026-05-28 16:02:00 EEST
+- User request: implement the flexible, tool-driven ReAct architecture for Morpheus and Architect.
+- Agent action: Successfully transitioned AgenticTeam from brittle procedural custom graph runtimes to an autonomous ReAct loop. Deployed standard atomic tool definitions in `agent_tools.py` (`read_file`, `write_file`, `exec_command`, `ask_user`, `handoff_to_agent`). Implemented a single role-agnostic agent runner in `agent_runner.py` executing a generic ReAct loop via Ollama chat completions with natural traceback self-healing. Hooked the runner into the `complete` and `repair` routes inside `worker_runtime.py`. Simplified Morpheus and Architect prompt surfaces to map to ReAct while matching existing prompt contracts to pass compatibility checks, synced them live via `sync_live_openclaw.py --apply`, and removed deprecated custom graph runtimes (`morpheus_graph_runtime.py`, `architect_graph_runtime.py`). Created centralized `orchestrator.py` CLI lifecycle manager. Verified that all unit tests (`10 passed`) and preflight checks now pass cleanly.
+
+## 2026-05-28 15:07:00 EEST
+- User request: Resume conversation, run status/preflight checks, and continue stabilizing the AgenticTeam.
+- Agent action: Investigated the Morpheus implementation-only direct canary failure. Identified a severe context truncation issue where local Ollama provider calls fell back to Ollama's default 2048-token context window, dropping the system prompt and causing empty/NO_REPLY responses. Hardened `openclaw.json` (and successfully synced it live to `.openclaw/openclaw.json`) by explicitly setting `contextWindow` and `params.num_ctx` to `32768` for the RTX 5090 host GPU. Restarted the gateway service. Verified that Morpheus direct canary now successfully overcomes truncation, writes README/main/test drafts and manifest, enters the graph-owned test execution loop, and cleanly handles test failure.
+
+## 2026-05-28 14:02:00 EEST
+- User request: Continue the generic Morpheus post-prepare hardening work and rerun the live validation path.
+- Agent action: Finished the additive Morpheus prepare-contract slice by shrinking the inline work order, adding explicit next-step/runtime block guidance, updating Morpheus prompt surfaces, and adding focused worker-runtime coverage. Synced Morpheus live docs, reran the isolated Morpheus canary, and then reran Fibonacci E2E after fresh Morpheus/Niaobe session rotation. Result: the original Morpheus `prepare -> empty stop` boundary moved. In isolated Morpheus, the runtime now reaches completion and fails later on a real generated-test assertion; in Fibonacci E2E, Morpheus now gets past `prepare`, reads `CONTEXT_FILE`, and no longer remains the first failing boundary after the compact-context fix. The latest Fibonacci run instead stalls earlier at Architect (`owner=niaobe`, `task_phase=DESIGN`, `waiting_for=architect`, latest architect worker `status=awaiting_draft`), so the first failing boundary has moved upstream from Morpheus to Architect.
+
 ## 2026-05-25 16:52:00 EEST
 - User request: Run the full phase suite after the Smith runtime slice turned green in isolation.
 - Agent action: Ran `bash AgenticTeam/scripts/run_canary_suite.sh` under the repo-local `./env-python`. The suite is not green yet. Results: `neo_project_create` PASS, `smith_planning` PASS, `architect_worker_runtime` PASS_WITH_WARNINGS, `oracle_verification` PASS_WITH_WARNINGS, `smith_niaobe_handoff` FAIL, `morpheus_direct_implementation` FAIL, and `fibonacci_e2e` FAIL. The `smith_niaobe_handoff` suite failure was a preflight ordering/isolation issue: Niaobe was still running from the previous canary, and this same canary already passed in isolation from a fresh Niaobe session. The real active blocker is Morpheus: its prepare step now fails with `ack_handoff failed: ACK_FAILED: no matching pending receipt exists in registry`, so implementation never starts, which also explains the Fibonacci E2E stall at `owner=niaobe`, `phase=IN_PROGRESS`, `task_phase=IMPLEMENT`, `waiting_for=morpheus`.
@@ -1036,3 +1048,59 @@
 ## 2026-05-26 14:59:36 EEST
 - User request: Create a commit of the current AgenticTeam stabilization state.
 - Agent action: Prepared to stage the current runtime, prompt, canary, fixture, test, memory, and dependency changes while excluding generated Python bytecode.
+
+## 2026-05-26 15:05:53 EEST
+- User request: Clean Morpheus legacy runtime code and keep LangGraph as the only Morpheus solution.
+- Agent action: Removed the Morpheus `MORPHEUS_RUNTIME_ENGINE` classic/langgraph switch from runtime dispatch and wrapper setup, made Morpheus artifact `complete` and `repair` route directly through the LangGraph runtime, updated the LangGraph dependency error and decision memory, and added a regression test proving a stale `MORPHEUS_RUNTIME_ENGINE=classic` environment no longer changes Morpheus behavior.
+
+## 2026-05-26 16:33:27 EEST
+- User request: Proceed with the 8-step LangGraph adoption plan, verify everything first, and do not move to Smith or Niaobe yet.
+- Agent action: Added LangGraph-owned runtime tails for Oracle verification and Architect completion, kept Smith/Niaobe unchanged, and verified focused runtime tests (`36 passed`) plus py_compile. Confirmed isolated Architect PASS (`/tmp/architect_langgraph_isolated.md`) and isolated Oracle PASS after timing fix (`/tmp/oracle_langgraph_isolated_after_timing_fix.md`). Hardened the phase-suite harness for stable quiescence and per-phase drains, but the full phase suite still exposed cross-phase side effects: Architect phase completion can trigger downstream Niaobe/Morpheus work that contaminates later direct-worker canaries. After stopping active worker sessions and syncing live OpenClaw files, isolated Fibonacci E2E failed for `run-e2e-fibonacci-test-20260526-1628`: Smith planned and Niaobe delegated T001, but Architect stalled at `awaiting_draft` before producing `management/architecture/T001.md`, so Morpheus and Oracle were not reached. Report: `/tmp/fibonacci_e2e_after_oracle_runtime.md`.
+
+## 2026-05-26 16:40:00 EEST
+- User request: Explain the current Architect problem and how to solve it.
+- Agent action: Rechecked the Architect graph runtime, live wrapper, latest failed Fibonacci E2E report, worker state, prompt guidance, and rooted context. Classified the issue as an Architect head-of-task/model-turn stall: prepare succeeded and the graph tail is ready, but the live agent never wrote the expected `draft.md`, so completion was never invoked.
+
+## 2026-05-26 16:42:24 EEST
+- User request: Plan moving Architect closer to the Morpheus runtime and model-instruction pattern.
+- Agent action: Produced an implementation plan that shifts Architect protocol sequencing and recovery into the runtime while simplifying model responsibility to architecture-content generation.
+
+## 2026-05-26 17:05:01 EEST
+- User request: Implement the Architect plan.
+- Agent action: Added Architect `run` and `repair` command support, made worker prepare output Morpheus-like with `WORK_ORDER_BEGIN` and `DRAFT_TEMPLATE_BEGIN`, changed Architect LangGraph missing-draft recovery to point to the repair brief, added `architect_missing_draft_repair` canary coverage, and aligned Architect `AGENT.md`, `AGENTS.md`, `SKILLS.md`, and `TOOLS.md` on the runtime-owned flow. Synced live Architect files. Verified `38 passed`, py_compile, stale-prompt grep clean, `architect_missing_draft_repair` PASS_WITH_WARNINGS, and `architect_worker_runtime` PASS_WITH_WARNINGS. E2E still did not pass: first two attempts stalled at Architect due stale prompt surfaces (`TOOLS.md`, then `AGENT.md`/`SKILLS.md`); after all prompt surfaces were synced, the next E2E failed earlier in Smith planning before Architect was reached, with missing deterministic task files. Report path reused: `/tmp/fibonacci_e2e_after_oracle_runtime.md`.
+
+## 2026-05-27 10:32:35 EEST
+- User request: Plan using LangGraph for Smith and fixing the current Smith planning issue.
+- Agent action: Reviewed Smith planning entrypoint, worker-runtime planning/autoplan code, Smith prompt guidance, tests, and latest Fibonacci E2E report; produced a plan to move Smith initial planning to a LangGraph-owned runtime path before touching Smith/Niaobe task-completion supervision.
+
+## 2026-05-27 10:48:25 EEST
+- User request: Implement the Smith LangGraph plan.
+- Agent action: Added `smith_graph_runtime.py` for LangGraph-owned initial planning, routed Smith `autoplan` through the graph, added `smith_langgraph_autoplan_required_plan` canary coverage, updated the phase suite list, and aligned Smith `AGENT.md`, `AGENTS.md`, `SKILLS.md`, and `TOOLS.md` to prefer `autoplan` and avoid re-running `prepare` for initial planning. Synced live Smith files. Verified `39 passed`, py_compile/bash syntax, direct Smith LangGraph canary PASS_WITH_WARNINGS, and live `smith_planning` PASS. Isolated Fibonacci E2E advanced past Smith and Architect, then failed downstream in Morpheus IMPLEMENT with `missing_draft` for `README.md`; report: `/tmp/fibonacci_e2e_after_smith_langgraph.md`.
+
+## 2026-05-27 11:02:35 EEST
+- User request: Delete unnecessary Python `__pycache__` folders and identify the next step.
+- Agent action: Removed repo-generated cache directories `tests/__pycache__`, `AgenticTeam/scripts/__pycache__`, and `AgenticTeam/scripts/canaries/__pycache__`; intentionally left dependency caches under `env-python`; verified no remaining repo-local `__pycache__` directories outside `env-python`.
+
+## 2026-05-27 11:07:13 EEST
+- User request: Check Morpheus first and identify the solution before fixing.
+- Agent action: Inspected the latest Fibonacci E2E Morpheus run, runtime state, logs, draft directory, handoff/context files, prompt surfaces, and live session transcript. Classified the failure as premature `complete` calls before all required drafts existed, compounded by a shared `draft-aliases/current` write root and one-retry missing-draft behavior that blocked while the model was still writing drafts.
+
+## 2026-05-27 11:36:19 EEST
+- User request: Proceed with the safe self-healing adoption order, starting with Morpheus before moving to Architect.
+- Agent action: Added shared self-healing recovery primitives, moved Morpheus missing-draft completion failures into a `missing_outputs` repair state with retry budget, changed Morpheus draft aliases from shared `current` to run-specific aliases, updated Morpheus prompt surfaces, and fixed artifact prepare to extract `## Required Outputs` from all rooted inputs instead of only `PROJECT.md`. Verified `32 passed` for `tests/test_worker_runtime.py`, py_compile clean, synced live Morpheus prompts, confirmed `morpheus_forced_repair` PASS_WITH_WARNINGS after the required-output fix, and stopped before Architect because repeated `morpheus_direct_implementation` reruns in the same stale session still failed with partial/empty model output before `complete` was called.
+
+## 2026-05-27 12:07:51 EEST
+- User request: Do item 1 from the next-step plan: add fresh/rotated agent session handling for phase/task canaries.
+- Agent action: Added canary support for keyed session snapshots/deltas and a Morpheus main-session rotation helper that archives the previous registry/transcripts under `.openclaw/session-resets/` and seeds a clean registered `agent:morpheus:main` entry. Updated Morpheus direct and forced canaries to rotate before delivery, added regression coverage for archive-and-reseed behavior, and tightened quiescence so stable-but-`running` sessions are no longer reported as drained. Verified `42 passed` for `tests/test_canary_common.py tests/test_worker_runtime.py` and py_compile clean. The rerun `/tmp/morpheus_direct_rotated_session_v2.md` reached Morpheus on a clean session and produced all artifacts, but failed at Morpheus repair semantics: the model generated inconsistent tests and then repaired only `src/main.py` without changing the failing word-count behavior, ending BLOCKED.
+
+## 2026-05-27 14:17:52 EEST
+- User request: Develop the Morpheus Planner -> Implementer -> Tester subagent workflow so Morpheus can validate subagent results and request fixes.
+- Agent action: Added runtime-generated Morpheus subteam contract files and exact spawn-task blocks, made Morpheus LangGraph require planner/tester JSON validation before import/test/report, updated Morpheus prompt surfaces to allow only Planner/Implementer/Tester `sessions_spawn`, synced live Morpheus files, and verified `45 passed` for focused worker/canary common tests plus py_compile clean. Live canary `/tmp/morpheus_subteam_direct_after_spawn_blocks.md` improved from placeholder child tasks to real absolute-path subagent tasks and implementer artifact writing, but still failed because `planner_result.json` was missing; the runtime correctly blocked with `planner_result_missing`.
+
+## 2026-05-27 15:48:35 EEST
+- User request: Replace brittle Morpheus subagent JSON validation with Markdown-based subagent validation and orchestration without deleting or deciding broader behavior.
+- Agent action: Changed Morpheus Planner/Tester outputs to append-only Markdown attempts with runtime-owned `latest.json` pointers, added `morpheus_run_task.sh check-subteam` validation for planner/tester attempts, made invalid attempts advance to a new numbered attempt, printed repair spawn blocks for missing/invalid subteam output, added subagent role override text, and updated Morpheus prompt surfaces away from JSON and unavailable `sessions_yield`. Synced live Morpheus files. Verified `48 passed` for focused worker/canary tests plus py_compile. Live canaries still FAIL before artifact creation because spawned subagents acknowledge the task but do not write the required attempt file; latest reports: `/tmp/morpheus_subteam_markdown_phase1_rerun.md` and `/tmp/morpheus_subteam_markdown_phase1_after_spawn_override.md`.
+
+## 2026-05-27 16:57:25 EEST
+- User request: Disable Morpheus spawned child agents and keep LangGraph, but preserve team-style thinking inside the graph.
+- Agent action: Replaced Morpheus spawned-subteam preparation with runtime-owned virtual team evidence files (`team/planner.md`, `team/implementer_checklist.md`, `team/tester_review.md`), removed the exposed `check-subteam` command path, and updated Morpheus prompt surfaces to forbid child `sessions_spawn`/`sessions_send` while following `TEAM_MODE=langgraph_virtual`. Added graph nodes that record planner, implementer, and tester evidence around artifact import/test execution. Synced live Morpheus files. Verified focused tests (`44 passed`) and py_compile. Live isolated canary with a rotated session no longer used spawned children and reached artifact creation plus `project_exec`, but failed correctly as `test_failed` because Morpheus generated inconsistent self-authored expected counts and could not repair them under implementation-only repair. Report: `/tmp/morpheus_virtual_team_direct_after_stop.md`.

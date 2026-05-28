@@ -1,11 +1,12 @@
 # SKILLS.md - Smith
 
 - **Initial planning runtime**:
-  - `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh autoplan "<ENVELOPE_JSON>"` for deterministic projects that include `## Required Plan`
-  - `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh prepare "<ENVELOPE_JSON>"`
+  - `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh autoplan "<ENVELOPE_JSON>"`
+  - if `autoplan` prints `RESULT_FILE=...`, stop; the runtime already planned and handed off T001
+  - if `autoplan` reports no deterministic `## Required Plan`, continue from its printed `RUN_DIR`, `DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`
   - `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh read "<RUN_DIR>" "<RELATIVE_PATH>"`
-  - write full planning drafts under `<DRAFT_WRITE_ROOT>/<project_relative_path>`
-  - write the planning manifest to `<MANIFEST_WRITE_FILE>`
+  - write full planning drafts under `<DRAFT_WRITE_ROOT>/<project_relative_path>` using tool args `path` and `content`
+  - write the planning manifest to `<MANIFEST_WRITE_FILE>` using tool args `path` and `content`
   - `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh complete "<RUN_DIR>"`
   - `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh block "<RUN_DIR>" --code "<CODE>" --reason "<EXACT_REASON>"`
 - **Initial planning rule**:

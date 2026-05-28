@@ -7,9 +7,11 @@
      `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh autoplan '<ENVELOPE_JSON>'`
   2. if `autoplan` prints `RESULT_FILE=...`, the runtime already completed the
      plan and Niaobe handoff
-  3. if `autoplan` reports no deterministic `## Required Plan`, continue from
+  3. if `autoplan` reports no deterministic `## Required Plan`, do not run
+     `prepare`; continue from
      the printed `RUN_DIR`, `DRAFT_WRITE_ROOT`, and `MANIFEST_WRITE_FILE`
-  4. author the full planning drafts plus manifest under the printed `DRAFT_WRITE_ROOT` / `MANIFEST_WRITE_FILE`
+  4. author the full planning drafts plus manifest under the printed `DRAFT_WRITE_ROOT` / `MANIFEST_WRITE_FILE`;
+     every write tool call must include both `path` and `content`
   5. `exec` -> `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh complete "<RUN_DIR>"`
   6. if planning cannot be completed, use
      `bash /home/alik/workspace/clawspace/bin/smith_plan_project.sh block "<RUN_DIR>" --code "<code>" --reason "<reason>"`

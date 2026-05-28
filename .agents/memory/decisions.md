@@ -360,13 +360,13 @@
   Smith deterministic planning can route through runtime-owned `autoplan`; Niaobe child results route through `niaobe_run_task.sh child`; Morpheus completion enforces project Required Outputs before import/test; Oracle verification routes through `oracle_run_task.sh verify`.
   Agent models provide judgment/content where needed, while runtime owns import, verification, project execution, report writing, state transitions, and deterministic PASS/DONE/BLOCKED envelopes.
 - Morpheus LangGraph pilot rule:
-  LangGraph adoption starts as an optional Morpheus-only completion engine behind `MORPHEUS_RUNTIME_ENGINE=langgraph`.
-  The graph must not replace OpenClaw envelopes, project helper scripts, Niaobe ownership, or the classic runtime by default.
-  Initial graph nodes stay deterministic and do not call the LLM; they only make the existing runtime tail explicit and testable.
+  LangGraph adoption started as an optional Morpheus-only completion engine behind `MORPHEUS_RUNTIME_ENGINE=langgraph`.
+  The graph does not replace OpenClaw envelopes, project helper scripts, or Niaobe ownership.
+  Initial graph nodes stayed deterministic and did not call the LLM; they only made the existing runtime tail explicit and testable.
 - Morpheus LangGraph default rule:
-  As of 2026-05-26, Morpheus' wrapper defaults to `MORPHEUS_RUNTIME_ENGINE=langgraph`.
-  The classic runtime remains available by explicitly setting `MORPHEUS_RUNTIME_ENGINE=classic`.
-  Future Morpheus repair work should extend the graph instead of adding more ad hoc completion branching.
+  As of 2026-05-26, Morpheus uses the LangGraph completion runtime unconditionally.
+  `MORPHEUS_RUNTIME_ENGINE` is no longer a supported switch for Morpheus.
+  Future Morpheus repair work should extend the graph instead of adding classic fallback branching.
 - Morpheus implementation-only repair rule:
   After a LangGraph-owned `test_failed` completion attempt, Morpheus must run the runtime `repair` subcommand before the next `complete`.
   The repair window is implementation-only: tests, docs, and manifests remain locked unless explicitly listed in `ALLOWED_REPAIR_PATHS`.
@@ -374,3 +374,44 @@
 - Morpheus repair validation rule:
   Repair-loop changes should be validated with the dedicated `morpheus_forced_repair` phase canary before broader phase-suite or Fibonacci E2E runs.
   A normal `morpheus_direct_implementation` PASS is not enough repair evidence because the model may pass on the first completion attempt.
+- Oracle LangGraph runtime rule:
+  Oracle verification now uses a deterministic LangGraph runtime tail for artifact verification, validation command execution, report writing, and final PASS/FAIL envelope sending.
+  The model remains responsible for judgment only where needed; control-state transitions and report verification stay runtime-owned.
+- Architect LangGraph runtime rule:
+  Architect completion now uses a deterministic LangGraph runtime tail for draft validation, architecture import, artifact verification, and DONE/BLOCKED envelope sending.
+  Recoverable missing-draft or verification failures get one runtime-owned repair request before terminal BLOCKED.
+- Architect work-order rule:
+  Architect prepare/run output should carry a bounded work order and draft template directly in stdout, matching the Morpheus pattern.
+  Architect prompts should use `architect_run_task.sh run`, write only the printed `DRAFT_FILE` with an explicit `path` and `content`, then call `complete`; missing or invalid drafts should go through `architect_run_task.sh repair`.
+- Smith/Niaobe migration gate:
+  Smith and Niaobe should not be migrated to LangGraph until Architect/Oracle/Morpheus are green in isolated canaries and the E2E path no longer stalls before BUILD/VERIFY.
+  Current evidence blocks moving upward: isolated Architect and Oracle pass, but isolated Fibonacci E2E stalls at Architect `awaiting_draft`.
+- Smith initial-planning LangGraph rule:
+  Smith initial Neo->Smith planning now routes `autoplan` through LangGraph.
+  For projects with a deterministic `## Required Plan`, the runtime generates/imports/verifies `management/PLAN.md`, `management/BACKLOG.md`, all declared `management/tasks/T###.md`, and `CURRENT_TASK.md`, then updates project state and hands T001 to Niaobe.
+  Smith model fallback should only occur when the graph reports no deterministic Required Plan and prints prepared work-order paths.
+- Phase-suite isolation rule:
+  Phase canaries that send real downstream DONE messages can wake later agents and contaminate subsequent direct-worker phases.
+  The suite should isolate, reorder, or neutralize downstream side effects before classifying those later failures as role regressions.
+- Shared self-healing runtime rule:
+  Recoverable worker mistakes should use shared recovery directives with stable fields such as `REPAIR_MODE`, `MISSING_PATHS`, `ALLOWED_REPAIR_PATHS`, retry counts, and `NEXT_REQUIRED`.
+  Agent-specific runtimes should provide validators and allowed repair actions, while shared code owns repair-envelope shape and retry-budget semantics.
+- Morpheus draft isolation rule:
+  Morpheus artifact runs must use run-specific draft aliases under `draft-aliases/<run_id>`, not a shared `draft-aliases/current` path.
+  This prevents late writes from stale sessions from landing in the active run.
+- Required-output extraction rule:
+  Artifact worker prepare should extract `## Required Outputs` from all rooted task inputs, not only `PROJECT.md`.
+  Task files and architecture files can carry the authoritative output list when project-level specs only describe acceptance criteria.
+- Canary session rotation rule:
+  Phase canaries that need a clean live model context should rotate the registered main session instead of inventing arbitrary `sessions.send` keys.
+  The rotation must archive the prior session registry and transcript files under `.openclaw/session-resets/`, then seed a new empty transcript entry for the same key such as `agent:morpheus:main` so gateway delivery still succeeds.
+  Canary reports should record the rotation metadata in preflight.
+- Morpheus subteam contract rule:
+  Morpheus may use `sessions_spawn` only for its internal Planner -> Implementer -> Tester sequence.
+  The runtime owns the contract files, exact spawn-task text, planner/tester Markdown validation, artifact import, test execution, and final Niaobe message.
+  Planner and Tester must write append-only Markdown attempts under the run directory; `check-subteam` is the only path that advances `latest.json`.
+  Implementer writes only under the run-specific `DRAFT_WRITE_ROOT` plus manifest.
+- Morpheus virtual-team rule:
+  Morpheus no longer uses spawned child sessions for IMPLEMENT work.
+  The LangGraph runtime preserves the team-review shape with deterministic virtual evidence nodes for planner, implementer, and tester under the run-local `team/` directory.
+  Runtime owns artifact import, artifact verification, project execution, repair/block state, and final Niaobe messaging; Morpheus supplies implementation content and the test command in the main session only.

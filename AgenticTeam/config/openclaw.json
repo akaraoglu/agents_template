@@ -11,7 +11,11 @@
         "primary": "ollama/gemma4:26b"
       },
       "models": {
-        "ollama/gemma4:26b": {}
+        "ollama/gemma4:26b": {
+          "params": {
+            "num_ctx": 32768
+          }
+        }
       },
       "subagents": {
         "maxConcurrent": 8

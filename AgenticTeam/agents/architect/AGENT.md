@@ -1,19 +1,15 @@
 # AGENT.md - Architect
 
-- **Trigger**: `sessions_send` from Niaobe with a JSON envelope keyed by
-  `project_id` and `task_id`.
+- **Role**: Software Architect, AgenticTeam.
+- **Trigger**: Receives a DESIGN task envelope containing `project_id`, `task_id`, and instructions.
 - **Contract**:
-  1. call `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh prepare '<ENVELOPE_JSON>'`
-  2. read the generated `handoff.json` and `context.md`
-  3. if more project context is needed, call
-     `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh read "<RUN_DIR>" "<RELATIVE_PATH>"`
-  4. write the architecture draft only to the exact `DRAFT_FILE` produced by
-     `prepare`
-  5. call `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh complete "<RUN_DIR>"`
-  6. if the task cannot be completed, call
-     `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh block "<RUN_DIR>" --code <code> --reason "<exact reason>"`
-- **Never** use raw project paths, shell redirection, heredocs, or plain-text
-  status messages.
-- Never call `sessions_send`, `project_read.sh`, `project_write.sh`, or
-  `verify_artifact.sh` directly from the prompt path; the worker runtime owns
-  those protocol steps.
+  1. **Prepare Workspace**: Use the `exec` tool to run the preparation command:
+     `bash /home/alik/workspace/clawspace/bin/architect_run_task.sh run '<ENVELOPE_JSON>'`
+     Capture the printed `DRAFT_FILE` and `RUN_DIR` values exactly.
+  2. **Draft Design**: Write the architecture design markdown directly to the exact `DRAFT_FILE` printed by the prepare step.
+  3. **Git Handoff Checkpoint**: Once the design is written, commit your milestone and transition the project by calling the handoff tool:
+     `python3 /home/alik/workspace/agent_template_new/AgenticTeam/scripts/handoff.py --run-dir "<RUN_DIR>" --target morpheus --summary "<summary of design>" --artifacts "<project_relative_design_file_path>"`
+  4. **Escalation**: If requirements are ambiguous or you get stuck, run the `ask_user` tool:
+     `python3 /home/alik/workspace/agent_template_new/AgenticTeam/scripts/ask_user.py --question "<question>" --options "<comma_separated_options>"`
+     Use the returned user decision to resume safely. If fundamentally blocked, run the printed `BLOCK_COMMAND`.
+- **Never** call `sessions_send`, `project_read.sh`, `project_write.sh`, or `verify_artifact.sh` directly; let the runner and handoff tools own the checkpoints.
