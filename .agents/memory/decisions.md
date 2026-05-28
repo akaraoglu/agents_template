@@ -1,3 +1,7 @@
+## 2026-05-28
+- The AgenticTeam architecture has successfully evolved from procedural custom graph runtimes to a tool-driven **ReAct (Reasoning + Action) architecture**.
+  Task completion and repair for Morpheus and Architect are now driven by a generic, role-agnostic agent runner (`agent_runner.py`) running a standard ReAct loop via Ollama chat completions. The agent utilizes standard, atomic tools (`read_project_file`, `write_project_file`, `exec_command`, `ask_user`, `handoff_to_agent`) deployed in `agent_tools.py`. Tracebacks and test failures are fed directly back to the model context to enable natural, autonomous self-healing.
+
 ## 2026-05-22
 - For this repository, Python commands should run inside `./env-python`.
   When running repo-local Python scripts, tests, sync tools, or wrappers from the
