@@ -63,30 +63,8 @@ def main() -> None:
     print(f"Artifacts: {', '.join(artifacts)}")
     print(f"Summary: {args.summary}")
     
-    # 1. Version Control: Git Stage and Commit Milestone
-    print("\n[Git Checkpoint] Staging output artifacts...")
-    for art in artifacts:
-        art_path = project_path / art
-        if art_path.is_file():
-            subprocess.run(["git", "add", art], cwd=str(project_path), check=True)
-            print(f"  Staged: {art}")
-        else:
-            print(f"  Warning: Artifact file missing in workspace: {art}", file=sys.stderr)
-            
-    commit_msg = f"[{state.get('phase', 'WORK')}] {task_id} handoff to {args.target}: {args.summary}"
-    try:
-        # Check if there are any staged changes before committing
-        status_proc = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"], 
-            cwd=str(project_path)
-        )
-        if status_proc.returncode == 1:  # Staged changes exist
-            subprocess.run(["git", "commit", "-m", commit_msg], cwd=str(project_path), check=True)
-            print(f"[Git Checkpoint] Committed milestone successfully: \"{commit_msg}\"")
-        else:
-            print("[Git Checkpoint] No changes staged. Skipping commit.")
-    except subprocess.CalledProcessError as exc:
-        print(f"Warning: Git commit failed: {exc}", file=sys.stderr)
+    # 1. Version Control: Removed intermediate Git staging as per instructions.
+    print("\n[Version Control] Intermediate Git staging is disabled at this stage.")
         
     # 2. Centralized State: Update the project.json manifest
     print("\n[Manifest State] Updating centralized project.json...")
@@ -98,6 +76,29 @@ def main() -> None:
         save_manifest(project_path, manifest)
         
     print(f"[Manifest State] Project state transitioned to: Phase={next_phase}, Owner={args.target.upper()}")
+    
+    # 3. OpenClaw Ledger: Record handoff_sent event for receiver acknowledgement
+    print("\n[Ledger State] Recording handoff_sent event...")
+    from_agent = state.get("role") or manifest.get("owner") or "neo"
+    current_phase = state.get("phase") or manifest.get("phase") or "HANDOFF"
+    project_id = manifest.get("project_id", project_path.name)
+    
+    handoff_event = {
+        "event_type": "handoff_sent",
+        "project_id": project_id,
+        "from": from_agent,
+        "to": args.target,
+        "phase": current_phase,
+        "task_id": task_id
+    }
+    
+    ledger_path = project_path / ".openclaw" / "handoffs.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    with ledger_path.open("a", encoding="utf-8") as f:
+        import json
+        f.write(json.dumps(handoff_event) + "\n")
+    print(f"[Ledger State] Recorded handoff_sent event to {ledger_path.name}")
+    
     print("\nHandoff milestone completed successfully. Ready for next agent activation.")
 
 

@@ -107,8 +107,8 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.env_patch.start()
         self.addCleanup(self.env_patch.stop)
 
-    def _fake_run(self, cmd: list[str], capture_output: bool = True, text: bool = True, timeout: int = 120):
-        del capture_output, text, timeout
+    def _fake_run(self, cmd: list[str], capture_output: bool = True, text: bool = True, timeout: int = 120, *args, **kwargs):
+        del capture_output, text, timeout, args, kwargs
         joined = " ".join(cmd)
         if cmd[:3] == ["bash", str(self.bin_root / "resolve_project.sh"), "demo-project"]:
             return mock.Mock(

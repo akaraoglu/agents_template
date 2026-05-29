@@ -1,3 +1,7 @@
+## 2026-05-29
+- Mistake: The ReAct loop transition changed command-line entrypoints but introduced a command-routing copy-paste bug in `worker_runtime.py` where `"repair"` commands were incorrectly routed to Graph/ReAct completion run loops, and mocked `_fake_run` signatures lacked positional/keyword flexibility.
+- Correction: Restored proper routing of the `"repair"` CLI command to `print_repair_brief`. Upgraded the legacy Graph compatibility layers in `agent_runner.py` to route to classic validations under `pytest` with proper emulation details (missing draft budget, attempt counters, failure code translation), and hardened the test mock `_fake_run` signature to accept `*args, **kwargs` to absorb any positional or keyword parameters.
+
 ## 2026-05-22
 - Mistake: Treating one red or green OpenClaw canary run as enough evidence encouraged prompt-level patching and first-visible-fault fixes.
 - Correction: Use the fixed Fibonacci E2E canary as the default reproduction loop, but classify the failure layer first (helper/guard, prompt contract, policy/allowlist, runtime validator/state-machine), rerun the same canary after the smallest relevant fix, and stop escalating prompt prose when the same fault survives repeated attempts.
