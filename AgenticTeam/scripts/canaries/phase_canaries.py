@@ -39,6 +39,7 @@ from canaries.common import (
     state_summary,
     token_from_paths,
     wait_for_session_quiescence,
+    worker_draft_evidence,
     write_project_file,
     write_state,
     CLAWSPACE_ROOT,
@@ -82,6 +83,15 @@ def project_token(project_dir: Path, extra_paths: list[str], *, agent: str | Non
         if snapshot:
             token = f"{token}|session:{snapshot.updated_at}:{snapshot.status}"
     return token
+
+
+def terminal_result_file_for_worker_state(worker_state: dict[str, Any] | None) -> Path | None:
+    if not worker_state:
+        return None
+    state_file = str(worker_state.get("state_file") or "").strip()
+    if not state_file:
+        return None
+    return Path(state_file).parent / "result.json"
 
 
 def parse_runtime_value(output: str, key: str) -> str:
@@ -894,6 +904,235 @@ def architect_missing_draft_repair(timeout_seconds: int | None = None, stall_sec
     )
 
 
+def architect_live_session_protocol(timeout_seconds: int | None = None, stall_seconds: int | None = None) -> dict[str, Any]:
+    timeout_seconds = timeout_seconds or 300
+    stall_seconds = stall_seconds or 90
+    project_id, project_dir = create_project("canary_architect_live_session_protocol", "single_file_markdown_counter.md")
+    contract = {
+        "starting_state": "Fresh DESIGN-ready task with direct Niaobe->Architect handoff to the live Architect session.",
+        "allowed_agents": ["niaobe", "architect"],
+        "expected_files": ["management/tasks/T001.md", "CURRENT_TASK.md", "management/architecture/T001.md"],
+        "expected_state_fields": {
+            "owner": "niaobe",
+            "phase": "IN_PROGRESS",
+            "waiting_for": "architect",
+            "active_task": "T001",
+            "task_phase": "DESIGN",
+        },
+        "expected_handoffs": [
+            {"event_type": "handoff_sent", "from": "niaobe", "to": "architect", "phase": "DESIGN", "task_id": "T001"}
+        ],
+        "expected_terminal_state": "architect_live_runtime_sent",
+        "failure_timeout_seconds": timeout_seconds,
+        "stall_timeout_seconds": stall_seconds,
+    }
+    checked: list[dict[str, Any]] = []
+    sync = detect_sync_drift(["architect"])
+    freshness = "rotated_main_session"
+    preflight = build_preflight(
+        gateway_required=True,
+        sync_drift=sync["sync_drift"],
+        session_freshness_value=freshness,
+        mattermost_needed=False,
+    )
+    if not gateway_is_listening():
+        add_invariant(checked, "gateway:listening", False, "OpenClaw gateway is not listening on 127.0.0.1:18789.")
+        return finalize_summary(
+            canary="architect_live_session_protocol",
+            contract=contract,
+            project_id=project_id,
+            project_dir=project_dir,
+            checked_invariants=checked,
+            final_state=state_summary(project_dir),
+            latest_handoff=latest_handoff_event(project_dir),
+            latest_worker_state=latest_session_state("architect"),
+            sync_drift=sync["sync_drift"],
+            session_freshness_value=freshness,
+            preflight=preflight,
+            session_detail=session_delta_for_key("architect", expected_project_id=project_id),
+        )
+    preflight["target_session_rotation"] = rotate_main_session("architect", reason=project_id)
+    ready, _ = preflight_target_session("architect", checked, preflight, allow_no_session=True)
+    architect_before = session_snapshot("architect")
+    if not ready:
+        return finalize_summary(
+            canary="architect_live_session_protocol",
+            contract=contract,
+            project_id=project_id,
+            project_dir=project_dir,
+            checked_invariants=checked,
+            final_state=state_summary(project_dir),
+            latest_handoff=latest_handoff_event(project_dir),
+            latest_worker_state=latest_session_state("architect", architect_before),
+            sync_drift=sync["sync_drift"],
+            session_freshness_value=freshness,
+            preflight=preflight,
+            session_detail=session_delta_for_key("architect", snapshot=architect_before, expected_project_id=project_id),
+        )
+    seed_task_inputs(
+        project_dir,
+        task_text=task_t001_markdown_counter(),
+        current_task_text=current_task_t001(),
+    )
+    write_state(
+        project_id,
+        "IN_PROGRESS",
+        "architect",
+        "--actor",
+        "niaobe",
+        "--expect-owner",
+        "smith",
+        "--set-owner",
+        "niaobe",
+        "--active-task",
+        "T001",
+        "--task-phase",
+        "DESIGN",
+        "--task-status",
+        "IN_PROGRESS",
+        "--note",
+        "Canary seeded live Architect protocol task.",
+    )
+    handoff_output = direct_handoff_output(
+        "niaobe",
+        "architect",
+        project_id,
+        "Read PROJECT.md, CURRENT_TASK.md, and management/tasks/T001.md. Write management/architecture/T001.md and report DONE or BLOCKED.",
+        "DESIGN",
+        "T001",
+    )
+    envelope = parse_envelope(handoff_output)
+    send_response = send_envelope_to_agent("architect", envelope)
+
+    def draft_token(drafts: list[dict[str, Any]]) -> str:
+        parts: list[str] = []
+        for item in drafts:
+            draft_path = Path(str(item["draft_file"]))
+            size = draft_path.stat().st_size if draft_path.is_file() else 0
+            parts.append(
+                ":".join(
+                    [
+                        str(draft_path),
+                        str(size),
+                        "state" if item.get("state_file_exists") else "no-state",
+                        "result" if item.get("result_file_exists") else "no-result",
+                    ]
+                )
+            )
+        return "|".join(parts)
+
+    def snapshot() -> dict[str, Any]:
+        drafts = worker_draft_evidence(project_id, "architect")
+        worker_state = load_latest_worker_state(project_id, "architect")
+        result_file = terminal_result_file_for_worker_state(worker_state)
+        return {
+            "token": project_token(project_dir, contract["expected_files"], agent="architect")
+            + "|drafts:"
+            + draft_token(drafts),
+            "state": state_summary(project_dir),
+            "events": load_handoff_events(project_dir),
+            "worker_state": worker_state,
+            "result_file_exists": bool(result_file and result_file.exists()),
+            "drafts": drafts,
+        }
+
+    status, current = poll_until(
+        snapshot,
+        lambda snap: (
+            project_file_exists(project_dir, "management/architecture/T001.md")
+            and ((snap.get("worker_state") or {}).get("status") in {"sent", "blocked"})
+            and bool(snap.get("result_file_exists"))
+        ),
+        timeout_seconds=timeout_seconds,
+        stall_seconds=stall_seconds,
+        poll_seconds=5,
+    )
+    final_state = current.get("state", state_summary(project_dir))
+    events = current.get("events", load_handoff_events(project_dir))
+    worker_state = current.get("worker_state") or load_latest_worker_state(project_id, "architect")
+    result_file = terminal_result_file_for_worker_state(worker_state)
+    drafts = current.get("drafts") or worker_draft_evidence(project_id, "architect")
+    orphan_drafts = [item for item in drafts if item.get("draft_file_exists") and not item.get("state_file_exists")]
+    session_detail = session_delta(architect_before, expected_project_id=project_id)
+    session_state = latest_session_state("architect", architect_before)
+    raw_text = (session_detail or {}).get("raw_text", "")
+    for relative_path in contract["expected_files"]:
+        exists = project_file_exists(project_dir, relative_path)
+        add_invariant(
+            checked,
+            f"file:{relative_path}",
+            exists,
+            f"{relative_path} {'exists' if exists else 'is missing'}",
+        )
+    add_invariant(
+        checked,
+        "handoff:niaobe->architect",
+        handoff_exists(events, event_type="handoff_sent", from_agent="niaobe", to_agent="architect", phase="DESIGN", task_id="T001"),
+        "niaobe->architect handoff recorded",
+    )
+    add_invariant(
+        checked,
+        "runtime:state",
+        bool(worker_state),
+        f"architect worker state={(worker_state or {}).get('state_file', 'missing')}",
+    )
+    add_invariant(
+        checked,
+        "runtime:no_orphan_draft",
+        not orphan_drafts,
+        "no orphan Architect draft"
+        if not orphan_drafts
+        else "Architect orphan draft exists without runtime state/result evidence: "
+        + ", ".join(str(item["draft_file"]) for item in orphan_drafts),
+    )
+    add_invariant(
+        checked,
+        "result:terminal_file",
+        bool(result_file and result_file.exists()),
+        f"result.json exists at {result_file}" if result_file and result_file.exists() else "Architect did not write terminal result.json",
+    )
+    add_invariant(
+        checked,
+        "worker:sent",
+        (worker_state or {}).get("status") == "sent",
+        f"worker status={(worker_state or {}).get('status', 'missing')}",
+    )
+    add_invariant(
+        checked,
+        "session:runtime_run",
+        "architect_run_task.sh run" in raw_text,
+        "Architect session invoked runtime run"
+        if "architect_run_task.sh run" in raw_text
+        else "Architect session did not invoke architect_run_task.sh run",
+    )
+    add_invariant(
+        checked,
+        "session:runtime_complete",
+        "architect_run_task.sh complete" in raw_text,
+        "Architect session invoked runtime complete"
+        if "architect_run_task.sh complete" in raw_text
+        else "Architect session did not invoke architect_run_task.sh complete",
+    )
+    add_invariant(checked, "execution:terminal", status == "success", f"poll status={status}")
+    drain = postrun_target_session("architect", checked)
+    return finalize_summary(
+        canary="architect_live_session_protocol",
+        contract=contract,
+        project_id=project_id,
+        project_dir=project_dir,
+        checked_invariants=checked,
+        final_state=final_state,
+        latest_handoff=events[-1] if events else None,
+        latest_worker_state=worker_state or session_state,
+        sync_drift=sync["sync_drift"],
+        session_freshness_value=freshness,
+        preflight=preflight,
+        delivery_evidence=build_delivery_evidence(send_response, session_detail),
+        session_detail=session_detail,
+        drain=drain,
+    )
+
+
 def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_seconds: int | None = None) -> dict[str, Any]:
     timeout_seconds = timeout_seconds or 420
     stall_seconds = stall_seconds or 90
@@ -985,14 +1224,22 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
         "T001",
     )
     envelope = next(line.split("ENVELOPE: ", 1)[1] for line in handoff_output.splitlines() if line.startswith("ENVELOPE: "))
-    send_response = send_envelope_to_agent("morpheus", envelope)
+    send_response = run(
+        [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "morpheus_run_task.py"), "dispatch", envelope],
+        timeout=120,
+    )
 
     def snapshot() -> dict[str, Any]:
+        worker_state = load_latest_worker_state(project_id, "morpheus")
+        result_file = terminal_result_file_for_worker_state(worker_state)
+        task_packet_file = Path(str((worker_state or {}).get("task_packet_file") or ""))
         return {
             "token": project_token(project_dir, contract["expected_files"], agent="morpheus"),
             "state": state_summary(project_dir),
             "events": load_handoff_events(project_dir),
-            "worker_state": load_latest_worker_state(project_id, "morpheus"),
+            "worker_state": worker_state,
+            "result_file_exists": bool(result_file and result_file.exists()),
+            "task_packet_file": task_packet_file if task_packet_file.is_file() else None,
         }
 
     status, current = poll_until(
@@ -1001,25 +1248,80 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
             project_file_exists(project_dir, "src/main.py")
             and project_file_exists(project_dir, "tests/test_main.py")
             and ((snap.get("worker_state") or {}).get("status") in {"sent", "blocked"})
+            and bool(snap.get("result_file_exists"))
         ),
         timeout_seconds=timeout_seconds,
         stall_seconds=stall_seconds,
         poll_seconds=5,
     )
+    for _attempt in range(4):
+        if status == "success":
+            break
+        worker_state_for_recovery = current.get("worker_state") or load_latest_worker_state(project_id, "morpheus")
+        if not worker_state_for_recovery or worker_state_for_recovery.get("status") in {"sent", "blocked"}:
+            break
+        state_file = str(worker_state_for_recovery.get("state_file", "")).strip()
+        if not state_file:
+            break
+        run_process(
+            [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "morpheus_run_task.py"), "advance", str(Path(state_file).parent)],
+            timeout=120,
+        )
+        status, current = poll_until(
+            snapshot,
+            lambda snap: (
+                project_file_exists(project_dir, "src/main.py")
+                and project_file_exists(project_dir, "tests/test_main.py")
+                and ((snap.get("worker_state") or {}).get("status") in {"sent", "blocked"})
+            ),
+            timeout_seconds=timeout_seconds,
+            stall_seconds=stall_seconds,
+            poll_seconds=5,
+        )
     final_state = current.get("state", state_summary(project_dir))
     events = current.get("events", load_handoff_events(project_dir))
     session_detail = session_delta_for_key("morpheus", snapshot=morpheus_before, expected_project_id=project_id)
     session_state = latest_session_state("morpheus", morpheus_before)
     worker_state = current.get("worker_state") or load_latest_worker_state(project_id, "morpheus")
+    result_file = terminal_result_file_for_worker_state(worker_state)
     raw_text = (session_detail or {}).get("raw_text", "")
+    task_packet_file = current.get("task_packet_file")
+    task_packet_text = task_packet_file.read_text(encoding="utf-8") if isinstance(task_packet_file, Path) and task_packet_file.is_file() else ""
     worker_payload = (worker_state or {}).get("result_payload") or {}
     worker_instructions = str(worker_payload.get("instructions", ""))
     worker_project_exec = str((worker_state or {}).get("project_exec", ""))
     for relative_path in contract["expected_files"]:
         add_invariant(checked, f"file:{relative_path}", project_file_exists(project_dir, relative_path), f"{relative_path} {'exists' if project_file_exists(project_dir, relative_path) else 'is missing'}")
+    add_invariant(
+        checked,
+        "result:terminal_file",
+        bool(result_file and result_file.exists()),
+        f"result.json exists at {result_file}" if result_file and result_file.exists() else "worker did not write terminal result.json",
+    )
+    add_invariant(
+        checked,
+        "packet:report_command",
+        "REPORT_COMMAND=" in task_packet_text,
+        "Morpheus packet includes REPORT_COMMAND" if "REPORT_COMMAND=" in task_packet_text else "Morpheus packet did not include REPORT_COMMAND",
+    )
+    add_invariant(
+        checked,
+        "packet:no_complete_command",
+        "COMPLETE_COMMAND=" not in task_packet_text,
+        "Morpheus packet no longer exposes COMPLETE_COMMAND" if "COMPLETE_COMMAND=" not in task_packet_text else "Morpheus packet still exposes COMPLETE_COMMAND",
+    )
+    add_invariant(
+        checked,
+        "packet:work_report_schema",
+        "WORK_REPORT_SCHEMA_BEGIN" in task_packet_text and "REPORT_DESTINATION=" in task_packet_text,
+        "Morpheus packet includes work report schema and destination" if ("WORK_REPORT_SCHEMA_BEGIN" in task_packet_text and "REPORT_DESTINATION=" in task_packet_text) else "Morpheus packet missing report schema or destination",
+    )
     add_invariant(checked, "state:owner", final_state["owner"] == "niaobe", f"owner={final_state['owner']}")
     add_invariant(checked, "state:task_phase", final_state["task_phase"] == "IMPLEMENT", f"task_phase={final_state['task_phase']}")
     add_invariant(checked, "handoff:niaobe->morpheus", handoff_exists(events, event_type="handoff_sent", from_agent="niaobe", to_agent="morpheus", phase="IMPLEMENT", task_id="T001"), "niaobe->morpheus handoff recorded")
+    add_invariant(checked, "session:task_packet", "TASK_PACKET_BEGIN" in raw_text, "Morpheus received runtime task packet" if "TASK_PACKET_BEGIN" in raw_text else "Morpheus session did not receive runtime task packet")
+    prepare_tool_call = "morpheus_run_task.sh prepare '" in raw_text or 'morpheus_run_task.sh prepare "' in raw_text
+    add_invariant(checked, "session:no_prepare_call", not prepare_tool_call, "Morpheus did not call exposed prepare" if not prepare_tool_call else "Morpheus session contains exposed prepare call")
     project_exec_seen = (
         f'project_exec.sh "{project_id}"' in raw_text
         or f"project_exec.sh \\\"{project_id}\\\"" in raw_text
@@ -1145,7 +1447,10 @@ def morpheus_forced_repair(timeout_seconds: int | None = None, stall_seconds: in
     )
     handoff_output = direct_handoff_output("niaobe", "morpheus", project_id, instructions, "IMPLEMENT", "T001")
     envelope = parse_envelope(handoff_output)
-    send_response = send_envelope_to_agent("morpheus", envelope)
+    send_response = run(
+        [sys.executable, str(AGENTICTEAM_ROOT / "scripts" / "morpheus_run_task.py"), "dispatch", envelope],
+        timeout=120,
+    )
 
     def snapshot() -> dict[str, Any]:
         return {
@@ -1383,6 +1688,7 @@ CANARY_RUNNERS = {
     "smith_niaobe_handoff": smith_niaobe_handoff,
     "architect_worker_runtime": architect_worker_runtime,
     "architect_missing_draft_repair": architect_missing_draft_repair,
+    "architect_live_session_protocol": architect_live_session_protocol,
     "morpheus_direct_implementation": morpheus_direct_implementation,
     "morpheus_forced_repair": morpheus_forced_repair,
     "oracle_verification": oracle_verification,

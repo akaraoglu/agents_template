@@ -18,6 +18,14 @@ from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
 
+from covenant_contracts import (
+    ContractValidationError,
+    TaskPack,
+    WorkReport,
+    validate_task_pack,
+    validate_work_report,
+    validate_work_result,
+)
 from worker_contracts import ArtifactWorkerContract, PlanningProjectContract, WorkerContract
 
 RUN_DEADLINE_SECONDS = 1800
@@ -49,6 +57,50 @@ class PreparedArtifactRun:
     context_file: Path
     draft_dir: Path
     manifest_file: Path
+
+
+@dataclass(frozen=True)
+class AgentTaskRuntimeState:
+    project_id: str
+    task_id: str
+    agent_role: str
+    phase: str
+    run_id: str
+    run_dir: Path
+    status: str
+    required_outputs: tuple[str, ...]
+    artifact_manifest: Path
+    validation_plan: tuple[str, ...]
+    validation_runs: tuple[dict[str, Any], ...]
+    validation_report: dict[str, Any] | None
+    final_decision: str | None
+
+
+@dataclass(frozen=True)
+class RuntimeOutcome:
+    outcome: str
+    status: str
+    signal: str | None
+    code: str | None
+    message: str
+    report_status: str | None = None
+    repair_feedback: dict[str, Any] | None = None
+    result_file: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "outcome": self.outcome,
+            "status": self.status,
+            "signal": self.signal,
+            "code": self.code,
+            "message": self.message,
+            "report_status": self.report_status,
+        }
+        if self.repair_feedback is not None:
+            payload["repair_feedback"] = self.repair_feedback
+        if self.result_file is not None:
+            payload["result_file"] = self.result_file
+        return payload
 
 
 def workspace_root() -> Path:
@@ -106,7 +158,7 @@ def write_morpheus_virtual_team_contracts(
                 test_command_text,
                 "",
                 "## Acceptance Checks",
-                "- pending runtime completion",
+                "- pending runtime reporting",
                 "",
                 f"Work order: {context_file}",
             ]
@@ -146,7 +198,7 @@ def write_morpheus_virtual_team_contracts(
                 test_command_text,
                 "",
                 "## Findings",
-                "- pending runtime completion",
+                "- pending runtime reporting",
                 "",
                 f"Draft root: {draft_write_root}",
                 f"Manifest: {manifest_write_file}",
@@ -160,6 +212,32 @@ def write_morpheus_virtual_team_contracts(
         "implementer_checklist_file": str(implementer_checklist),
         "tester_review_file": str(tester_review),
     }
+
+
+def agent_task_runtime_state(run_dir: Path) -> AgentTaskRuntimeState:
+    state = load_state(run_dir)
+    run_id = str(state.get("run_id") or run_dir.name)
+    validation_runs = state.get("validation_runs")
+    if not isinstance(validation_runs, list):
+        validation_runs = []
+    validation_report = state.get("validation_report")
+    if not isinstance(validation_report, dict):
+        validation_report = None
+    return AgentTaskRuntimeState(
+        project_id=str(state.get("project_id", "")),
+        task_id=str(state.get("task_id", "")),
+        agent_role=str(state.get("role", "")),
+        phase=str(state.get("phase", "")),
+        run_id=run_id,
+        run_dir=run_dir,
+        status=str(state.get("status", "")),
+        required_outputs=tuple(str(path) for path in state.get("required_output_paths", []) if str(path).strip()),
+        artifact_manifest=Path(str(state.get("manifest_file", ""))),
+        validation_plan=tuple(str(part) for part in state.get("validation_plan", []) if str(part).strip()),
+        validation_runs=tuple(item for item in validation_runs if isinstance(item, dict)),
+        validation_report=validation_report,
+        final_decision=state.get("final_decision") if isinstance(state.get("final_decision"), str) else None,
+    )
 
 
 def ensure_directory_alias(target: Path, alias: Path) -> Path:
@@ -188,7 +266,12 @@ def state_path(run_dir: Path) -> Path:
 def load_state(run_dir: Path) -> dict[str, Any]:
     path = state_path(run_dir)
     if not path.exists():
-        raise WorkerRuntimeError(f"run state missing: {path}", code="missing_state")
+        raise WorkerRuntimeError(
+            "run state missing: "
+            f"{path}. Use the RUN_DIR from the task packet; do not pass DRAFT_WRITE_ROOT, DRAFT_DIR, "
+            "or MANIFEST_WRITE_FILE to report/complete/block.",
+            code="missing_state",
+        )
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -231,6 +314,20 @@ def command_details(result: subprocess.CompletedProcess[str]) -> str:
     return "\n".join(parts) if parts else "no output"
 
 
+def is_tool_denial_text(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        token in lowered
+        for token in (
+            "allowlist miss",
+            "exec denied",
+            "not allowed",
+            "forbidden",
+            "tool policy removed",
+        )
+    )
+
+
 def run_command(cmd: list[str], *, timeout: int = 120) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
@@ -238,9 +335,13 @@ def run_command(cmd: list[str], *, timeout: int = 120) -> subprocess.CompletedPr
 def require_ok(result: subprocess.CompletedProcess[str], *, action: str) -> str:
     details = command_details(result)
     outcome = parse_outcome(details)
+    if is_tool_denial_text(details):
+        raise WorkerRuntimeError(f"{action} denied by tool policy: {details}", code="tool_denied")
     if result.returncode != 0:
         raise WorkerRuntimeError(f"{action} failed: {details}", code="helper_failed")
     if outcome and outcome.get("status") != "OK":
+        if is_tool_denial_text(details):
+            raise WorkerRuntimeError(f"{action} denied by tool policy: {details}", code="tool_denied")
         raise WorkerRuntimeError(f"{action} returned {outcome.get('status')}: {details}", code="helper_failed")
     return result.stdout or ""
 
@@ -545,6 +646,8 @@ def prepare_run(contract: WorkerContract, envelope_raw: str) -> PreparedRun:
     state = {
         "role": contract.role,
         "phase": contract.phase,
+        "run_id": run_dir.name,
+        "runtime_model": "AgentTaskRuntime",
         "status": "preparing",
         "prepared_at": iso_now(),
         "prepared_epoch": time.time(),
@@ -689,7 +792,7 @@ def verify_draft_content(contract: WorkerContract, draft_text: str, *, task_id: 
 
 
 def build_result_payload(contract: WorkerContract, state: dict[str, Any], *, instructions: str) -> dict[str, str]:
-    return {
+    payload: dict[str, Any] = {
         "project_id": str(state["project_id"]),
         "task_id": str(state["task_id"]),
         "from": contract.role,
@@ -697,6 +800,19 @@ def build_result_payload(contract: WorkerContract, state: dict[str, Any], *, ins
         "phase": contract.phase,
         "instructions": instructions,
     }
+    work_result = state.get("outbound_work_result")
+    if isinstance(work_result, dict):
+        payload["work_result"] = work_result
+    work_report = state.get("outbound_work_report")
+    if isinstance(work_report, dict):
+        payload["work_report"] = work_report
+    project_workspace = state.get("outbound_project_workspace")
+    if isinstance(project_workspace, dict):
+        payload["project_workspace"] = project_workspace
+    artifact_manifest = state.get("outbound_artifact_manifest")
+    if isinstance(artifact_manifest, dict):
+        payload["artifact_manifest"] = artifact_manifest
+    return payload
 
 
 def build_artifact_result_payload(
@@ -704,8 +820,8 @@ def build_artifact_result_payload(
     state: dict[str, Any],
     *,
     instructions: str,
-) -> dict[str, str]:
-    return {
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "project_id": str(state["project_id"]),
         "task_id": str(state["task_id"]),
         "from": contract.role,
@@ -713,6 +829,468 @@ def build_artifact_result_payload(
         "phase": contract.phase,
         "instructions": instructions,
     }
+    work_result = state.get("outbound_work_result")
+    if isinstance(work_result, dict):
+        payload["work_result"] = work_result
+    work_report = state.get("outbound_work_report")
+    if isinstance(work_report, dict):
+        payload["work_report"] = work_report
+    project_workspace = state.get("outbound_project_workspace")
+    if isinstance(project_workspace, dict):
+        payload["project_workspace"] = project_workspace
+    artifact_manifest = state.get("outbound_artifact_manifest")
+    if isinstance(artifact_manifest, dict):
+        payload["artifact_manifest"] = artifact_manifest
+    return payload
+
+
+def build_child_result_signal(
+    *,
+    state: dict[str, Any],
+    from_agent: str,
+    to_agent: str,
+    phase: str,
+    signal: str,
+    reason: str | None = None,
+) -> dict[str, str]:
+    payload = {
+        "project_id": str(state["project_id"]),
+        "task_id": str(state["task_id"]),
+        "from": from_agent,
+        "to": to_agent,
+        "phase": phase,
+        "signal": signal,
+        "run_id": str(state.get("run_id") or ""),
+    }
+    if reason:
+        payload["reason"] = reason
+    return payload
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if isinstance(item, str) and str(item).strip()]
+
+
+def _artifact_expected_paths(state: Mapping[str, Any], fallback: list[str] | None = None) -> list[str]:
+    expected = _string_list(state.get("required_output_paths"))
+    if expected:
+        return expected
+    artifacts = _string_list(state.get("artifacts"))
+    if artifacts:
+        return artifacts
+    if fallback:
+        return fallback
+    return ["README.md"]
+
+
+def _artifact_relevant_files(state: Mapping[str, Any]) -> list[str]:
+    inputs = state.get("inputs")
+    if not isinstance(inputs, list):
+        return []
+    relevant: list[str] = []
+    for item in inputs:
+        if not isinstance(item, Mapping):
+            continue
+        path = str(item.get("path") or "").strip()
+        if path:
+            relevant.append(path)
+    return relevant
+
+
+def _artifact_task_pack_payload(
+    contract: ArtifactWorkerContract,
+    state: Mapping[str, Any],
+    *,
+    expected_artifacts: list[str] | None = None,
+    allowed_write_paths: list[str] | None = None,
+    verification_command: list[str] | None = None,
+) -> dict[str, Any]:
+    expected = expected_artifacts or _artifact_expected_paths(state)
+    allowed = allowed_write_paths or expected
+    command = verification_command or _string_list(state.get("validation_plan")) or _string_list(state.get("team_test_command"))
+    if not command:
+        command = ["bash", "-lc", "runtime outcome recorded before project validation"]
+    previous_failure = state.get("last_error")
+    if not isinstance(previous_failure, Mapping):
+        previous_failure = None
+    return {
+        "project_id": str(state["project_id"]),
+        "workspace_root": str(Path(str(state["project_path"])).resolve()),
+        "task_id": str(state["task_id"]),
+        "role": contract.role,
+        "goal": str(state.get("instructions") or f"{contract.phase} task {state['task_id']}"),
+        "acceptance_criteria": [
+            f"Complete {state['task_id']} for phase {contract.phase}.",
+            "Report only DONE, BLOCKED, FAILED, or NEEDS_REVIEW with runtime-checkable evidence.",
+        ],
+        "allowed_write_paths": allowed,
+        "expected_artifacts": expected,
+        "relevant_files": _artifact_relevant_files(state),
+        "available_tools": ["project_write.sh", "verify_artifact.sh", "project_exec.sh", f"{contract.role}_run_task.sh"],
+        "recommended_verification": command,
+        "previous_failure": dict(previous_failure) if previous_failure else None,
+        "repair_budget": int(state.get("repair_budget", 5)),
+        "report_destination": f"covenant://runtime/{contract.role}/{state['project_id']}/{state['task_id']}",
+        "approved_runtime_evidence_roots": [],
+    }
+
+
+def _artifact_finish_command(contract: ArtifactWorkerContract, run_dir: Path) -> str:
+    finish_command = "report" if contract.role == "morpheus" else "complete"
+    return f"bash {live_bin_root() / (contract.role + '_run_task.sh')} {finish_command} \"{run_dir}\""
+
+
+def _project_workspace_payload(task_pack: TaskPack) -> dict[str, Any]:
+    return {
+        "workspace_root": task_pack.workspace_root,
+        "allowed_write_paths": task_pack.allowed_write_paths,
+        "expected_artifacts": task_pack.expected_artifacts,
+        "approved_runtime_evidence_roots": task_pack.approved_runtime_evidence_roots,
+    }
+
+
+def _artifact_exists_from_report(task_pack: TaskPack, report_payload: Mapping[str, Any]) -> Any:
+    manifest = report_payload.get("artifact_manifest")
+    declared: set[str] = set(_string_list(report_payload.get("changed_files")))
+    if isinstance(manifest, Mapping):
+        for key in ("created", "changed", "expected_artifacts", "evidence_paths"):
+            declared.update(_string_list(manifest.get(key)))
+
+    workspace_root_path = task_pack.workspace_root_path.resolve()
+
+    def exists(path: Path) -> bool:
+        resolved = path.resolve()
+        try:
+            relative = resolved.relative_to(workspace_root_path).as_posix()
+        except ValueError:
+            return resolved.exists()
+        return relative in declared or resolved.exists()
+
+    return exists
+
+
+def _repair_attempts_from_state(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    attempts: list[dict[str, Any]] = []
+    last_error = state.get("last_error")
+    if isinstance(last_error, Mapping):
+        attempts.append(
+            {
+                "code": str(last_error.get("code") or "previous_failure"),
+                "message": str(last_error.get("message") or ""),
+                "recorded_at": iso_now(),
+            }
+        )
+    return attempts
+
+
+def _work_result_from_report(contract: ArtifactWorkerContract, state: Mapping[str, Any], report: WorkReport) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "project_id": str(state["project_id"]),
+        "task_id": report.task_id,
+        "from": contract.role,
+        "phase": contract.phase,
+        "status": report.status,
+        "summary": report.summary,
+    }
+    if report.verification is not None:
+        payload["verification"] = report.verification.to_dict()
+    if report.blocker is not None:
+        payload["reason"] = report.blocker["reason"]
+        if report.blocker.get("next_action"):
+            payload["next_action"] = report.blocker["next_action"]
+    return validate_work_result(payload).to_dict()
+
+
+def _artifact_done_report_payload(
+    contract: ArtifactWorkerContract,
+    state: Mapping[str, Any],
+    *,
+    artifacts: list[str],
+    test_command: list[str],
+    test_summary: str,
+) -> dict[str, Any]:
+    return {
+        "task_id": str(state["task_id"]),
+        "agent": contract.role,
+        "status": "DONE",
+        "summary": test_summary,
+        "changed_files": artifacts,
+        "verification": {
+            "task_id": str(state["task_id"]),
+            "agent": contract.role,
+            "timestamp": iso_now(),
+            "performed": True,
+            "command": test_command,
+            "status": "pass",
+            "summary": test_summary,
+            "evidence_paths": artifacts,
+        },
+        "repair_attempts": _repair_attempts_from_state(state),
+        "next_owner": None,
+        "blocker": None,
+        "artifact_manifest": {
+            "created": artifacts,
+            "changed": [],
+            "moved": [],
+            "deleted": [],
+            "expected_artifacts": artifacts,
+            "evidence_paths": artifacts,
+        },
+    }
+
+
+def _artifact_blocked_report_payload(
+    contract: ArtifactWorkerContract,
+    state: Mapping[str, Any],
+    *,
+    code: str,
+    reason: str,
+    next_action: str | None = None,
+) -> dict[str, Any]:
+    blocked_next_action = next_action or "Escalate to the parent owner with this blocker and decide whether to re-scope or approve new capability."
+    return {
+        "task_id": str(state["task_id"]),
+        "agent": contract.role,
+        "status": "BLOCKED",
+        "summary": f"{code}: {reason}",
+        "changed_files": [],
+        "verification": None,
+        "repair_attempts": _repair_attempts_from_state(state),
+        "next_owner": contract.expected_from,
+        "blocker": {
+            "reason": reason,
+            "next_action": blocked_next_action,
+        },
+        "artifact_manifest": None,
+    }
+
+
+def _runtime_repair_feedback(
+    *,
+    code: str,
+    reason: str,
+    next_action: str,
+    attempt: int,
+    max_attempts: int,
+) -> dict[str, Any]:
+    return {
+        "code": code,
+        "reason": reason,
+        "next_action": next_action,
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "remaining_attempts": max(0, max_attempts - attempt),
+    }
+
+
+def record_artifact_repair_required(
+    contract: ArtifactWorkerContract,
+    run_dir: Path,
+    state: Mapping[str, Any],
+    *,
+    code: str,
+    reason: str,
+    next_action: str | None = None,
+) -> RuntimeOutcome:
+    attempt = int(state.get("completion_attempts", 0))
+    max_attempts = int(state.get("repair_budget", 5))
+    action = next_action or f"Repair the task drafts and rerun {_artifact_finish_command(contract, run_dir)}."
+    if attempt > max_attempts:
+        return send_blocked_from_state(
+            contract,
+            run_dir,
+            dict(state),
+            code=code,
+            reason=f"repair budget exhausted after {attempt} attempts: {reason}",
+            next_action="Escalate to the parent owner because runtime repair budget is exhausted.",
+        )
+    feedback = _runtime_repair_feedback(code=code, reason=reason, next_action=action, attempt=attempt, max_attempts=max_attempts)
+    outcome = RuntimeOutcome(
+        outcome="REPAIR_REQUIRED",
+        status="repair_needed",
+        signal=None,
+        code=code,
+        message=reason,
+        report_status=None,
+        repair_feedback=feedback,
+        result_file=str(run_dir / "result.json"),
+    )
+    update_state(
+        run_dir,
+        status="repair_needed",
+        last_error={"code": code, "message": reason},
+        repair_feedback=feedback,
+        last_runtime_outcome=outcome.to_dict(),
+    )
+    append_log(run_dir, "outcome", f"runtime outcome REPAIR_REQUIRED code={code}")
+    return outcome
+
+
+def handle_artifact_work_report_outcome(
+    contract: ArtifactWorkerContract,
+    run_dir: Path,
+    state: Mapping[str, Any],
+    work_report_payload: Mapping[str, Any],
+    *,
+    accepted_instructions: str | None = None,
+    accepted_state_updates: Mapping[str, Any] | None = None,
+) -> RuntimeOutcome:
+    changed_files = _string_list(work_report_payload.get("changed_files"))
+    expected_artifacts = _artifact_expected_paths(state, changed_files)
+    allowed_write_paths = list(dict.fromkeys([*expected_artifacts, *changed_files]))
+    verification_command = _string_list((work_report_payload.get("verification") or {}).get("command")) if isinstance(work_report_payload.get("verification"), Mapping) else None
+    try:
+        task_pack = validate_task_pack(
+            _artifact_task_pack_payload(
+                contract,
+                state,
+                expected_artifacts=expected_artifacts,
+                allowed_write_paths=allowed_write_paths,
+                verification_command=verification_command,
+            )
+        )
+        report = validate_work_report(
+            work_report_payload,
+            task_pack=task_pack,
+            artifact_exists=_artifact_exists_from_report(task_pack, work_report_payload),
+        )
+    except ContractValidationError as exc:
+        return record_artifact_repair_required(
+            contract,
+            run_dir,
+            state,
+            code="work_report_invalid",
+            reason=f"invalid work_report: {exc}",
+            next_action="Repair the WorkReport fields and rerun completion; do not send a prose-only terminal signal.",
+        )
+
+    work_report = report.to_dict()
+    work_result = _work_result_from_report(contract, state, report)
+    if report.status == "DONE":
+        project_workspace = _project_workspace_payload(task_pack)
+        artifact_manifest = report.artifact_manifest.to_dict() if report.artifact_manifest else {
+            "created": report.changed_files,
+            "changed": [],
+            "moved": [],
+            "deleted": [],
+            "expected_artifacts": task_pack.expected_artifacts,
+            "evidence_paths": report.verification.evidence_paths if report.verification else [],
+        }
+        payload_state = {
+            **dict(state),
+            "outbound_work_result": work_result,
+            "outbound_work_report": work_report,
+            "outbound_project_workspace": project_workspace,
+            "outbound_artifact_manifest": artifact_manifest,
+        }
+        payload = build_artifact_result_payload(
+            contract,
+            payload_state,
+            instructions=accepted_instructions or contract.done_message(
+                artifacts=report.changed_files,
+                test_command=report.verification.command if report.verification else task_pack.recommended_verification,
+                test_summary=report.summary,
+            ),
+        )
+        result_payload = {
+            "status": "ready",
+            "sent_at": iso_now(),
+            "payload": payload,
+            "work_report": work_report,
+            "runtime_outcome": "ACCEPTED",
+        }
+        write_json(run_dir / "result.json", result_payload)
+        signal_payload = build_child_result_signal(
+            state=payload_state,
+            from_agent=contract.role,
+            to_agent=contract.expected_from,
+            phase=contract.phase,
+            signal="COMPLETE",
+        )
+        response = send_session_message(contract.session_key, json.dumps(signal_payload, separators=(",", ":")))
+        result_payload["status"] = "sent"
+        result_payload["response"] = response
+        result_payload["signal"] = signal_payload
+        write_json(run_dir / "result.json", result_payload)
+        outcome = RuntimeOutcome(
+            outcome="ACCEPTED",
+            status="sent",
+            signal="COMPLETE",
+            code=None,
+            message=report.summary,
+            report_status=report.status,
+            result_file=str(run_dir / "result.json"),
+        )
+        update_payload = {
+            "status": "sent",
+            "sent_at": result_payload["sent_at"],
+            "final_decision": "DONE",
+            "result_payload": payload,
+            "last_send_response": response,
+            "last_error": None,
+            "blocked_at": None,
+            "blocked_code": None,
+            "repair_guard": None,
+            "repair_feedback": None,
+            "last_runtime_outcome": outcome.to_dict(),
+            "outbound_work_result": work_result,
+            "outbound_work_report": work_report,
+            "outbound_project_workspace": project_workspace,
+            "outbound_artifact_manifest": artifact_manifest,
+        }
+        if accepted_state_updates:
+            update_payload.update(dict(accepted_state_updates))
+        update_state(run_dir, **update_payload)
+        append_log(run_dir, "outcome", f"runtime outcome ACCEPTED; sent DONE for {', '.join(report.changed_files)}")
+        return outcome
+
+    if report.status == "NEEDS_REVIEW":
+        outcome = RuntimeOutcome(
+            outcome="NEEDS_REVIEW",
+            status="needs_review",
+            signal=None,
+            code=None,
+            message=report.blocker["reason"] if report.blocker else report.summary,
+            report_status=report.status,
+            result_file=str(run_dir / "result.json"),
+        )
+        write_json(
+            run_dir / "result.json",
+            {
+                "status": "needs_review",
+                "recorded_at": iso_now(),
+                "work_report": work_report,
+                "runtime_outcome": outcome.to_dict(),
+            },
+        )
+        update_state(
+            run_dir,
+            status="needs_review",
+            final_decision="NEEDS_REVIEW",
+            last_runtime_outcome=outcome.to_dict(),
+            outbound_work_result=work_result,
+            outbound_work_report=work_report,
+            last_error=None,
+        )
+        append_log(run_dir, "outcome", "runtime outcome NEEDS_REVIEW")
+        return outcome
+
+    reason = report.blocker["reason"] if report.blocker else report.summary
+    next_action = report.blocker.get("next_action") if report.blocker else None
+    return send_blocked_from_state(
+        contract,
+        run_dir,
+        {
+            **dict(state),
+            "outbound_work_result": work_result,
+            "outbound_work_report": work_report,
+        },
+        code=report.status.lower(),
+        reason=reason,
+        next_action=next_action,
+    )
 
 
 def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) -> PreparedArtifactRun:
@@ -739,6 +1317,7 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
     state = {
         "role": contract.role,
         "phase": contract.phase,
+        "run_id": run_dir.name,
         "status": "preparing",
         "prepared_at": iso_now(),
         "prepared_epoch": time.time(),
@@ -756,6 +1335,10 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
         "last_error": None,
         "last_send_response": None,
         "result_payload": None,
+        "validation_plan": [],
+        "validation_runs": [],
+        "validation_report": None,
+        "final_decision": None,
         "latest_handoff_event": latest_handoff,
         "task_id_repaired_from_handoff": task_id_repaired,
         "inbound_receipt_acknowledged": False,
@@ -852,7 +1435,7 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
                 "test_command": suggested_test_command,
             },
             "team": team_contracts,
-            "next_command": f"bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\"",
+            "next_command": _artifact_finish_command(contract, run_dir),
         }
         write_json(handoff_file, handoff_payload)
         update_state(
@@ -903,15 +1486,17 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
         f"\"{run_dir}\" --code \"<code>\" --reason \"<exact reason>\""
     )
     print(f"BLOCK_COMMAND={block_command}")
-    print(f"NEXT_REQUIRED=bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\"")
+    print(f"NEXT_REQUIRED={_artifact_finish_command(contract, run_dir)}")
     print("ACTION_REQUIRED=Do not stop after prepare. Either write drafts plus manifest and run NEXT_REQUIRED, or run BLOCK_COMMAND.")
-    print("WORK_ORDER_GUIDANCE=Use WORK_ORDER as a preview only. If WORK_ORDER_TRUNCATED=yes or details are missing, read CONTEXT_FILE before drafting. If a source excerpt there is still truncated, read only the matching full input copy you need.")
+    print("WORK_ORDER_GUIDANCE=Use WORK_ORDER as a preview. Read CONTEXT_FILE only if required implementation details are missing. After any read, continue immediately to draft writes or BLOCK_COMMAND; never stop after reading.")
+    print("REPORT_ACTION=After drafts and MANIFEST_WRITE_FILE exist, run NEXT_REQUIRED with RUN_DIR. Runtime validates through project_exec.")
     print("NEXT_ACTIONS_BEGIN")
-    print("1. If WORK_ORDER_TRUNCATED=yes or required details are missing, read CONTEXT_FILE. If an excerpt there is truncated, read only the matching full input copy you need.")
+    print("1. If required details are missing, read CONTEXT_FILE. If an excerpt there is truncated, read only the matching full input copy you need. After any read, continue to the next action; do not stop.")
     print("2. Write every REQUIRED_OUTPUTS path under DRAFT_WRITE_ROOT.")
     print("3. Write MANIFEST_WRITE_FILE with the artifact list and test_command.")
-    print("4. Run NEXT_REQUIRED only after every required draft and MANIFEST_WRITE_FILE exist.")
-    print("5. If you cannot continue from the available inputs, run BLOCK_COMMAND with an exact reason.")
+    print("4. Run NEXT_REQUIRED exactly after drafts and MANIFEST_WRITE_FILE exist; it must receive RUN_DIR, not DRAFT_WRITE_ROOT.")
+    print("5. If NEXT_REQUIRED requests repair, fix drafts as directed and rerun the exact printed RUN_DIR command.")
+    print("6. If you cannot continue from the available inputs, run BLOCK_COMMAND with an exact reason.")
     print("NEXT_ACTIONS_END")
     work_order_text, work_order_truncated = build_work_order_summary(inputs, max_chars=ARTIFACT_WORK_ORDER_MAX_CHARS)
     print(f"WORK_ORDER_TRUNCATED={'yes' if work_order_truncated else 'no'}")
@@ -925,6 +1510,284 @@ def prepare_artifact_run(contract: ArtifactWorkerContract, envelope_raw: str) ->
     )
 
 
+def build_artifact_task_packet(contract: ArtifactWorkerContract, run_dir: Path) -> str:
+    state = load_state(run_dir)
+    if state.get("role") != contract.role:
+        raise WorkerRuntimeError(f"run_dir belongs to {state.get('role')}, not {contract.role}", code="wrong_role")
+    required_outputs = [str(path) for path in state.get("required_output_paths", []) if str(path).strip()]
+    test_command = [str(part) for part in state.get("team_test_command", []) if str(part).strip()]
+    if not test_command:
+        test_command = ["python3", "-m", "unittest"]
+    report_destination = f"covenant://runtime/{contract.role}/{state['project_id']}/{state['task_id']}"
+    context_text = Path(state["context_file"]).read_text(encoding="utf-8")
+    context_preview, context_was_truncated = truncate_context_preview(
+        context_text,
+        max_chars=ARTIFACT_CONTEXT_MAX_CHARS,
+        trailer="\n\n[task packet context truncated; use morpheus_run_task.sh read only for a targeted missing input]",
+    )
+    finish_command = _artifact_finish_command(contract, run_dir)
+    complete_command = f"bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\""
+    block_command = (
+        f"bash {live_bin_root() / (contract.role + '_run_task.sh')} block "
+        f"\"{run_dir}\" --code \"<code>\" --reason \"<exact reason>\""
+    )
+    manifest_example = {
+        "artifacts": [{"path": path} for path in required_outputs],
+        "test_command": test_command,
+    }
+    work_report_example = {
+        "task_id": state["task_id"],
+        "agent": contract.role,
+        "status": "DONE | BLOCKED | FAILED | NEEDS_REVIEW",
+        "summary": "Concise outcome summary.",
+        "changed_files": required_outputs,
+        "verification": {
+            "task_id": state["task_id"],
+            "agent": contract.role,
+            "timestamp": "2026-06-02T00:00:00Z",
+            "performed": True,
+            "command": test_command,
+            "status": "pass",
+            "summary": "Validation passed.",
+            "evidence_paths": required_outputs,
+        },
+        "repair_attempts": [],
+        "next_owner": "niaobe",
+        "blocker": None,
+        "artifact_manifest": {
+            "created": required_outputs,
+            "changed": [],
+            "moved": [],
+            "deleted": [],
+            "expected_artifacts": required_outputs,
+            "evidence_paths": required_outputs,
+            "runtime_evidence_paths": [],
+        },
+    }
+    if contract.role == "morpheus":
+        lines = [
+            "TASK_PACKET_BEGIN",
+            f"RUNTIME_MODEL=AgentTaskRuntime",
+            f"RUN_ID={state.get('run_id') or run_dir.name}",
+            f"RUN_DIR={run_dir}",
+            f"PROJECT_ID={state['project_id']}",
+            f"TASK_ID={state['task_id']}",
+            f"PHASE={state['phase']}",
+            f"DRAFT_WRITE_ROOT={state['draft_write_root']}",
+            f"MANIFEST_WRITE_FILE={state['manifest_write_file']}",
+            f"REPORT_DESTINATION={report_destination}",
+            "REQUIRED_OUTPUTS=" + ", ".join(required_outputs),
+            "TEST_COMMAND=" + " ".join(test_command),
+            "RUNTIME_VALIDATION=REPORT_COMMAND imports drafts and runs project_exec; do not run raw validation from DRAFT_WRITE_ROOT.",
+            f"REPORT_COMMAND={finish_command}",
+            f"BLOCK_COMMAND={block_command}",
+            "PATH_INVARIANT=REPORT_COMMAND and BLOCK_COMMAND take RUN_DIR only; never pass DRAFT_WRITE_ROOT or MANIFEST_WRITE_FILE.",
+            f"CONTEXT_TRUNCATED={'yes' if context_was_truncated else 'no'}",
+            "",
+            "TASK_CONTEXT_BEGIN",
+            context_preview.rstrip(),
+            "TASK_CONTEXT_END",
+            "",
+            "MANIFEST_SCHEMA_BEGIN",
+            json.dumps(manifest_example, indent=2, sort_keys=True),
+            "MANIFEST_SCHEMA_END",
+            "",
+            "WORK_REPORT_SCHEMA_BEGIN",
+            json.dumps(work_report_example, indent=2, sort_keys=True),
+            "WORK_REPORT_SCHEMA_END",
+            "",
+            "REQUIRED_AGENT_WORK_BEGIN",
+            "1. Think through Planner -> Implementer -> Tester in this main session.",
+            "2. Write every REQUIRED_OUTPUTS path under DRAFT_WRITE_ROOT.",
+            "3. Write MANIFEST_WRITE_FILE with artifacts and test_command. Do not fabricate validation evidence; runtime records it.",
+            "4. Run REPORT_COMMAND exactly with RUN_DIR. Do not run raw validation from DRAFT_WRITE_ROOT.",
+            "5. Treat WORKER_RUNTIME_REPAIR_REQUIRED or WORKER_RUNTIME_FAILED output as not complete; repair/block or rerun only the exact printed RUN_DIR action.",
+            "6. If blocked by missing or invalid task inputs, run BLOCK_COMMAND with RUN_DIR and an exact reason.",
+            "7. REPORT_SUCCESS_ACTION=Only reply success after REPORT_COMMAND reports RESULT_FILE or ALREADY_SENT.",
+            "REQUIRED_AGENT_WORK_END",
+            "TASK_PACKET_END",
+        ]
+    else:
+        lines = [
+            "TASK_PACKET_BEGIN",
+            f"RUNTIME_MODEL=AgentTaskRuntime",
+            f"RUN_ID={state.get('run_id') or run_dir.name}",
+            f"RUN_DIR={run_dir}",
+            f"PROJECT_ID={state['project_id']}",
+            f"TASK_ID={state['task_id']}",
+            f"PHASE={state['phase']}",
+            f"DRAFT_WRITE_ROOT={state['draft_write_root']}",
+            f"MANIFEST_WRITE_FILE={state['manifest_write_file']}",
+            "REQUIRED_OUTPUTS=" + ", ".join(required_outputs),
+            "TEST_COMMAND=" + " ".join(test_command),
+            "RUNTIME_VALIDATION=COMPLETE_COMMAND imports drafts and runs project_exec; do not run raw validation from DRAFT_WRITE_ROOT.",
+            f"COMPLETE_COMMAND={complete_command}",
+            f"BLOCK_COMMAND={block_command}",
+            "PATH_INVARIANT=COMPLETE_COMMAND and BLOCK_COMMAND take RUN_DIR only; never pass DRAFT_WRITE_ROOT or MANIFEST_WRITE_FILE.",
+            f"CONTEXT_TRUNCATED={'yes' if context_was_truncated else 'no'}",
+            "",
+            "TASK_CONTEXT_BEGIN",
+            context_preview.rstrip(),
+            "TASK_CONTEXT_END",
+            "",
+            "MANIFEST_SCHEMA_BEGIN",
+            json.dumps(manifest_example, indent=2, sort_keys=True),
+            "MANIFEST_SCHEMA_END",
+            "",
+            "REQUIRED_AGENT_WORK_BEGIN",
+            "1. Think through Planner -> Implementer -> Tester in this main session.",
+            "2. Write every REQUIRED_OUTPUTS path under DRAFT_WRITE_ROOT.",
+            "3. Write MANIFEST_WRITE_FILE with artifacts and test_command. Do not fabricate validation evidence; runtime records it.",
+            "4. Run COMPLETE_COMMAND exactly with RUN_DIR. Do not run raw validation from DRAFT_WRITE_ROOT.",
+            "5. Treat WORKER_RUNTIME_REPAIR_REQUIRED or WORKER_RUNTIME_FAILED output as not complete; repair/block or rerun only the exact printed RUN_DIR action.",
+            "6. If blocked by missing or invalid task inputs, run BLOCK_COMMAND with RUN_DIR and an exact reason.",
+            "7. REPORT_SUCCESS_ACTION=Only reply success after COMPLETE_COMMAND reports RESULT_FILE or ALREADY_SENT.",
+            "REQUIRED_AGENT_WORK_END",
+            "TASK_PACKET_END",
+        ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def dispatch_artifact_task(contract: ArtifactWorkerContract, envelope_raw: str) -> dict[str, Any]:
+    buffered_output = io.StringIO()
+    with contextlib.redirect_stdout(buffered_output):
+        prepared = prepare_artifact_run(contract, envelope_raw)
+    prepared_state = load_state(prepared.run_dir)
+    packet = build_artifact_task_packet(contract, prepared.run_dir)
+    packet_file = prepared.run_dir / "task_packet.md"
+    write_text(packet_file, packet)
+    state = update_state(
+        prepared.run_dir,
+        status="dispatched",
+        task_packet_file=str(packet_file),
+        report_destination=f"covenant://runtime/{contract.role}/{prepared_state['project_id']}/{prepared_state['task_id']}",
+        dispatch_prepare_output=buffered_output.getvalue(),
+        dispatched_at=iso_now(),
+    )
+    dispatch_session_key = f"agent:{contract.expected_to}:main"
+    response = send_session_message(dispatch_session_key, packet)
+    write_json(
+        prepared.run_dir / "dispatch.json",
+        {
+            "status": "sent",
+            "sent_at": iso_now(),
+            "session_key": dispatch_session_key,
+            "response": response,
+            "task_packet_file": str(packet_file),
+        },
+    )
+    return update_state(
+        prepared.run_dir,
+        last_send_response=response,
+        dispatch_response=response,
+        dispatch_session_key=dispatch_session_key,
+        status="awaiting_artifacts",
+    )
+
+
+def missing_artifact_work(state: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+    manifest_file = Path(str(state.get("manifest_file", "")))
+    if not manifest_file.is_file():
+        missing.append("manifest.json")
+    draft_dir = Path(str(state.get("draft_dir", "")))
+    for artifact in state.get("required_output_paths", []):
+        path = str(artifact).strip()
+        if path and not (draft_dir / path).is_file():
+            missing.append(path)
+    return missing
+
+
+def resume_artifact_task(contract: ArtifactWorkerContract, run_dir: Path) -> dict[str, Any]:
+    state = load_state(run_dir)
+    if state.get("role") != contract.role:
+        raise WorkerRuntimeError(f"run_dir belongs to {state.get('role')}, not {contract.role}", code="wrong_role")
+    if str(state.get("status", "")).strip().lower() in {"sent", "blocked"}:
+        raise WorkerRuntimeError(f"run already terminal: {state.get('status')}", code="terminal_run")
+
+    attempts = int(state.get("recovery_attempts", 0)) + 1
+    missing = missing_artifact_work(state)
+    base_packet = build_artifact_task_packet(contract, run_dir)
+    missing_label = "validation_or_reporting" if contract.role == "morpheus" else "validation_or_completion"
+    continuation = "\n".join(
+        [
+            "TASK_CONTINUATION_BEGIN",
+            f"RUN_ID={state.get('run_id') or run_dir.name}",
+            "REASON=incomplete_runtime_task",
+            "MISSING_WORK=" + (", ".join(missing) if missing else missing_label),
+            "Continue the same task now. Do not restart with a new run. Do not call prepare.",
+            f"If artifacts are missing, write them under DRAFT_WRITE_ROOT. If only reporting is missing, run {_artifact_finish_command(contract, run_dir)} exactly with RUN_DIR.",
+            "TASK_CONTINUATION_END",
+            "",
+            base_packet.rstrip(),
+        ]
+    ) + "\n"
+    continuation_file = run_dir / f"continuation-{attempts:02d}.md"
+    write_text(continuation_file, continuation)
+    session_key = str(state.get("dispatch_session_key") or f"agent:{contract.expected_to}:main")
+    response = send_session_message(session_key, continuation)
+    append_log(run_dir, "resume", f"sent continuation attempt {attempts}; missing={', '.join(missing) if missing else 'none'}")
+    return update_state(
+        run_dir,
+        status="awaiting_artifacts",
+        recovery_attempts=attempts,
+        last_recovery_at=iso_now(),
+        last_recovery_missing=missing,
+        last_recovery_file=str(continuation_file),
+        last_send_response=response,
+    )
+
+
+def advance_artifact_task(contract: ArtifactWorkerContract, run_dir: Path) -> dict[str, Any]:
+    state = load_state(run_dir)
+    status = str(state.get("status", "")).strip().lower()
+    if status == "sent":
+        if not isinstance(state.get("last_runtime_outcome"), dict):
+            outcome = RuntimeOutcome(
+                outcome="ACCEPTED",
+                status="sent",
+                signal="COMPLETE",
+                code=None,
+                message="run already sent",
+                report_status="DONE",
+                result_file=str(run_dir / "result.json"),
+            )
+            state = update_state(run_dir, last_runtime_outcome=outcome.to_dict())
+        return state
+    if status == "blocked":
+        if not isinstance(state.get("last_runtime_outcome"), dict):
+            outcome = RuntimeOutcome(
+                outcome="BLOCKED",
+                status="blocked",
+                signal="BLOCKED",
+                code=str(state.get("blocked_code") or "blocked"),
+                message=str((state.get("last_error") or {}).get("message") if isinstance(state.get("last_error"), Mapping) else "run already blocked"),
+                report_status="BLOCKED",
+                result_file=str(run_dir / "result.json"),
+            )
+            state = update_state(run_dir, last_runtime_outcome=outcome.to_dict())
+        return state
+    missing = missing_artifact_work(state)
+    if status == "repair_needed" or missing:
+        if missing:
+            outcome = record_artifact_repair_required(
+                contract,
+                run_dir,
+                state,
+                code="missing_artifact_work",
+                reason="missing required runtime artifact(s): " + ", ".join(missing),
+                next_action="Continue the same run, write the missing drafts or manifest, then run completion.",
+            )
+            if outcome.outcome == "BLOCKED":
+                return load_state(run_dir)
+        return resume_artifact_task(contract, run_dir)
+    if contract.role == "morpheus":
+        from agent_runner import complete_artifact_run_graph
+
+        return complete_artifact_run_graph(contract, run_dir)
+    return complete_artifact_run(contract, run_dir)
+
+
 def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -> PreparedArtifactRun:
     envelope = parse_planning_envelope(envelope_raw, contract)
     run_dir = build_phase_run_dir(contract.role, envelope["project_id"], "planning")
@@ -933,11 +1796,8 @@ def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -
     draft_dir = run_dir / contract.draft_dir_name
     manifest_file = draft_dir / contract.manifest_file_name
     draft_dir.mkdir(parents=True, exist_ok=True)
-    draft_write_root = ensure_directory_alias(
-        draft_dir,
-        workspace_root() / contract.role / "draft-aliases" / run_dir.name,
-    )
-    manifest_write_file = draft_write_root / contract.manifest_file_name
+    draft_write_root = draft_dir
+    manifest_write_file = manifest_file
     handoff_file = run_dir / "handoff.json"
     context_file = run_dir / "context.md"
     envelope_file = run_dir / "envelope.json"
@@ -946,6 +1806,7 @@ def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -
     state = {
         "role": contract.role,
         "phase": contract.phase,
+        "run_id": run_dir.name,
         "status": "preparing",
         "prepared_at": iso_now(),
         "prepared_epoch": time.time(),
@@ -1004,6 +1865,36 @@ def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -
             inputs.append({"path": relative_path, "content": content, "audit_copy": str(audit_copy)})
 
         write_text(context_file, build_context_markdown({**envelope, "task_id": "PLANNING"}, inputs))
+        required_artifact_paths = [
+            "management/PLAN.md",
+            "management/BACKLOG.md",
+            "management/tasks/T001.md",
+            "CURRENT_TASK.md",
+        ]
+        manifest_schema = {
+            "artifacts": [{"path": path} for path in required_artifact_paths],
+            "active_task": "T001",
+        }
+        next_required = f"bash {live_bin_root() / 'smith_plan_project.sh'} complete \"{run_dir}\""
+        block_command = (
+            f"bash {live_bin_root() / 'smith_plan_project.sh'} block \"{run_dir}\" "
+            "--code ambiguous_spec "
+            '--reason "<exact planning blocker>"'
+        )
+        action_required = (
+            "Do not stop after prepare. Either write all required planning drafts plus manifest and run NEXT_REQUIRED, "
+            "or run BLOCK_COMMAND with an exact reason."
+        )
+        next_actions = (
+            "1. Read WORK_ORDER and CONTEXT_FILE; do not stop after reading.",
+            "2. Write management/PLAN.md under DRAFT_WRITE_ROOT.",
+            "3. Write management/BACKLOG.md under DRAFT_WRITE_ROOT.",
+            "4. Write management/tasks/T001.md and any additional management/tasks/T###.md drafts needed by the plan.",
+            "5. Write CURRENT_TASK.md pointing to the first ready task.",
+            "6. Write MANIFEST_WRITE_FILE matching MANIFEST_SCHEMA.",
+            "7. Run NEXT_REQUIRED only after all required drafts and MANIFEST_WRITE_FILE exist.",
+            "8. If you cannot produce a valid sequential plan from the available inputs, run BLOCK_COMMAND with an exact reason.",
+        )
         handoff_payload = {
             "run_dir": str(run_dir),
             "context_file": str(context_file),
@@ -1014,16 +1905,13 @@ def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -
             "project_id": envelope["project_id"],
             "phase": contract.phase,
             "deadline_at": state["deadline_at"],
-            "manifest_schema": {
-                "artifacts": [
-                    {"path": "management/PLAN.md"},
-                    {"path": "management/BACKLOG.md"},
-                    {"path": "management/tasks/T001.md"},
-                    {"path": "CURRENT_TASK.md"},
-                ],
-                "active_task": "T001",
-            },
-            "next_command": f"bash {live_bin_root() / 'smith_plan_project.sh'} complete \"{run_dir}\"",
+            "required_artifact_paths": required_artifact_paths,
+            "manifest_schema": manifest_schema,
+            "next_command": next_required,
+            "next_required": next_required,
+            "block_command": block_command,
+            "action_required": action_required,
+            "next_actions": list(next_actions),
         }
         write_json(handoff_file, handoff_payload)
         update_state(
@@ -1033,6 +1921,12 @@ def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -
             inbound_receipt_acknowledged=True,
             draft_write_root=str(draft_write_root),
             manifest_write_file=str(manifest_write_file),
+            required_artifact_paths=required_artifact_paths,
+            manifest_schema=manifest_schema,
+            next_required=next_required,
+            block_command=block_command,
+            action_required=action_required,
+            next_actions=list(next_actions),
             inputs=[{"path": item["path"], "audit_copy": item["audit_copy"]} for item in inputs],
             last_error=None,
         )
@@ -1049,7 +1943,17 @@ def prepare_planning_run(contract: PlanningProjectContract, envelope_raw: str) -
     print(f"MANIFEST_FILE={manifest_file}")
     print(f"DRAFT_WRITE_ROOT={draft_write_root}")
     print(f"MANIFEST_WRITE_FILE={manifest_write_file}")
-    print(f"NEXT_REQUIRED=bash {live_bin_root() / 'smith_plan_project.sh'} complete \"{run_dir}\"")
+    print(f"REQUIRED_ARTIFACT_PATHS={','.join(required_artifact_paths)}")
+    print("MANIFEST_SCHEMA_BEGIN")
+    print(json.dumps(manifest_schema, indent=2, sort_keys=True))
+    print("MANIFEST_SCHEMA_END")
+    print(f"BLOCK_COMMAND={block_command}")
+    print(f"NEXT_REQUIRED={next_required}")
+    print(f"ACTION_REQUIRED={action_required}")
+    print("NEXT_ACTIONS_BEGIN")
+    for action in next_actions:
+        print(action)
+    print("NEXT_ACTIONS_END")
     work_order_text, _ = build_work_order_summary(inputs)
     print(work_order_text)
     return PreparedArtifactRun(
@@ -1070,7 +1974,7 @@ def normalize_artifact_path(value: Any) -> str:
     return path.as_posix()
 
 
-def load_artifact_manifest(state: dict[str, Any]) -> tuple[list[str], list[str]]:
+def load_artifact_manifest(state: dict[str, Any]) -> tuple[list[str], list[str], dict[str, Any] | None]:
     manifest_file = Path(state["manifest_file"])
     if not manifest_file.exists() or not manifest_file.is_file():
         raise WorkerRuntimeError(f"expected manifest file missing: {manifest_file}", code="missing_draft")
@@ -1110,7 +2014,32 @@ def load_artifact_manifest(state: dict[str, Any]) -> tuple[list[str], list[str]]
     if not isinstance(raw_command, list) or not all(isinstance(part, str) and part.strip() for part in raw_command):
         raise WorkerRuntimeError("manifest.test_command must be a non-empty string array", code="verification_failed")
     test_command = [part.strip() for part in raw_command]
-    return artifacts, test_command
+    validation_report = None
+    raw_report = manifest.get("validation_report")
+    if raw_report is not None:
+        if not isinstance(raw_report, dict):
+            raise WorkerRuntimeError("manifest.validation_report must be an object when provided", code="verification_failed")
+        raw_report_command = raw_report.get("command")
+        if not isinstance(raw_report_command, list) or not all(isinstance(part, str) and part.strip() for part in raw_report_command):
+            raise WorkerRuntimeError("manifest.validation_report.command must be a non-empty string array", code="verification_failed")
+        report_command = [part.strip() for part in raw_report_command]
+        if report_command != test_command:
+            raise WorkerRuntimeError(
+                "manifest.validation_report.command must match manifest.test_command",
+                code="verification_failed",
+            )
+        report_status = str(raw_report.get("status", "")).strip().lower()
+        if report_status not in {"pass", "passed"}:
+            raise WorkerRuntimeError("manifest.validation_report.status must be pass when provided", code="verification_failed")
+        report_summary = str(raw_report.get("summary", "")).strip()
+        if not report_summary:
+            raise WorkerRuntimeError("manifest.validation_report.summary must be non-empty when provided", code="verification_failed")
+        validation_report = {
+            "command": report_command,
+            "status": report_status,
+            "summary": report_summary,
+        }
+    return artifacts, test_command, validation_report
 
 
 def ensure_artifact_drafts(state: dict[str, Any], artifacts: list[str]) -> list[tuple[str, Path]]:
@@ -1432,21 +2361,62 @@ def send_blocked_from_state(
     *,
     code: str,
     reason: str,
-) -> None:
+    next_action: str | None = None,
+) -> RuntimeOutcome:
+    blocked_state = dict(state)
+    if not isinstance(blocked_state.get("outbound_work_report"), dict) or not isinstance(blocked_state.get("outbound_work_result"), dict):
+        try:
+            task_pack = validate_task_pack(_artifact_task_pack_payload(contract, blocked_state))
+            blocked_report = validate_work_report(
+                _artifact_blocked_report_payload(
+                    contract,
+                    blocked_state,
+                    code=code,
+                    reason=reason,
+                    next_action=next_action,
+                ),
+                task_pack=task_pack,
+            )
+        except ContractValidationError as exc:
+            raise WorkerRuntimeError(f"blocked outcome contract invalid: {exc}", code="work_report_invalid") from exc
+        blocked_state["outbound_work_report"] = blocked_report.to_dict()
+        blocked_state["outbound_work_result"] = _work_result_from_report(contract, blocked_state, blocked_report)
     payload = build_artifact_result_payload(
         contract,
-        state,
+        blocked_state,
         instructions=contract.blocked_message(code=code, reason=reason),
     )
-    response = send_session_message(contract.session_key, json.dumps(payload, separators=(",", ":")))
     result_payload = {
-        "status": "blocked",
+        "status": "ready",
         "blocked_at": iso_now(),
         "code": code,
         "payload": payload,
-        "response": response,
+        "work_report": blocked_state.get("outbound_work_report"),
+        "runtime_outcome": "BLOCKED",
     }
     write_json(run_dir / "result.json", result_payload)
+    signal_payload = build_child_result_signal(
+        state=blocked_state,
+        from_agent=contract.role,
+        to_agent=contract.expected_from,
+        phase=contract.phase,
+        signal="BLOCKED",
+        reason=reason,
+    )
+    response = send_session_message(contract.session_key, json.dumps(signal_payload, separators=(",", ":")))
+    result_payload["status"] = "blocked"
+    result_payload["response"] = response
+    result_payload["signal"] = signal_payload
+    write_json(run_dir / "result.json", result_payload)
+    outcome = RuntimeOutcome(
+        outcome="BLOCKED",
+        status="blocked",
+        signal="BLOCKED",
+        code=code,
+        message=reason,
+        report_status="BLOCKED",
+        result_file=str(run_dir / "result.json"),
+    )
     update_state(
         run_dir,
         status="blocked",
@@ -1455,7 +2425,13 @@ def send_blocked_from_state(
         result_payload=payload,
         last_send_response=response,
         last_error={"code": code, "message": reason},
+        final_decision="BLOCKED",
+        last_runtime_outcome=outcome.to_dict(),
+        outbound_work_result=blocked_state.get("outbound_work_result"),
+        outbound_work_report=blocked_state.get("outbound_work_report"),
     )
+    append_log(run_dir, "outcome", f"runtime outcome BLOCKED code={code}")
+    return outcome
 
 
 def send_planning_blocked_from_state(
@@ -1718,6 +2694,15 @@ def complete_planning_run(contract: PlanningProjectContract, run_dir: Path) -> d
             token in details for token in ("project_write", "verify_artifact", "handoff.sh")
         ):
             failure_code = "verification_failed"
+        if failure_code == "tool_denied":
+            update_state(
+                run_dir,
+                status="repair_needed",
+                last_error={"code": failure_code, "message": details},
+            )
+            print(f"WORKER_RUNTIME_REPAIR_REQUIRED[{failure_code}]: {exc}")
+            print(f"NEXT_REQUIRED=bash {live_bin_root() / 'smith_plan_project.sh'} complete \"{run_dir}\"")
+            raise
         if failure_code in {"missing_draft", "verification_failed"} and attempt == 1:
             update_state(
                 run_dir,
@@ -1754,7 +2739,12 @@ def complete_artifact_run(contract: ArtifactWorkerContract, run_dir: Path) -> di
     append_log(run_dir, "complete", "artifact complete started")
 
     try:
-        artifacts, test_command = load_artifact_manifest(state)
+        artifacts, test_command, validation_report = load_artifact_manifest(state)
+        state = update_state(
+            run_dir,
+            validation_plan=test_command,
+            validation_report=validation_report,
+        )
         artifact_pairs = ensure_artifact_drafts(state, artifacts)
 
         created_dirs: set[str] = set()
@@ -1815,50 +2805,65 @@ def complete_artifact_run(contract: ArtifactWorkerContract, run_dir: Path) -> di
         ]
         print("PROJECT_EXEC=" + " ".join(exec_cmd))
         exec_result = run_command(exec_cmd, timeout=300)
+        exec_details = command_details(exec_result)
+        exec_outcome = parse_outcome(exec_details)
+        validation_run = {
+            "command": test_command,
+            "project_exec": " ".join(exec_cmd),
+            "exit_code": exec_result.returncode,
+            "stdout_excerpt": (exec_result.stdout or "")[:4000],
+            "stderr_excerpt": (exec_result.stderr or "")[:4000],
+            "outcome": exec_outcome,
+            "recorded_at": iso_now(),
+        }
+        update_state(run_dir, validation_runs=[validation_run])
         exec_output = require_ok(exec_result, action="project_exec")
         test_summary = summarize_test_output(exec_output)
-
-        payload = build_artifact_result_payload(
-            contract,
-            state,
-            instructions=contract.done_message(artifacts=artifacts, test_command=test_command, test_summary=test_summary),
-        )
-        response = send_session_message(contract.session_key, json.dumps(payload, separators=(",", ":")))
-        result_payload = {
-            "status": "sent",
-            "sent_at": iso_now(),
-            "payload": payload,
-            "response": response,
+        validation_evidence = {
+            "declared_report": validation_report,
+            "runtime_command": test_command,
+            "runtime_exit_code": exec_result.returncode,
+            "runtime_summary": test_summary,
+            "status": "pass",
         }
-        write_json(run_dir / "result.json", result_payload)
-        update_state(
+        outcome = handle_artifact_work_report_outcome(
+            contract,
             run_dir,
-            status="sent",
-            sent_at=result_payload["sent_at"],
-            artifacts=artifacts,
-            test_command=test_command,
-            test_summary=test_summary,
-            project_exec=" ".join(exec_cmd),
-            result_payload=payload,
-            last_send_response=response,
-            last_error=None,
+            state,
+            _artifact_done_report_payload(
+                contract,
+                state,
+                artifacts=artifacts,
+                test_command=test_command,
+                test_summary=test_summary,
+            ),
+            accepted_instructions=contract.done_message(artifacts=artifacts, test_command=test_command, test_summary=test_summary),
+            accepted_state_updates={
+                "artifacts": artifacts,
+                "test_command": test_command,
+                "test_summary": test_summary,
+                "project_exec": " ".join(exec_cmd),
+                "validation_evidence": validation_evidence,
+            },
         )
-        append_log(run_dir, "complete", f"artifact complete succeeded; sent DONE for {', '.join(artifacts)}")
+        if outcome.outcome != "ACCEPTED":
+            raise WorkerRuntimeError(outcome.message, code=outcome.code or "outcome_not_accepted")
         print(f"RESULT_FILE={run_dir / 'result.json'}")
         return load_state(run_dir)
     except WorkerRuntimeError as exc:
         append_log(run_dir, "complete", f"artifact complete failed: {exc}")
         failure_code = "test_failed" if exc.code == "helper_failed" and "project_exec" in str(exc) else exc.code
-        import sys
-        max_attempts = 2 if "pytest" in sys.modules else 1
-        if failure_code in {"missing_draft", "verification_failed", "test_failed"} and attempt <= max_attempts:
-            update_state(
+        max_attempts = 5
+        if failure_code in {"missing_draft", "verification_failed", "test_failed", "tool_denied"} and attempt <= max_attempts:
+            record_artifact_repair_required(
+                contract,
                 run_dir,
-                status="repair_needed",
-                last_error={"code": failure_code, "message": str(exc)},
+                state,
+                code=failure_code,
+                reason=str(exc),
             )
             print(f"WORKER_RUNTIME_REPAIR_REQUIRED[{failure_code}]: {exc}")
-            print(f"NEXT_REQUIRED=bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\"")
+            print(f"NEXT_REQUIRED={_artifact_finish_command(contract, run_dir)}")
             raise
         try:
             send_blocked_from_state(contract, run_dir, state, code=failure_code, reason=str(exc))
@@ -1880,13 +2885,14 @@ def complete_run(contract: WorkerContract, run_dir: Path) -> dict[str, Any]:
     if state.get("role") != contract.role:
         raise WorkerRuntimeError(f"run_dir belongs to {state.get('role')}, not {contract.role}", code="wrong_role")
 
+    attempt = int(state.get("completion_attempts", 0)) + 1
     draft_file = ensure_expected_draft(state)
     draft_text = draft_file.read_text(encoding="utf-8")
     output_path = str(state.get("output_path", "")).strip()
     if not output_path:
         raise WorkerRuntimeError("run metadata is missing output_path", code="missing_state")
 
-    update_state(run_dir, status="verifying", last_error=None)
+    update_state(run_dir, status="verifying", completion_attempts=attempt, last_error=None)
     append_log(run_dir, "complete", f"complete started with draft {draft_file}")
 
     try:
@@ -1935,19 +2941,66 @@ def complete_run(contract: WorkerContract, run_dir: Path) -> dict[str, Any]:
             verify_cmd.extend(["--contains", pattern])
         verify_result = run_command(verify_cmd, timeout=120)
         require_ok(verify_result, action=f"verify_artifact {output_path}")
+        work_result = validate_work_result(
+            {
+                "project_id": str(state["project_id"]),
+                "task_id": str(state["task_id"]),
+                "from": contract.role,
+                "phase": contract.phase,
+                "status": "DONE",
+                "summary": f"{output_path} imported and verified.",
+                "verification": {
+                    "task_id": str(state["task_id"]),
+                    "agent": contract.role,
+                    "timestamp": iso_now(),
+                    "performed": True,
+                    "command": verify_cmd,
+                    "status": "pass",
+                    "summary": f"{output_path} verified against required patterns.",
+                    "evidence_paths": [output_path],
+                },
+            }
+        ).to_dict()
+        project_workspace = {
+            "workspace_root": str(state["project_path"]),
+            "allowed_write_paths": [output_path],
+            "expected_artifacts": [output_path],
+            "approved_runtime_evidence_roots": [],
+        }
+        artifact_manifest = {
+            "created": [output_path],
+            "changed": [],
+            "moved": [],
+            "deleted": [],
+            "expected_artifacts": [output_path],
+            "evidence_paths": [output_path],
+        }
+        state["outbound_work_result"] = work_result
+        state["outbound_project_workspace"] = project_workspace
+        state["outbound_artifact_manifest"] = artifact_manifest
 
         payload = build_result_payload(
             contract,
             state,
             instructions=contract.done_message(task_id=str(state["task_id"]), output_path=output_path),
         )
-        response = send_session_message(contract.session_key, json.dumps(payload, separators=(",", ":")))
         result_payload = {
-            "status": "sent",
+            "status": "ready",
             "sent_at": iso_now(),
             "payload": payload,
-            "response": response,
         }
+        write_json(run_dir / "result.json", result_payload)
+        signal_payload = build_child_result_signal(
+            state=state,
+            from_agent=contract.role,
+            to_agent=contract.expected_from,
+            phase=contract.phase,
+            signal="COMPLETE",
+        )
+        response = send_session_message(contract.session_key, json.dumps(signal_payload, separators=(",", ":")))
+        result_payload["status"] = "sent"
+        result_payload["response"] = response
+        result_payload["signal"] = signal_payload
         write_json(run_dir / "result.json", result_payload)
         update_state(
             run_dir,
@@ -1961,8 +3014,30 @@ def complete_run(contract: WorkerContract, run_dir: Path) -> dict[str, Any]:
         print(f"RESULT_FILE={run_dir / 'result.json'}")
         return load_state(run_dir)
     except WorkerRuntimeError as exc:
-        failure_status = "send_failed" if exc.code == "send_failed" else "verification_failed"
-        update_state(run_dir, status=failure_status, last_error={"code": exc.code, "message": str(exc)})
+        details = str(exc)
+        failure_code = exc.code
+        if failure_code == "helper_failed" and is_tool_denial_text(details):
+            failure_code = "tool_denied"
+        failure_status = "send_failed" if failure_code == "send_failed" else "verification_failed"
+        if failure_code == "tool_denied":
+            update_state(
+                run_dir,
+                status="repair_needed",
+                last_error={"code": failure_code, "message": details},
+            )
+            print(f"WORKER_RUNTIME_REPAIR_REQUIRED[{failure_code}]: {exc}")
+            print(f"NEXT_REQUIRED=bash {live_bin_root() / 'smith_plan_project.sh'} complete \"{run_dir}\"")
+            raise
+        if failure_code == "missing_draft" and attempt == 1:
+            update_state(
+                run_dir,
+                status="repair_needed",
+                last_error={"code": failure_code, "message": details},
+            )
+            print(f"WORKER_RUNTIME_REPAIR_REQUIRED[{failure_code}]: {exc}")
+            print(f"NEXT_REQUIRED=bash {live_bin_root() / (contract.role + '_run_task.sh')} complete \"{run_dir}\"")
+            raise
+        update_state(run_dir, status=failure_status, last_error={"code": failure_code, "message": details})
         append_log(run_dir, "complete", f"complete failed: {exc}")
         raise
 
@@ -1988,14 +3063,25 @@ def block_run(contract: WorkerContract, run_dir: Path, *, code: str, reason: str
     )
     append_log(run_dir, "block", f"block started code={normalized_code} reason={reason.strip()}")
     try:
-        response = send_session_message(contract.session_key, json.dumps(payload, separators=(",", ":")))
         result_payload = {
-            "status": "blocked",
+            "status": "ready",
             "blocked_at": iso_now(),
             "code": normalized_code,
             "payload": payload,
-            "response": response,
         }
+        write_json(run_dir / "result.json", result_payload)
+        signal_payload = build_child_result_signal(
+            state=state,
+            from_agent=contract.role,
+            to_agent=contract.expected_from,
+            phase=contract.phase,
+            signal="BLOCKED",
+            reason=reason.strip(),
+        )
+        response = send_session_message(contract.session_key, json.dumps(signal_payload, separators=(",", ":")))
+        result_payload["status"] = "blocked"
+        result_payload["response"] = response
+        result_payload["signal"] = signal_payload
         write_json(run_dir / "result.json", result_payload)
         update_state(
             run_dir,
@@ -2011,6 +3097,33 @@ def block_run(contract: WorkerContract, run_dir: Path, *, code: str, reason: str
     except WorkerRuntimeError as exc:
         update_state(run_dir, status="send_failed", last_error={"code": exc.code, "message": str(exc)})
         append_log(run_dir, "block", f"block failed: {exc}")
+        raise
+
+
+def block_artifact_run(contract: ArtifactWorkerContract, run_dir: Path, *, code: str, reason: str) -> dict[str, Any]:
+    normalized_code = code.strip().lower()
+    if normalized_code not in contract.blocked_codes:
+        allowed = ", ".join(contract.blocked_codes)
+        raise WorkerRuntimeError(f"invalid block code: {code}; allowed: {allowed}", code="envelope_invalid")
+
+    state = load_state(run_dir)
+    status = str(state.get("status", "")).strip().lower()
+    if status == "sent":
+        raise WorkerRuntimeError("run already sent; block is not allowed", code="terminal_run")
+    if status == "blocked":
+        print(f"ALREADY_BLOCKED={run_dir / 'result.json'}")
+        return state
+    if state.get("role") != contract.role:
+        raise WorkerRuntimeError(f"run_dir belongs to {state.get('role')}, not {contract.role}", code="wrong_role")
+
+    append_log(run_dir, "block", f"artifact block started code={normalized_code} reason={reason.strip()}")
+    try:
+        send_blocked_from_state(contract, run_dir, state, code=normalized_code, reason=reason.strip())
+        print(f"RESULT_FILE={run_dir / 'result.json'}")
+        return load_state(run_dir)
+    except WorkerRuntimeError as exc:
+        update_state(run_dir, status="send_failed", last_error={"code": exc.code, "message": str(exc)})
+        append_log(run_dir, "block", f"artifact block failed: {exc}")
         raise
 
 
@@ -2067,6 +3180,9 @@ def build_parser(contract: WorkerContract) -> argparse.ArgumentParser:
     complete = subparsers.add_parser("complete")
     complete.add_argument("run_dir")
 
+    report = subparsers.add_parser("report")
+    report.add_argument("run_dir")
+
     repair = subparsers.add_parser("repair")
     repair.add_argument("run_dir")
 
@@ -2086,12 +3202,25 @@ def build_artifact_parser(contract: ArtifactWorkerContract) -> argparse.Argument
     prepare.add_argument("envelope_json", nargs="?")
     prepare.add_argument("--envelope-file")
 
+    dispatch = subparsers.add_parser("dispatch")
+    dispatch.add_argument("envelope_json", nargs="?")
+    dispatch.add_argument("--envelope-file")
+
+    resume = subparsers.add_parser("resume")
+    resume.add_argument("run_dir")
+
+    advance = subparsers.add_parser("advance")
+    advance.add_argument("run_dir")
+
     read_parser = subparsers.add_parser("read")
     read_parser.add_argument("run_dir")
     read_parser.add_argument("relative_path")
 
     complete = subparsers.add_parser("complete")
     complete.add_argument("run_dir")
+
+    report = subparsers.add_parser("report")
+    report.add_argument("run_dir")
 
     repair = subparsers.add_parser("repair")
     repair.add_argument("run_dir")
@@ -2161,7 +3290,7 @@ def main_for_contract(contract: WorkerContract, argv: list[str] | None = None) -
             raise WorkerRuntimeError(f"unknown command: {args.command}", code="envelope_invalid")
         return 0
     except WorkerRuntimeError as exc:
-        print(f"WORKER_RUNTIME_FAILED: {exc}", file=sys.stderr)
+        print(f"WORKER_RUNTIME_FAILED: {exc}")
         return 20
 
 
@@ -2198,7 +3327,7 @@ def main_for_planning_contract(contract: PlanningProjectContract, argv: list[str
             raise WorkerRuntimeError(f"unknown command: {args.command}", code="envelope_invalid")
         return 0
     except WorkerRuntimeError as exc:
-        print(f"WORKER_RUNTIME_FAILED: {exc}", file=sys.stderr)
+        print(f"WORKER_RUNTIME_FAILED: {exc}")
         return 20
 
 
@@ -2208,9 +3337,28 @@ def main_for_artifact_contract(contract: ArtifactWorkerContract, argv: list[str]
     try:
         if args.command == "prepare":
             prepare_artifact_run(contract, read_envelope_arg(args))
+        elif args.command == "dispatch":
+            state = dispatch_artifact_task(contract, read_envelope_arg(args))
+            print(f"RUN_DIR={Path(state['task_packet_file']).parent}")
+            print(f"TASK_PACKET_FILE={state['task_packet_file']}")
+        elif args.command == "resume":
+            state = resume_artifact_task(contract, Path(args.run_dir))
+            print(f"RUN_DIR={args.run_dir}")
+            print(f"CONTINUATION_FILE={state['last_recovery_file']}")
+        elif args.command == "advance":
+            state = advance_artifact_task(contract, Path(args.run_dir))
+            print(f"RUN_DIR={args.run_dir}")
+            print(f"STATUS={state['status']}")
         elif args.command == "read":
             sys.stdout.write(read_run(contract, Path(args.run_dir), args.relative_path))  # type: ignore[arg-type]
         elif args.command == "complete":
+            if contract.role == "morpheus":
+                from agent_runner import complete_artifact_run_graph
+
+                complete_artifact_run_graph(contract, Path(args.run_dir))
+            else:
+                complete_artifact_run(contract, Path(args.run_dir))
+        elif args.command == "report":
             if contract.role == "morpheus":
                 from agent_runner import complete_artifact_run_graph
 
@@ -2225,12 +3373,12 @@ def main_for_artifact_contract(contract: ArtifactWorkerContract, argv: list[str]
             else:
                 raise WorkerRuntimeError("repair is only available for Morpheus", code="unsupported_command")
         elif args.command == "block":
-            block_run(contract, Path(args.run_dir), code=args.code, reason=args.reason)  # type: ignore[arg-type]
+            block_artifact_run(contract, Path(args.run_dir), code=args.code, reason=args.reason)
         else:
             raise WorkerRuntimeError(f"unknown command: {args.command}", code="envelope_invalid")
         return 0
     except WorkerRuntimeError as exc:
-        print(f"WORKER_RUNTIME_FAILED: {exc}", file=sys.stderr)
+        print(f"WORKER_RUNTIME_FAILED: {exc}")
         return 20
 
 

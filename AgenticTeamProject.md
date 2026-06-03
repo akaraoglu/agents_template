@@ -39,7 +39,7 @@ The system is built on four core layers, all running **entirely on a single loca
 
 1.  **The Reasoning Engine (Local LLM)**: 
     *   **Technology**: [Ollama](https://ollama.com/) running locally.
-    *   **Model**: `gemma4:26b` (a powerful, reasoning-optimized model that handles large context windows and structured JSON generation).
+    *   **Model**: `gemma4:26b` (a resource-safer reasoning model configured with a 262144-token context window for structured JSON generation).
 2.  **The Agent Framework & Control Plane**:
     *   **Technology**: **OpenClaw** gateway. OpenClaw runs as a local daemon, loading agent prompts, managing tool configurations, orchestrating agent execution runs, and persisting trajectories.
     *   **State & Cache Store**: **Redis** (running locally), storing active gateway caches, trajectories, and tool output outcomes.
@@ -147,7 +147,7 @@ sudo systemctl start redis-server
     ```bash
     curl -fsSL https://ollama.com/install.sh | sh
     ```
-2.  Pull the required model (ensure your system has at least 16GB RAM to run a 26B model comfortably):
+2.  Pull the required model:
     ```bash
     ollama pull gemma4:26b
     ```
@@ -180,7 +180,7 @@ sudo systemctl start redis-server
         "smith": {
           "model": "gemma4:26b",
           "provider": "ollama",
-          "contextWindow": 131072
+          "contextWindow": 262144
         },
         "niaobe": {
           "model": "gemma4:26b",
@@ -243,7 +243,7 @@ bash AgenticTeam/scripts/team_status.sh
 ### Problem: Stalled or Frozen Agent Sessions
 *   **Symptoms**: An agent gets locked (`.jsonl.lock` exists in their session folder), runs out of context, or halts silently.
 *   **Solution**:
-    1.  Verify if the model is set to `gemma4:26b`. Ensure the local Ollama registry contains this model name cleanly.
+    1.  Verify if the model is set to `gemma4:26b` and `num_ctx` is `262144`. Ensure the local Ollama registry contains this model name cleanly.
     2.  Clear locks and reset the session:
         ```bash
         bash AgenticTeam/scripts/reset_project.sh <project_id>
@@ -299,9 +299,9 @@ To understand how this system operates autonomously without context drift, data 
 
 ### Layer 1: Cognitive & Reasoning Layer (The Local LLM)
 *   **Core Engine**: Ollama running locally.
-*   **Model**: `gemma4:26b` (Reasoning-optimized, large context architecture).
+*   **Model**: `gemma4:26b` (resource-safer reasoning model with large-context support).
 *   **Specifications**:
-    *   **Context Window**: Bounded at `131,072` tokens via `openclaw.json` configuration to comfortably handle extensive trajectory histories, multi-file code diffs, and multiple prompt imports.
+    *   **Context Window**: Bounded at `262,144` tokens via `openclaw.json` configuration to comfortably handle extensive trajectory histories, multi-file code diffs, and multiple prompt imports.
     *   **JSON Enforcement**: Instructed to strictly output structured thoughts and formal Tool Call payloads, ensuring reliable interaction with the control plane.
 *   **Role**: Serves as the cognitive heart. It does not run scripts, write files, or speak directly to users. It processes the conversation transcript and system inputs to decide what step to take next.
 

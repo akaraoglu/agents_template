@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: bash morpheus_run_task.sh <prepare|read|complete|repair|block> ...
+# Usage: bash morpheus_run_task.sh <dispatch|resume|advance|prepare|read|complete|repair|block> ...
 
 set -euo pipefail
 

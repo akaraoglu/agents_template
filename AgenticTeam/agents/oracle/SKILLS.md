@@ -13,3 +13,7 @@
 - **Report shape**:
   after the runtime exits, reply `Validation handled. Runtime notified Niaobe.`
   then `REPLY_SKIP`.
+- **Run local Python diagnosis when needed**:
+  `bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --module unittest -- tests/test_main.py`
+  uses `/home/alik/workspace/clawspace/venv-claw` without shell activation; it
+  is not final VERIFY evidence.

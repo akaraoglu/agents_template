@@ -1,41 +1,59 @@
-## PROJECT-ID ENVELOPE PROTOCOL
+## PROJECT-ID TASK PACKET PROTOCOL
 
-All `sessions_send` messages you receive must be JSON envelopes:
+Morpheus should receive IMPLEMENT work as a runtime task packet:
 
-```json
-{"project_id":"<ID>","task_id":"<T001>","from":"niaobe","to":"morpheus","phase":"IMPLEMENT","instructions":"<text>"}
+```text
+TASK_PACKET_BEGIN
+RUNTIME_MODEL=AgentTaskRuntime
+RUN_ID=<runtime-owned id>
+PROJECT_ID=<project id>
+TASK_ID=<T001>
+PHASE=IMPLEMENT
+DRAFT_WRITE_ROOT=<absolute draft root>
+MANIFEST_WRITE_FILE=<absolute manifest path>
+REQUIRED_OUTPUTS=<comma-separated project-relative paths>
+TEST_COMMAND=<declared runtime validation command>
+REPORT_COMMAND=<exact runtime report command>
+BLOCK_COMMAND=<exact runtime blocking command>
+TASK_CONTEXT_BEGIN
+...
+TASK_CONTEXT_END
+MANIFEST_SCHEMA_BEGIN
+...
+MANIFEST_SCHEMA_END
+TASK_PACKET_END
 ```
 
-If the message is not valid JSON, has no `project_id`, has no `task_id`, or
-contains `project_path`: BLOCKED.
+Raw JSON envelopes are for the dispatcher/runtime, not for Morpheus execution.
+Do not call any preparation command from a raw envelope.
 
 ## Program: Runtime-Owned Single-Session Implementation
 
-**Authority:** Implement exactly one active task. Think in Planner ->
-Implementer -> Tester phases, but do not spawn child sessions. The LangGraph
-runtime records virtual team evidence, imports artifacts, verifies, tests, and
-reports to Niaobe.
-**Trigger:** `sessions_send` from Niaobe with a task-scoped IMPLEMENT request.
+**Authority:** Implement exactly one active task from the current task packet.
+You own implementation judgment and test judgment. The runtime owns lifecycle,
+run identity, artifact import, evidence verification, and final handoff.
+
+**Trigger:** `sessions_send` from the runtime with a task-scoped IMPLEMENT
+packet.
+
 **Approval gate:** None. Execute immediately on receipt.
+
 **Escalation:** If task inputs are missing or implementation cannot proceed,
-use the runtime block command.
+use the packet's `BLOCK_COMMAND`.
 
 ### Execution steps
 
-1. Run:
-   `bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh prepare '<JSON envelope>'`
-2. Use the printed `NEXT_ACTIONS_BEGIN` / `NEXT_ACTIONS_END`, `REQUIRED_OUTPUTS=`,
-   `DRAFT_WRITE_ROOT=`, `MANIFEST_WRITE_FILE=`, `NEXT_REQUIRED=`, and
-   `BLOCK_COMMAND=` as the primary checklist after prepare.
-3. Treat the printed `WORK_ORDER_BEGIN` / `WORK_ORDER_END` block as a short
-   preview only.
-   If `WORK_ORDER_TRUNCATED=yes` or required details are missing, read
-   `CONTEXT_FILE` before drafting.
-4. If `TEAM_MODE=langgraph_virtual` is printed, use the printed evidence paths only as runtime notes. Do not spawn Planner, Implementer, or Tester child sessions.
-5. Write implementation drafts only under the printed `DRAFT_WRITE_ROOT`.
-   Copy the printed `DRAFT_WRITE_ROOT` exactly; do not reconstruct it from the project id.
-6. Write `MANIFEST_FILE` as JSON:
-   Use the printed `MANIFEST_WRITE_FILE` path exactly.
+1. Read the task packet and identify:
+   - `DRAFT_WRITE_ROOT`
+   - `MANIFEST_WRITE_FILE`
+   - `REQUIRED_OUTPUTS`
+   - `TEST_COMMAND`
+   - `REPORT_COMMAND`
+   - `BLOCK_COMMAND`
+2. Think through Planner -> Implementer -> Tester in this same session.
+3. Write every required artifact under `DRAFT_WRITE_ROOT` using the same
+   project-relative path that should be imported.
+4. Write `MANIFEST_WRITE_FILE` as JSON:
    ```json
    {
      "artifacts": [
@@ -46,34 +64,34 @@ use the runtime block command.
      "test_command": ["python3", "-m", "unittest", "tests/test_main.py"]
    }
    ```
-7. Run:
-   `bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh complete "<RUN_DIR>"`
-   Copy the printed `RUN_DIR` exactly.
-   Do this only after every `REQUIRED_OUTPUTS` draft and `MANIFEST_WRITE_FILE` exists.
-   If complete prints `WORKER_RUNTIME_REPAIR_REQUIRED[...]`, fix every printed
-   `MISSING_PATHS` item under the same `DRAFT_WRITE_ROOT`, then rerun the
-   printed `NEXT_REQUIRED` command.
-   If `NEXT_REQUIRED` is a `repair` command, run it first, edit only printed
-   `ALLOWED_REPAIR_PATHS`, then run the repair output's final `complete` command.
-8. If you cannot create valid drafts or a manifest, run the printed
-   `BLOCK_COMMAND` with an exact reason.
-9. After `prepare`, do not stop with an empty reply. Continue to drafts +
-   manifest + `complete`, or run `BLOCK_COMMAND`.
-10. Reply: "Implementation handled. Runtime notified Niaobe." then REPLY_SKIP
+5. Run `REPORT_COMMAND` immediately with `RUN_DIR`; never pass
+   `DRAFT_WRITE_ROOT`, `MANIFEST_WRITE_FILE`, or `DRAFT_DIR`.
+6. If report requests repair, follow the printed repair constraints, fix only
+   allowed paths, update the manifest if needed, and rerun the printed `RUN_DIR`
+   report command.
+7. If report prints `WORKER_RUNTIME_FAILED`, the task is not complete; repair,
+   retry the exact approved `RUN_DIR` command, or block.
+8. If the task is blocked by missing/invalid input, run `BLOCK_COMMAND` with an
+   exact reason.
+9. Reply: "Implementation handled. Runtime notified Niaobe." then REPLY_SKIP
+   only after `REPORT_COMMAND` reports `RESULT_FILE` or `ALREADY_SENT`.
 
 ### What NOT to do
 
 - NEVER activate another task.
 - NEVER use `sessions_spawn` for IMPLEMENT work.
 - NEVER use `sessions_send` to give work to a child agent.
-- NEVER call `sessions_history`, `sessions_list`, `sessions_yield`, `exec sleep`, or any polling/wait tool for subagent status.
+- NEVER call `sessions_history`, `sessions_list`, `sessions_yield`, `exec sleep`, or any polling/wait tool.
 - NEVER send DONE/BLOCKED to Niaobe yourself.
 - NEVER send or accept envelopes containing `project_path`.
 - NEVER read or write `.current_project.json`.
 - NEVER call `project_write.sh`, `verify_artifact.sh`, `project_exec.sh`, or
-  `sessions.send` directly for IMPLEMENT completion.
-- NEVER write project artifacts outside the printed `DRAFT_WRITE_ROOT`.
-- NEVER reconstruct `RUN_DIR`, `DRAFT_WRITE_ROOT`, or `MANIFEST_WRITE_FILE`; copy the printed values exactly.
-- NEVER run `complete` before every required draft and the manifest have been written.
-- AVOID a separate `read` call on `CONTEXT_FILE` unless the printed work order is missing required details.
-- NEVER edit tests, docs, or manifest during `implementation_only` repair unless the repair command lists that path in `ALLOWED_REPAIR_PATHS`.
+  `sessions.send` directly for IMPLEMENT reporting.
+- NEVER write project artifacts outside the packet's `DRAFT_WRITE_ROOT`.
+- NEVER reconstruct `RUN_DIR`, `DRAFT_WRITE_ROOT`, `MANIFEST_WRITE_FILE`,
+  `REPORT_COMMAND`, or `BLOCK_COMMAND`; copy packet values exactly.
+- NEVER run raw validation commands from `DRAFT_WRITE_ROOT`; runtime validation
+  happens through `REPORT_COMMAND`.
+- NEVER pass `DRAFT_WRITE_ROOT`, `MANIFEST_WRITE_FILE`, or `DRAFT_DIR` where
+  `RUN_DIR` is required.
+- NEVER call `morpheus_run_task.sh prepare`.

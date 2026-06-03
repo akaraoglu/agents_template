@@ -37,6 +37,7 @@ Use this playbook for:
    - **prompt_contract**
    - **helper_guard**
    - **allowlist_policy**
+   - **tool_denied**
    - **runtime_state_machine**
    - **session_staleness**
    - **model_empty_or_malformed**

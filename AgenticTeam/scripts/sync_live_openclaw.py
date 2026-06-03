@@ -236,11 +236,15 @@ def sync_helper_scripts(repo_root: Path, manifest: dict, *, selected_agents: lis
     helper_scripts = manifest.get("helper_scripts", {})
     live_bin_root = Path(manifest["paths"]["live_bin_root"])
     agent_names = selected_agents or list(configured_agents.keys())
+    synced_destinations: set[Path] = set()
 
     for agent in agent_names:
         for name in helper_scripts.get(agent, []):
             source = repo_root / "scripts" / name
             destination = live_bin_root / name
+            if destination in synced_destinations:
+                continue
+            synced_destinations.add(destination)
             sync_file(actions, source, destination, apply=apply, mode=0o755)
     return actions
 

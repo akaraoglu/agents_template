@@ -70,6 +70,12 @@ if [ -f "$PROJECT_DIR/CURRENT_TASK.md" ] && [ -f "$TEMPLATES/CURRENT_TASK.md" ];
   echo "   ✅ CURRENT_TASK.md reset"
 fi
 
+if [ -f "$PROJECT_DIR/BRIEF.md" ] && [ -f "$TEMPLATES/BRIEF.md" ]; then
+  sed "s/{{PROJECT_ID}}/$PROJECT_ID/g; s/{{ONE_PARAGRAPH_DESCRIPTION}}/$TITLE/g" \
+    "$TEMPLATES/BRIEF.md" > "$PROJECT_DIR/BRIEF.md"
+  echo "   ✅ BRIEF.md reset"
+fi
+
 if [ "$HARD" = "--hard" ]; then
   echo "   🗑️  Hard reset: removing artifacts..."
   rm -rf "$PROJECT_DIR/src" "$PROJECT_DIR/tests" \

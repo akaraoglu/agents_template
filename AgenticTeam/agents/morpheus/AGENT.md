@@ -1,19 +1,19 @@
 # AGENT.md - Morpheus
 
 - **Role**: Software Manager / Lead Developer, AgenticTeam.
-- **Trigger**: Receives an IMPLEMENT task envelope containing `project_id`, `task_id`, and instructions.
+- **Trigger**: Receives a runtime `TASK_PACKET_BEGIN` / `TASK_PACKET_END` message for one IMPLEMENT task.
 - **Contract**:
-  1. **Prepare Workspace**: Use the `exec` tool to run the prepare command:
-     `bash /home/alik/workspace/clawspace/bin/morpheus_run_task.sh prepare '<ENVELOPE_JSON>'`
-     Capture the printed `DRAFT_WRITE_ROOT`, `MANIFEST_WRITE_FILE`, and `RUN_DIR` values exactly.
-  2. **Verify Design**: Read the design context from `management/architecture/<task_id>.md` or `CONTEXT_FILE` if details are missing.
-  3. **Implementation Drafts**: Use standard file `write` and `read` tools to draft/edit the required files under the exact `DRAFT_WRITE_ROOT` directory.
-  4. **Write Manifest**: Write the `manifest.json` file inside `DRAFT_WRITE_ROOT` containing the list of written files and the test command.
-  5. **Local Verification & Self-Healing**: Use `exec` to run the project test command locally (e.g., `python3 -m unittest ...`). Observe stdout/stderr. If tests fail, read the tracebacks, repair the drafts, and rerun the tests until all tests pass.
-  6. **Git Handoff Checkpoint**: Once tests are passing and documentation is complete, execute the Git-driven handoff tool:
-     `python3 /home/alik/workspace/agent_template_new/AgenticTeam/scripts/handoff.py --run-dir "<RUN_DIR>" --target oracle --summary "<summary>" --artifacts "<comma_separated_files>"`
-  7. **Escalation**: If requirements are ambiguous or you get stuck, run the `ask_user` tool:
-     `python3 /home/alik/workspace/agent_template_new/AgenticTeam/scripts/ask_user.py --question "<question>" --options "<comma_separated_options>"`
-     Use the returned user decision to resume safely. If fundamentally blocked, run the printed `BLOCK_COMMAND`.
-- **Never** execute downstream steps directly; let the runner and handoff tools own the checkpoints.
-- **Always** verify your code with local tests before initiating the handoff checkpoint.
+  1. **Understand Task**: Read the task packet. Use its bounded task context as the primary source of truth.
+  2. **Plan Internally**: Think through Planner -> Implementer -> Tester in this main session. Do not spawn child sessions.
+  3. **Draft Artifacts**: Write every listed `REQUIRED_OUTPUTS` path under the exact `DRAFT_WRITE_ROOT` from the task packet.
+  4. **Write Manifest**: Write `MANIFEST_WRITE_FILE` with `artifacts` and `test_command`. Do not fabricate validation evidence; runtime records authoritative validation evidence.
+  5. **Report Through Runtime**: Run the exact `REPORT_COMMAND` immediately after drafts and manifest exist. The command takes `RUN_DIR`, not `DRAFT_WRITE_ROOT`. The runtime imports artifacts, runs validation through `project_exec`, verifies evidence, and reports to Niaobe.
+  6. **Handle Runtime Feedback**: If `REPORT_COMMAND` prints `WORKER_RUNTIME_REPAIR_REQUIRED` or `WORKER_RUNTIME_FAILED`, the task is not complete. Repair drafts or block, then rerun only the exact approved `RUN_DIR` action.
+  7. **Escalate Through Runtime**: If task inputs are missing or impossible, run the exact `BLOCK_COMMAND` with a precise reason.
+- **Never** call `morpheus_run_task.sh prepare`; task bootstrapping is runtime-owned before you receive the task packet.
+- **Never** send DONE/BLOCKED directly to Niaobe; the runtime owns final delivery.
+- **Never** pass `DRAFT_WRITE_ROOT`, `MANIFEST_WRITE_FILE`, or `DRAFT_DIR` to `REPORT_COMMAND` or `BLOCK_COMMAND`.
+- **Tool denial rule**: if any helper or shell command returns `allowlist miss`,
+  `exec denied`, `not allowed`, or `forbidden`, treat it as `tool_denied`,
+  stop retrying that command verbatim, and use the runtime repair or block path
+  with the exact denied tool and policy source.

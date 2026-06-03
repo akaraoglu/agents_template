@@ -18,23 +18,25 @@ except ImportError as exc:  # pragma: no cover - exercised only when dependency 
 from oracle_run_task import (
     build_report,
     build_run_dir,
+    build_niaobe_result_payload,
     choose_test_command,
     iso_now,
     parse_verify_envelope,
     read_project_file,
-    send_niaobe_result,
     verify_project_artifact,
 )
 from worker_runtime import (
     RUN_DEADLINE_SECONDS,
     WorkerRuntimeError,
     append_log,
+    build_child_result_signal,
     command_details,
     extract_required_outputs,
     live_bin_root,
     require_ok,
     resolve_project,
     run_command,
+    send_session_message,
     write_json,
     write_text,
 )
@@ -173,23 +175,39 @@ def build_graph():
     def send_result(state: OracleGraphState) -> dict[str, Any]:
         run_dir = Path(state["run_dir"])
         evidence = f"{' '.join(state['test_command'])} exit={state['exec_returncode']}; report={state['report_path']}."
-        send_response = send_niaobe_result(
+        payload = build_niaobe_result_payload(
             state["project_id"],
             state["task_id"],
             verdict=state["verdict"],
             evidence=evidence,
+            test_command=state["test_command"],
+            report_path=state["report_path"],
+            exec_returncode=state["exec_returncode"],
+            workspace_root=state["project_path"],
         )
         result_payload = {
-            "status": "sent",
+            "status": "ready",
             "sent_at": iso_now(),
             "project_id": state["project_id"],
             "task_id": state["task_id"],
             "verdict": state["verdict"],
             "report": state["report_path"],
             "test_command": state["test_command"],
-            "response": send_response,
             "engine": "langgraph",
+            "payload": payload,
         }
+        write_json(run_dir / "result.json", result_payload)
+        signal_payload = build_child_result_signal(
+            state={"project_id": state["project_id"], "task_id": state["task_id"], "run_id": run_dir.name},
+            from_agent="oracle",
+            to_agent="niaobe",
+            phase="VERIFY",
+            signal="COMPLETE",
+        )
+        send_response = send_session_message("agent:niaobe:main", json.dumps(signal_payload, separators=(",", ":")))
+        result_payload["status"] = "sent"
+        result_payload["response"] = send_response
+        result_payload["signal"] = signal_payload
         write_json(run_dir / "result.json", result_payload)
         current = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
         current.update(

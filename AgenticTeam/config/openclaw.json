@@ -13,7 +13,12 @@
       "models": {
         "ollama/gemma4:26b": {
           "params": {
-            "num_ctx": 32768
+            "num_ctx": 262144
+          }
+        },
+        "ollama/gemma4:31b": {
+          "params": {
+            "num_ctx": 262144
           }
         }
       },
@@ -43,15 +48,25 @@
             "sessions_send",
             "sessions_spawn",
             "sessions_list",
-            "sessions_history"
+            "sessions_history",
+            "agents_list",
+            "gateway",
+            "image",
+            "image_generate",
+            "memory_get",
+            "memory_search",
+            "message",
+            "pdf",
+            "process",
+            "session_status",
+            "sessions_yield",
+            "subagents",
+            "tts"
           ],
           "deny": [
-            "edit",
             "apply_patch",
             "browser",
-            "canvas",
-            "nodes",
-            "cron"
+            "canvas"
           ]
         }
       },

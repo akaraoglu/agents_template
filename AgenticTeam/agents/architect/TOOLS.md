@@ -24,3 +24,14 @@ exec: bash /home/alik/workspace/clawspace/bin/architect_run_task.sh block "<RUN_
 Do not invent paths. Use only the `RUN_DIR`, `CONTEXT_FILE`, and `DRAFT_FILE`
 printed by `run` or `repair`.
 Never use heredocs, pipes, or shell redirection with project file writes.
+
+## Python diagnostics
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --module unittest -- tests/test_main.py
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --syntax-check "src/main.py"
+```
+
+`python_claw.sh` uses `/home/alik/workspace/clawspace/venv-claw` without shell
+activation. Use it only for local Python diagnosis; `architect_run_task.sh`
+remains the authority for lifecycle and final delivery.

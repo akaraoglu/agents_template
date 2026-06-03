@@ -12,6 +12,8 @@ import sys
 import time
 from pathlib import Path
 
+from canaries.common import worker_draft_evidence
+
 DEFAULT_TITLE = "run_e2e_fibonacci_test"
 DEFAULT_TIMEOUT_SECONDS = 1800
 DEFAULT_POLL_SECONDS = 15
@@ -183,7 +185,14 @@ def collect_faults(project_id: str, project_dir: Path, state_text: str, *, timed
     waiting_for = parse_state_field(state_text, "waiting_for") or "missing"
     task_phase = parse_state_field(state_text, "task_phase") or "missing"
     blocked_reason = parse_state_field(state_text, "blocked_reason") or "none"
+    active_task = parse_state_field(state_text, "active_task") or "T001"
+    architect_worker = load_latest_worker_state(project_id, "architect")
     morpheus_worker = load_latest_worker_state(project_id, "morpheus")
+    architecture_path = f"management/architecture/{active_task}.md"
+    architect_drafts = worker_draft_evidence(project_id, "architect")
+    architect_orphan_drafts = [
+        item for item in architect_drafts if item.get("draft_file_exists") and not item.get("state_file_exists")
+    ]
 
     if timed_out:
         faults.append(
@@ -199,6 +208,25 @@ def collect_faults(project_id: str, project_dir: Path, state_text: str, *, timed
         )
 
     faults.extend(collect_plan_faults(project_dir))
+
+    if not (project_dir / architecture_path).exists():
+        faults.append(f"Missing required architecture artifact: {architecture_path}.")
+        if architect_orphan_drafts:
+            faults.append(
+                "Architect created draft.md outside runtime terminalization; no runtime state/result exists for: "
+                + ", ".join(str(item["draft_file"]) for item in architect_orphan_drafts)
+                + "."
+            )
+        elif (
+            waiting_for == "architect"
+            and task_phase == "DESIGN"
+            and isinstance(architect_worker, dict)
+            and str(architect_worker.get("status", "")).strip() == "awaiting_draft"
+            and not architect_worker.get("last_error")
+        ):
+            faults.append(
+                "Architect prepare succeeded but no design draft was terminalized; worker state is awaiting_draft with no runtime error."
+            )
 
     missing_outputs = [path for path in REQUIRED_OUTPUTS if not (project_dir / path).exists()]
     if missing_outputs:
@@ -248,6 +276,7 @@ def format_report(project_id: str, project_dir: Path, state_text: str, faults: l
     blocked_reason = parse_state_field(state_text, "blocked_reason") or "none"
     architect_worker = load_latest_worker_state(project_id, "architect")
     morpheus_worker = load_latest_worker_state(project_id, "morpheus")
+    architect_drafts = worker_draft_evidence(project_id, "architect")
 
     lines = [
         "# Fibonacci E2E Report",
@@ -280,6 +309,14 @@ def format_report(project_id: str, project_dir: Path, state_text: str, faults: l
                 f"- **last_error**: `{architect_worker.get('last_error')}`",
             ]
         )
+    if architect_drafts:
+        lines.extend(["", "## Architect Draft Evidence", ""])
+        for item in architect_drafts:
+            lines.append(
+                "- "
+                f"`{item['draft_file']}` "
+                f"(state={item['state_file_exists']}, result={item['result_file_exists']})"
+            )
     if morpheus_worker:
         lines.extend(
             [

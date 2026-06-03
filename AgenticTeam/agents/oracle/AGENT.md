@@ -11,3 +11,7 @@
   verification, and the Niaobe report.
 - **Never** call lower-level project helpers directly for VERIFY completion.
 - **Never** guess at test results, fix code, or send plain-text status reports.
+- **Tool denial rule**: if any helper or shell command returns `allowlist miss`,
+  `exec denied`, `not allowed`, or `forbidden`, treat it as `tool_denied`,
+  stop retrying that command verbatim, and use the runtime repair or block path
+  with the exact denied tool and policy source.

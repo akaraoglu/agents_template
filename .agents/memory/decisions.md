@@ -1,4 +1,25 @@
+## 2026-06-03
+- Agents should use `python_claw.sh` for local Python diagnosis instead of activating venvs or constructing raw `cd ... && python ...` shell commands.
+  The helper resolves `/home/alik/workspace/clawspace/venv-claw` internally, exposes structured module/script/syntax-check modes, and remains diagnostic only; runtime `project_exec`/role completion helpers remain the authoritative final evidence path.
+
+## 2026-06-02
+- Tool-denial outputs such as `allowlist miss`, `exec denied`, `not allowed`, and `forbidden` should be treated as a first-class `tool_denied` runtime failure. The runtime may request repair for that condition, but it must keep the error typed and actionable rather than folding it into generic helper failure or silent stall behavior.
+
+- Active OpenClaw team sessions should use `ollama/gemma4:26b` with `num_ctx=262144` for the main agents because `gemma4:31b` is too memory-heavy for the host.
+  Direct Ollama runner calls must load model/window settings from OpenClaw config or explicit environment overrides instead of hard-coding a context window, and canary session rotation must refresh `model` and `contextTokens` so fresh sessions do not inherit stale model metadata.
+
+- Smith planning should use a single run-local draft directory as the source of truth.
+  The direct `run_dir/drafts` path is the authoritative planning draft area, and `manifest.json` should live there as well. The previous alias-style draft root added an extra publish failure layer without adding meaningful safety, so Smith planning should keep the unified run-local draft area and let the runtime validate in place before handoff.
+
+- Covenant Phase 6 makes artifact runtime terminalization outcome-owned. Artifact workers should route accepted completion through `RuntimeOutcome`/`WorkReport` handling, while runtime persists legacy-compatible `work_result`, workspace, and artifact-manifest payloads, emits signal-only completion, and marks missing work as `REPAIR_REQUIRED` before resuming instead of silently waiting.
+
+- Phase 4 is a complexity-freeze and boundary-audit step, not a new protocol layer. The durable output is an inventory of current runtime paths, deferred roadmap items, silent waiting states, session/prompt freshness checks, and a terminalization inventory. Morpheus remains the first universal-loop path to keep under explicit diagnostic scrutiny, and any future protocol growth must be justified by that audit rather than added preemptively.
+
+- Covenant direction is simplified to a universal Agent Work Loop. Runtime should enforce only workspace, task, change, verification, and handoff boundaries while agents own planning, implementation, verification, repair, and reporting. New phase-specific or role-specific choreography should be avoided unless the universal loop cannot express the behavior.
+
 ## 2026-05-29
+- Neo's tool policy configurations have been updated to explicitly allow the 13 previously filtered tools (`agents_list`, `gateway`, `image`, `image_generate`, `memory_get`, `memory_search`, `message`, `pdf`, `process`, `session_status`, `sessions_yield`, `subagents`, `tts`) and ensure blocklisted tools (`cron`, `edit`, `nodes`) are not denied in `openclaw.json`. Furthermore, Neo is equipped with a formal **Team Troubleshooting and Diagnostics** capability, authorizing him to run `openclaw status`, `openclaw logs`, and `team_status.sh` to autonomously locate active delegation stalls and report findings back to Master.
+
 - Intermediate agent handoffs must completely avoid Git operations.
   All intermediate transitions (such as Smith ➔ Niaobe ➔ Architect ➔ Morpheus ➔ Oracle ➔ Niaobe) are purely declarative and manifest-driven (`project.json`). Git staging, commits, PR creation, and review operations are strictly prohibited during these stages and are deferred to post-validation phases handled by the master workflow or human operator. `handoff.py` has been updated to remove all `git add` and `git commit` processes.
 
@@ -425,3 +446,26 @@
   Morpheus no longer uses spawned child sessions for IMPLEMENT work.
   The LangGraph runtime preserves the team-review shape with deterministic virtual evidence nodes for planner, implementer, and tester under the run-local `team/` directory.
   Runtime owns artifact import, artifact verification, project execution, repair/block state, and final Niaobe messaging; Morpheus supplies implementation content and the test command in the main session only.
+- Morpheus AgentTaskRuntime packet rule:
+  Morpheus IMPLEMENT work now starts from a runtime-dispatched `TASK_PACKET`, not an agent-called `prepare`.
+  The runtime bootstraps run identity, bounded context, draft paths, manifest path, and validation command before the model turn.
+  Morpheus owns artifact content and validation judgment, but runtime owns `dispatch`, `resume`, `advance`, artifact import, project-exec validation evidence, and final DONE/BLOCKED acceptance.
+  `manifest.validation_report` is required and must match `manifest.test_command`; runtime records the actual project-exec evidence before accepting DONE.
+- Project safe-write rule:
+  Project agents should not rely on raw filesystem `write` for protocol-critical artifacts when a runtime-scoped writer is available.
+  The default write destination for worker artifacts is the current run's draft directory, addressed by short relative paths, not the final project path.
+  Smith initial planning now uses `smith_plan_project.sh write <RUN_DIR> <relative_path>` for draft planning files and manifest, with runtime validation and clean `WRITE_REJECTED[...]` feedback.
+  Neo is intentionally excluded from this restriction for now and keeps the normal native write skill for intake/bootstrap work.
+- Child completion transport rule:
+  Child-to-Niaobe completion traffic is signal-only and run-ticket backed.
+  The control envelope carries `project_id`, `task_id`, `from`, `to`, `phase`, `signal`, and `run_id`; the child `result.json` under the run directory is the source of truth for completion data.
+  Niaobe validates the file-backed payload before advancing or requesting repair, and the inline child-result envelope format is no longer part of the contract.
+- Morpheus completion gate rule:
+  Morpheus validation is a single pre-completion gate, not a terminal state.
+  After one passing validation run, the next action must be the packet's `COMPLETE_COMMAND`; validation should only be repeated after a draft repair changes the files.
+- Morpheus reporting contract rule:
+  Morpheus IMPLEMENT work now uses `REPORT_COMMAND` as the visible finish action. The runtime still terminalizes the validated work report, but the packet, prompt surfaces, and repair/continuation text should speak in reporting terms so the live worker no longer depends on an agent-visible `COMPLETE_COMMAND`.
+- Smith task progression helper:
+  Smith now uses a shared `task_progress.py` helper and `smith_task_progress.sh` CLI to advance the backlog, rewrite `CURRENT_TASK.md`, and hand off the next task after each `TASK_DONE`. The helper is the normal progression path; the lower-level write/state/handoff tools remain available only for manual re-scope when a block proves the plan needs revision.
+- Smith live brief and self-heal rule:
+  Smith reads `BRIEF.md` as the short human-facing task brief for the active step. If `PROJECT_STATE.md`, `CURRENT_TASK.md`, `BRIEF.md`, and `BACKLOG.md` disagree, Smith must run `smith_task_progress.sh sync` before handing off the next task. The brief is a doc-level contract, not a runtime heuristic.

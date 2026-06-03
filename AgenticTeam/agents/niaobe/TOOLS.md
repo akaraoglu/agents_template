@@ -47,3 +47,14 @@ the returned `task_id`.
   "message": "{\"project_id\":\"<PROJECT_ID>\",\"task_id\":\"<TASK_ID>\",\"from\":\"niaobe\",\"to\":\"smith\",\"phase\":\"TASK_DONE|TASK_BLOCKED\",\"instructions\":\"<exact outcome>\"}"
 }
 ```
+
+## Python diagnostics
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --module unittest -- tests/test_main.py
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --syntax-check "src/main.py"
+```
+
+`python_claw.sh` uses `/home/alik/workspace/clawspace/venv-claw` without shell
+activation. Use it only for local Python diagnosis; Niaobe runtime helpers
+remain the authority for handoffs, state movement, and final evidence.

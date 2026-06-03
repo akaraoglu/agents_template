@@ -8,19 +8,28 @@
   },
   "helper_scripts": {
     "architect": [
-      "architect_run_task.sh"
+      "architect_run_task.sh",
+      "python_claw.sh"
     ],
     "smith": [
-      "smith_plan_project.sh"
+      "smith_plan_project.sh",
+      "smith_task_progress.sh",
+      "python_claw.sh"
     ],
     "morpheus": [
-      "morpheus_run_task.sh"
+      "morpheus_run_task.sh",
+      "python_claw.sh"
     ],
     "niaobe": [
-      "niaobe_run_task.sh"
+      "niaobe_run_task.sh",
+      "python_claw.sh"
     ],
     "oracle": [
-      "oracle_run_task.sh"
+      "oracle_run_task.sh",
+      "python_claw.sh"
+    ],
+    "neo": [
+      "python_claw.sh"
     ]
   },
   "deprecated_source_paths": [

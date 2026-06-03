@@ -11,7 +11,7 @@ The implementation brief lives at [claw_agents_team/docs/V0_MINIMAL_SYSTEM_IMPLE
 - direct file-based project truth under `projects/`
 - policy-driven delegation with execution-readiness gates
 - visible handoffs in the `projects` stream
-- local inference through `ollama` using `gemma4:26b`
+- local inference through `ollama` using `gemma4:26b` with a 262144-token context window
 
 Live runtime data is expected under `/home/alik/workspace/clawspace`.
 

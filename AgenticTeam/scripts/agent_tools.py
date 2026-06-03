@@ -76,6 +76,51 @@ def exec_command(project_path: str | Path, command: str) -> str:
         return f"Error: Failed to execute command: {exc}"
 
 
+def python_claw(
+    project_path: str | Path,
+    mode: str,
+    target: str | None = None,
+    args: list[str] | None = None,
+) -> str:
+    """Runs Python through the clawspace venv adapter with structured arguments."""
+    script_path = Path(__file__).resolve().parent / "python_claw.py"
+    cmd = [sys.executable, str(script_path), "--cwd", str(project_path)]
+    if mode == "module":
+        if not target:
+            return "Error: Missing target module for python_claw module mode."
+        cmd.extend(["--module", target])
+    elif mode == "script":
+        if not target:
+            return "Error: Missing target script for python_claw script mode."
+        cmd.extend(["--script", target])
+    elif mode == "syntax_check":
+        if not target:
+            return "Error: Missing target path for python_claw syntax_check mode."
+        cmd.extend(["--syntax-check", target])
+    else:
+        return "Error: python_claw mode must be module, script, or syntax_check."
+
+    if args:
+        cmd.append("--")
+        cmd.extend(str(item) for item in args)
+
+    try:
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=130,
+        )
+        output = res.stdout or ""
+        if res.stderr:
+            output += ("\n" if output else "") + f"STDERR:\n{res.stderr}"
+        return output or f"PYTHON_CLAW_RESULT={'pass' if res.returncode == 0 else 'fail'}"
+    except subprocess.TimeoutExpired:
+        return "PYTHON_CLAW_FAILED[timeout]: python_claw wrapper timed out."
+    except Exception as exc:
+        return f"PYTHON_CLAW_FAILED[tool_error]: {exc}"
+
+
 def ask_user(question: str, options: str | None = None) -> str:
     """Prompts the user interactively in the terminal and returns their response.
     

@@ -138,6 +138,30 @@
 
 ---
 
+## P7 — Shared Agent Runtime Redesign
+
+**Goal:** Replace prompt-owned lifecycle choreography with a runtime-owned task lifecycle while keeping agent-owned judgment for planning, implementation, design, review, and validation.
+
+**Principle:** Agents decide what to do; runtime controls task identity, context, evidence, validation gates, and final acceptance.
+
+| ID | Item | Size |
+|---|---|---|
+| MC-057 | Design `AgentTaskRuntime` shared state model: `project_id`, `task_id`, `agent_role`, `run_id`, status, required outputs, artifact manifest, validation plan, validation runs, validation report, and final decision | M |
+| MC-058 | Replace agent-facing `prepare` with runtime-owned bootstrap that creates the run, resolves project paths, gathers bounded context, and starts the agent with a compact task packet | M |
+| MC-059 | Add stale-run protection: one active task per agent session, run identity checks, and clean block/rotate behavior before accepting a different task envelope | M |
+| MC-060 | Define the platform-owned LangGraph lifecycle: `bootstrap -> agent_decision -> artifact_collection -> validation -> evidence_check -> repair_or_done` | M |
+| MC-061 | Add shared `validation_evidence`: declared validation plan, controlled `project_exec` run logs, exit code, summary, and agent validation report | M |
+| MC-062 | Make Morpheus the first vertical slice: remove Morpheus-facing `prepare`, require artifacts, test files, validation command, and validation report, then accept `DONE` only after evidence passes | L |
+| MC-063 | Update Morpheus isolated canary to assert no exposed `prepare`, clean run identity, required artifacts, tests, validation command execution, passing evidence, and no stale run path reuse | M |
+| MC-064 | Migrate Architect to `AgentTaskRuntime`: runtime bootstraps context, Architect drafts design, runtime verifies required design sections and design evidence before handoff | M |
+| MC-065 | Migrate Smith to `AgentTaskRuntime`: runtime verifies planning completeness, dependency ordering, task files, and one-by-one handoff readiness | M |
+| MC-066 | Migrate Oracle to `AgentTaskRuntime`: runtime verifies reviewed artifacts, controlled validation execution, review report, and explicit PASS/FAIL evidence | M |
+| MC-067 | Run validation sequence: Morpheus isolated canary twice, full phase suite, Fibonacci E2E, then Architect/Smith/Oracle isolated canaries after each migration | M |
+
+**P7 DoD:** Agents no longer depend on exposed `prepare`/printed runtime paths. Runtime owns lifecycle and evidence gates. Agents still own judgment and write their own role-specific artifacts/reports. Full Fibonacci E2E passes without stale-session contamination.
+
+---
+
 ## Skills Update Policy
 
 ```bash

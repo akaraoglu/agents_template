@@ -1,3 +1,9 @@
+## 2026-06-02
+- Correction: tool-denial failures from helper/runtime layers should not be treated as ordinary verification failures or generic helper noise. Classify them as `tool_denied`, keep the failure repairable, and tell the agent the denied tool/policy source explicitly so it can stop retrying the same blocked command.
+
+- Mistake: Treating the direct `architect_worker_runtime` canary as proof that the live Architect agent can autonomously complete the design loop. That canary manually writes `draft.md` and invokes `architect_run_task.py complete`, so it validates the wrapper/import/verify path but not live-session behavior.
+- Correction: Live Architect health must be tested with a session-driven canary that proves the target session performs `run -> write printed DRAFT_FILE -> complete` and produces a terminal `result.json` plus `management/architecture/<TASK_ID>.md`. A draft without runtime state/result is a protocol failure, not progress.
+
 ## 2026-05-29
 - Mistake: The ReAct loop transition changed command-line entrypoints but introduced a command-routing copy-paste bug in `worker_runtime.py` where `"repair"` commands were incorrectly routed to Graph/ReAct completion run loops, and mocked `_fake_run` signatures lacked positional/keyword flexibility.
 - Correction: Restored proper routing of the `"repair"` CLI command to `print_repair_brief`. Upgraded the legacy Graph compatibility layers in `agent_runner.py` to route to classic validations under `pytest` with proper emulation details (missing draft budget, attempt counters, failure code translation), and hardened the test mock `_fake_run` signature to accept `*args, **kwargs` to absorb any positional or keyword parameters.
@@ -193,3 +199,21 @@
 - Morpheus virtual-team simplification:
   Spawned Planner/Implementer/Tester sessions added protocol surface but did not reliably produce required files, so they made IMPLEMENT less stable instead of more self-healing.
   Correction: keep Morpheus in one main session and let LangGraph record planner/implementer/tester evidence as virtual team nodes. Treat any future spawned-agent reintroduction as a separate capability project requiring runtime-grounded file/tool execution, not as the default Morpheus path.
+- Smith raw-write path/content mixup:
+  Smith can confuse a draft path argument with generated markdown content, causing the native OpenClaw `write` tool to raise hard filesystem errors such as `ENAMETOOLONG` and leaving planning incomplete.
+  Correction: Smith initial planning writes now go through the runtime-scoped `smith_plan_project.sh write` command, which accepts only short approved relative paths and returns clean retryable `WRITE_REJECTED[...]` feedback before touching the filesystem.
+- Morpheus validation loop:
+  Morpheus can keep re-running the validation command after a passing result instead of moving to completion.
+  Correction: the runtime packet and agent docs now say validation is a single gate; once it passes, `COMPLETE_COMMAND` is the next action and validation should only repeat after a draft repair.
+- Morpheus dispatch metadata bug:
+  While wiring the reporting contract, `dispatch_artifact_task` referenced an undefined `state` value when persisting `report_destination`.
+  Correction: load the prepared run state explicitly before updating dispatch metadata, and derive the report destination from that state.
+- Smith draft-alias split:
+  The Smith planning alias layer created an extra publish failure point without improving safety. The agent could complete planning, but the runtime still had to reconcile a copied manifest into the run-local draft directory before handoff.
+  Correction: use the run-local `drafts/` directory itself as the single draft root for Smith planning, with `manifest.json` stored there directly and runtime validation happening in place before handoff.
+- Smith task terminalization gap:
+  Smith could correctly finish the first task and then stop because there was no reusable post-report progression helper. The loop needed a real task advancement path, not just prompt text.
+  Correction: add `task_progress.py` plus `smith_task_progress.sh` so Smith can verify a PASS report, mark the current backlog item done, activate the next task, and close the project only after the last task completes.
+- Smith doc drift:
+  `PROJECT_STATE.md` can advance while `CURRENT_TASK.md` and `BACKLOG.md` remain stale, which makes the project look stalled even when the runtime state has already moved on.
+  Correction: add a Smith-facing `BRIEF.md` and a `smith_task_progress.sh sync` repair command so Smith can reconcile the task docs before the next handoff.

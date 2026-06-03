@@ -16,6 +16,7 @@
       "askFallback": "deny",
       "allow_patterns": [
         "/home/alik/workspace/clawspace/bin/smith_plan_project.sh",
+        "/home/alik/workspace/clawspace/bin/smith_task_progress.sh",
         "/home/alik/workspace/clawspace/bin/mm_post.sh",
         "/home/alik/workspace/clawspace/bin/list_projects.sh",
         "/home/alik/workspace/clawspace/bin/resolve_project.sh",
@@ -23,7 +24,8 @@
         "/home/alik/workspace/clawspace/bin/project_write.sh",
         "/home/alik/workspace/clawspace/bin/write_state.sh",
         "/home/alik/workspace/clawspace/bin/verify_artifact.sh",
-        "/home/alik/workspace/clawspace/bin/handoff.sh"
+        "/home/alik/workspace/clawspace/bin/handoff.sh",
+        "/home/alik/workspace/clawspace/bin/python_claw.sh"
       ]
     },
     "niaobe": {
@@ -37,7 +39,8 @@
         "/home/alik/workspace/clawspace/bin/ack_handoff.sh",
         "/home/alik/workspace/clawspace/bin/handoff.sh",
         "/home/alik/workspace/clawspace/bin/write_state.sh",
-        "/home/alik/workspace/clawspace/bin/verify_artifact.sh"
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh",
+        "/home/alik/workspace/clawspace/bin/python_claw.sh"
       ]
     },
     "architect": {
@@ -51,7 +54,8 @@
         "/home/alik/workspace/clawspace/bin/project_read.sh",
         "/home/alik/workspace/clawspace/bin/project_mkdir.sh",
         "/home/alik/workspace/clawspace/bin/project_write.sh",
-        "/home/alik/workspace/clawspace/bin/verify_artifact.sh"
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh",
+        "/home/alik/workspace/clawspace/bin/python_claw.sh"
       ]
     },
     "morpheus": {
@@ -65,7 +69,8 @@
         "/home/alik/workspace/clawspace/bin/project_read.sh",
         "/home/alik/workspace/clawspace/bin/project_mkdir.sh",
         "/home/alik/workspace/clawspace/bin/project_write.sh",
-        "/home/alik/workspace/clawspace/bin/project_exec.sh"
+        "/home/alik/workspace/clawspace/bin/project_exec.sh",
+        "/home/alik/workspace/clawspace/bin/python_claw.sh"
       ]
     },
     "oracle": {
@@ -79,7 +84,8 @@
         "/home/alik/workspace/clawspace/bin/project_read.sh",
         "/home/alik/workspace/clawspace/bin/project_write.sh",
         "/home/alik/workspace/clawspace/bin/project_exec.sh",
-        "/home/alik/workspace/clawspace/bin/verify_artifact.sh"
+        "/home/alik/workspace/clawspace/bin/verify_artifact.sh",
+        "/home/alik/workspace/clawspace/bin/python_claw.sh"
       ]
     }
   }

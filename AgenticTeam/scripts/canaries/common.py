@@ -181,6 +181,43 @@ def load_latest_worker_state(project_id: str, role: str) -> dict[str, Any] | Non
     return payload
 
 
+def worker_draft_evidence(project_id: str, role: str) -> list[dict[str, Any]]:
+    runs_root = WORKSPACES_ROOT / role / "runs" / project_id
+    if not runs_root.exists():
+        return []
+    evidence: list[dict[str, Any]] = []
+    for draft_file in sorted(runs_root.glob("**/draft.md")):
+        run_dir = draft_file.parent
+        state_file = run_dir / "state.json"
+        result_file = run_dir / "result.json"
+        context_file = run_dir / "context.md"
+        handoff_file = run_dir / "handoff.json"
+        evidence.append(
+            {
+                "run_dir": str(run_dir),
+                "draft_file": str(draft_file),
+                "draft_file_exists": draft_file.is_file(),
+                "state_file": str(state_file),
+                "state_file_exists": state_file.is_file(),
+                "result_file": str(result_file),
+                "result_file_exists": result_file.is_file(),
+                "context_file": str(context_file),
+                "context_file_exists": context_file.is_file(),
+                "handoff_file": str(handoff_file),
+                "handoff_file_exists": handoff_file.is_file(),
+            }
+        )
+    return evidence
+
+
+def orphan_worker_drafts(project_id: str, role: str) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in worker_draft_evidence(project_id, role)
+        if item.get("draft_file_exists") and not item.get("state_file_exists")
+    ]
+
+
 def project_file_exists(project_dir: Path, relative_path: str) -> bool:
     return (project_dir / relative_path).exists()
 
@@ -247,6 +284,32 @@ def default_session_key(agent: str) -> str:
     return f"agent:{agent.strip().lower()}:main"
 
 
+def active_default_model_config() -> dict[str, Any]:
+    """Return the active default provider model settings used for fresh sessions."""
+    for config_path in (OPENCLAW_ROOT / "openclaw.json", AGENTICTEAM_ROOT / "config" / "openclaw.json"):
+        if not config_path.is_file():
+            continue
+        config = load_json(config_path)
+        defaults = config.get("agents", {}).get("defaults", {})
+        primary = defaults.get("model", {}).get("primary")
+        if not primary:
+            continue
+        model_id = str(primary)
+        provider, _, model_name = model_id.partition("/")
+        if not model_name:
+            provider = "ollama"
+            model_name = model_id
+        params = defaults.get("models", {}).get(model_id, {}).get("params", {})
+        result: dict[str, Any] = {
+            "model": model_name,
+            "modelProvider": provider,
+        }
+        if params.get("num_ctx") is not None:
+            result["contextTokens"] = int(params["num_ctx"])
+        return result
+    return {}
+
+
 def rotate_main_session(agent: str, *, reason: str) -> dict[str, Any]:
     """Archive the current main session and seed a clean registered main entry.
 
@@ -287,8 +350,10 @@ def rotate_main_session(agent: str, *, reason: str) -> dict[str, Any]:
     new_session_file = sessions_dir / f"{new_session_id}.jsonl"
     new_session_file.write_text("", encoding="utf-8")
     now_ms = int(time.time() * 1000)
+    model_config = active_default_model_config()
     new_entry = {
         **entry,
+        **model_config,
         "sessionId": new_session_id,
         "updatedAt": now_ms,
         "sessionStartedAt": now_ms,
@@ -312,6 +377,8 @@ def rotate_main_session(agent: str, *, reason: str) -> dict[str, Any]:
         "rotated_at_ms": now_ms,
         "archive_dir": str(archive_dir),
         "copied_files": copied_files,
+        "model": model_config.get("model"),
+        "contextTokens": model_config.get("contextTokens"),
     }
     (archive_dir / "rotation.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     payload[session_key] = new_entry
@@ -758,6 +825,8 @@ def classify_failure(
         delivery_evidence.get("envelope_sent") == "no" or delivery_evidence.get("target_session_responded") == "no"
     ):
         return "runtime_message_delivery"
+    if "orphan draft" in text or "draft exists without runtime" in text or "without runtime state" in text:
+        return "prompt_contract"
     if '"action":"project_write"' in session_text and '"status":"blocked"' in session_text and "done:" not in session_text and "blocked:" not in session_text:
         return "prompt_contract"
     if (session_detail or {}).get("empty_stop"):
@@ -773,7 +842,7 @@ def classify_failure(
     ):
         return "morpheus_completion_contract"
     if "allowlist" in text or "not allowed" in text or "exec denied" in text or "forbidden" in text:
-        return "allowlist_policy"
+        return "tool_denied"
     if "owner mismatch" in text or "pending receipt" in text or "state verification mismatch" in text or "handoff_received" in text:
         return "runtime_state_machine"
     if "required file missing" in text or "artifact verified" in text or "project_read" in text or "project_write" in text or "project_exec" in text or "verify_artifact" in text or "helper" in text:
@@ -824,6 +893,10 @@ def infer_first_failed_boundary(
         return "worker test execution"
     if name.startswith("session:done_message") or name.startswith("session:verdict_message"):
         return "worker completion/report"
+    if name.startswith("runtime:no_orphan_draft") or name.startswith("runtime:state"):
+        return "architect runtime protocol"
+    if name.startswith("result:terminal_file"):
+        return "worker terminal result"
     if name.startswith("file:management/validation"):
         return "oracle report creation"
     if name.startswith("file:management/architecture"):

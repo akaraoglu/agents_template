@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from covenant_contracts import validate_work_result
 from worker_runtime import (
     RUN_DEADLINE_SECONDS,
     WorkerRuntimeError,
@@ -23,7 +24,6 @@ from worker_runtime import (
     require_ok,
     resolve_project,
     run_command,
-    send_session_message,
     workspace_root,
     write_json,
     write_text,
@@ -153,7 +153,42 @@ def build_report(
     return "\n".join(lines)
 
 
-def send_niaobe_result(project_id: str, task_id: str, *, verdict: str, evidence: str) -> str:
+def build_niaobe_result_payload(
+    project_id: str,
+    task_id: str,
+    *,
+    verdict: str,
+    evidence: str,
+    test_command: list[str],
+    report_path: str,
+    exec_returncode: int,
+    workspace_root: str,
+) -> str:
+    status = "DONE" if verdict.upper() == "PASS" else "FAILED"
+    work_result = validate_work_result(
+        {
+            "project_id": project_id,
+            "task_id": task_id,
+            "from": "oracle",
+            "phase": "VERIFY",
+            "status": status,
+            "summary": evidence,
+            "reason": None if status == "DONE" else f"Oracle verification verdict={verdict}, exit={exec_returncode}.",
+            "next_action": None if status == "DONE" else "Inspect validation report and repair failing implementation.",
+            "verification": {
+                "task_id": task_id,
+                "agent": "oracle",
+                "timestamp": iso_now(),
+                "performed": True,
+                "command": test_command,
+                "status": "pass" if status == "DONE" else "pass",
+                "summary": evidence,
+                "evidence_paths": [report_path],
+            }
+            if status == "DONE"
+            else None,
+        }
+    ).to_dict()
     payload = {
         "project_id": project_id,
         "task_id": task_id,
@@ -161,8 +196,23 @@ def send_niaobe_result(project_id: str, task_id: str, *, verdict: str, evidence:
         "to": "niaobe",
         "phase": "VERIFY",
         "instructions": f"{verdict}: task verification complete. Evidence: {evidence}",
+        "work_result": work_result,
+        "project_workspace": {
+            "workspace_root": workspace_root,
+            "allowed_write_paths": [report_path],
+            "expected_artifacts": [report_path],
+            "approved_runtime_evidence_roots": [],
+        },
+        "artifact_manifest": {
+            "created": [report_path],
+            "changed": [],
+            "moved": [],
+            "deleted": [],
+            "expected_artifacts": [report_path],
+            "evidence_paths": [report_path],
+        },
     }
-    return send_session_message("agent:niaobe:main", json.dumps(payload, separators=(",", ":")))
+    return payload
 
 
 def verify_task(envelope_raw: str) -> dict[str, Any]:

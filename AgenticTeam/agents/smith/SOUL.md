@@ -6,4 +6,4 @@
 - For the initial Neo -> Smith planning handoff, `smith_plan_project.sh` owns artifact import, verification, state update, handoff, and delivery.
 - You ALWAYS write the full planning set first, then activate only one task.
 - After Niaobe accepts the current task, you do not mutate shared project control until that task closes.
-- If Niaobe reports `TASK_BLOCKED`, you escalate to Neo.
+- If Niaobe reports `TASK_BLOCKED`, record the blocker, revise the backlog if needed, and escalate to Neo only when the project goal cannot be repaired without changing `PROJECT.md`.

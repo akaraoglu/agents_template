@@ -38,3 +38,7 @@
 - **Timeout rule**:
   if a child phase goes stale, treat it like a worker BLOCKED event with the
   exact reason `timeout waiting for <agent>`
+- **Run local Python diagnosis when needed**:
+  `bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --module unittest -- tests/test_main.py`
+  uses `/home/alik/workspace/clawspace/venv-claw` without shell activation; it
+  is not final project evidence.

@@ -22,9 +22,10 @@ Use exact planning draft paths such as:
 - `<DRAFT_WRITE_ROOT>/management/BACKLOG.md`
 - `<DRAFT_WRITE_ROOT>/management/tasks/T001.md`
 - `<DRAFT_WRITE_ROOT>/CURRENT_TASK.md`
+- `<DRAFT_WRITE_ROOT>/BRIEF.md`
 
-Use the printed `DRAFT_WRITE_ROOT` verbatim and only append the allowed suffixes. Do
-not invent alternate draft roots, altered timestamps, stray spaces, wildcard
+Use the printed `DRAFT_WRITE_ROOT` verbatim and only append the allowed suffixes.
+Do not invent alternate draft roots, altered timestamps, stray spaces, wildcard
 characters, or direct project writes during initial planning.
 
 ## Later rooted reads and state updates
@@ -33,25 +34,28 @@ characters, or direct project writes during initial planning.
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT_STATE.md"
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "CURRENT_TASK.md"
+exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "BRIEF.md"
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/PLAN.md"
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/BACKLOG.md"
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md"
 exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "management/validation/<TASK_ID>_REPORT.md"
+exec: bash /home/alik/workspace/clawspace/bin/smith_task_progress.sh sync "<PROJECT_ID>"
+exec: bash /home/alik/workspace/clawspace/bin/smith_task_progress.sh complete "<PROJECT_ID>" "<TASK_ID>"
+exec: bash /home/alik/workspace/clawspace/bin/smith_task_progress.sh blocked "<PROJECT_ID>" "<TASK_ID>" --reason "<exact reason>"
 exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/PLAN.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/PLAN.md" --action smith_plan_write
 exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/BACKLOG.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/BACKLOG.md" --action smith_backlog_write
 exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "management/tasks/<TASK_ID>.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/<TASK_ID>.md" --action smith_task_write
 exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "CURRENT_TASK.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/CURRENT_TASK.md" --action smith_current_task_write
+exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "BRIEF.md" --source-file "/home/alik/workspace/clawspace/workspaces/smith/drafts/<PROJECT_ID>/BRIEF.md" --action smith_brief_write
 exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" PLANNING "management/PLAN.md" --action smith-plan-check --contains "T001"
 exec: bash /home/alik/workspace/clawspace/bin/verify_artifact.sh "<PROJECT_ID>" VERIFY "management/validation/<TASK_ID>_REPORT.md" --action smith-validation-check --contains "<TASK_ID>" --contains "PASS"
-exec: bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "PLANNING" "niaobe" --actor smith --expect-owner smith --active-task "<TASK_ID>" --task-phase "TASK_HANDOFF" --task-status "READY" --note "<note>"
-exec: bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "DONE" "none" --actor smith --expect-owner niaobe --set-owner smith --current-agent none --active-task "none" --task-phase "none" --task-status "DONE" --last-completed-task "<TASK_ID>" --last-task-result "PASS" --note "<note>"
-exec: bash /home/alik/workspace/clawspace/bin/write_state.sh "<PROJECT_ID>" "BLOCKED" "none" --actor smith --expect-owner niaobe --set-owner smith --current-agent none --task-status "BLOCKED" --last-task-result "BLOCKED" --increment-blocked --blocked-reason "<exact reason>" --note "<note>"
 ```
 
 ## Notification and delegation
 
 ```text
-exec: bash /home/alik/workspace/clawspace/bin/handoff.sh smith niaobe "<PROJECT_ID>" "Task <TASK_ID> is ready. Read CURRENT_TASK.md and management/tasks/<TASK_ID>.md, then run Design -> Implement -> Verify for that task only. Report TASK_DONE or TASK_BLOCKED to Smith." TASK_HANDOFF "<TASK_ID>"
+exec: bash /home/alik/workspace/clawspace/bin/smith_task_progress.sh complete "<PROJECT_ID>" "<TASK_ID>"
+exec: bash /home/alik/workspace/clawspace/bin/smith_task_progress.sh blocked "<PROJECT_ID>" "<TASK_ID>" --reason "<exact reason>"
 ```
 
 ## sessions_send to Niaobe
@@ -76,3 +80,14 @@ Use the exact `ENVELOPE:` value returned by `handoff.sh`.
 
 After Niaobe accepts the current task handoff, Smith must not call `write_state.sh`
 again for that project until Niaobe returns `TASK_DONE` or `TASK_BLOCKED`.
+
+## Python diagnostics
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --module unittest -- tests/test_main.py
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --syntax-check "src/main.py"
+```
+
+`python_claw.sh` uses `/home/alik/workspace/clawspace/venv-claw` without shell
+activation. Use it only for local Python diagnosis; Smith's planning/task
+helpers remain the authority for state movement and final evidence.

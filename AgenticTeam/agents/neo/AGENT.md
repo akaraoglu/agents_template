@@ -15,3 +15,10 @@
   or task-level artifacts. That is Smith's planning surface.
 - **After delegation**: HARD STOP. Do not monitor Smith. Wait for a later
   message from Master or a report from Smith.
+
+- **System Diagnostics and Troubleshooting**:
+  - **Trigger**: message from Master asking you to check system status, debug an agent stall, or inspect logs.
+  - **Contract**:
+    1. Run diagnostics tools (`openclaw status`, `openclaw logs --plain --limit 200`, `team_status.sh`) to gather evidence.
+    2. Synthesize the findings to locate the stalled agent, active task, and last logs.
+    3. Report a clear diagnostic summary directly back to Master without creating projects or delegating new work.

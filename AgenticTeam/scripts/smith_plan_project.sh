@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: bash smith_plan_project.sh <prepare|read|complete|block> ...
+# Usage: bash smith_plan_project.sh <prepare|autoplan|read|complete|block> ...
 
 set -euo pipefail
 

@@ -53,6 +53,10 @@ sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${DATE
 sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${DATE}/g" \
   "$TEMPLATES/CURRENT_TASK.md" > "$BASE/CURRENT_TASK.md"
 
+# BRIEF.md — short human-readable project brief
+sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{ONE_PARAGRAPH_DESCRIPTION}}/${TITLE}/g" \
+  "$TEMPLATES/BRIEF.md" > "$BASE/BRIEF.md"
+
 # RESULT.md — final summary placeholder
 sed "s/{{PROJECT_ID}}/${PROJECT_ID}/g; s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${DATE}/g" \
   "$TEMPLATES/RESULT.md" > "$BASE/RESULT.md"
@@ -67,7 +71,6 @@ cat > "$BASE/management/PLAN.md" << HEREDOC
 
 | Task | Title | Status | Notes |
 | :--- | :---- | :----- | :---- |
-| T001 | Define initial task | pending | Created by Smith |
 HEREDOC
 
 cat > "$BASE/management/BACKLOG.md" << HEREDOC
@@ -162,7 +165,7 @@ fi
 
 echo "✅ Project ID: $PROJECT_ID"
 echo "✅ Project created: $BASE"
-echo "   Files: PROJECT.md, PROJECT_STATE.md, CURRENT_TASK.md, RESULT.md, CONTEXT.json"
+echo "   Files: PROJECT.md, PROJECT_STATE.md, BRIEF.md, CURRENT_TASK.md, RESULT.md, CONTEXT.json"
 echo ""
 echo "Next steps for Neo:"
 echo "  1. Fill in $BASE/PROJECT.md (requirements, acceptance criteria)"

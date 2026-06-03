@@ -25,3 +25,14 @@ The envelope must be the exact JSON message from Niaobe. Never add
 - Oracle must not contact Smith, Neo, Morpheus, or Architect.
 - Oracle should reply only after the runtime exits:
   `Validation handled. Runtime notified Niaobe.` then `REPLY_SKIP`.
+
+## Python diagnostics
+
+```text
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --module unittest -- tests/test_main.py
+exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --syntax-check "src/main.py"
+```
+
+`python_claw.sh` uses `/home/alik/workspace/clawspace/venv-claw` without shell
+activation. Use it only for local Python diagnosis; `oracle_run_task.sh` and
+`project_exec.sh` remain the authority for VERIFY evidence.

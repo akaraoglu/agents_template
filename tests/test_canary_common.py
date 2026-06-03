@@ -10,7 +10,7 @@ if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
 import canaries.common as common
-from canaries.common import classify_failure, first_failed_invariant, parse_state_field, token_from_paths
+from canaries.common import classify_failure, first_failed_invariant, orphan_worker_drafts, parse_state_field, token_from_paths
 from canaries.common import build_delivery_evidence, detect_empty_stop, extract_inbound_project_ids
 
 
@@ -80,6 +80,19 @@ class CanaryCommonTests(unittest.TestCase):
             "session_contamination",
         )
 
+    def test_classify_failure_detects_orphan_draft_protocol_gap(self) -> None:
+        self.assertEqual(
+            classify_failure(
+                "Architect orphan draft exists without runtime state/result evidence.",
+                sync_drift="no",
+                session_freshness_value="fresh",
+                latest_worker_state=None,
+                session_detail=None,
+                delivery_evidence={"envelope_sent": "yes", "target_session_responded": "yes"},
+            ),
+            "prompt_contract",
+        )
+
     def test_extract_inbound_project_ids_reads_only_user_messages(self) -> None:
         raw_lines = [
             '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"{\\"project_id\\":\\"assistant-project\\"}"}]}}',
@@ -140,6 +153,8 @@ class CanaryCommonTests(unittest.TestCase):
             self.assertIn("agent:morpheus:main", updated)
             self.assertNotEqual(updated["agent:morpheus:main"]["sessionId"], "session-1")
             self.assertEqual(updated["agent:morpheus:main"]["status"], "done")
+            self.assertEqual(updated["agent:morpheus:main"]["model"], "gemma4:26b")
+            self.assertEqual(updated["agent:morpheus:main"]["contextTokens"], 262144)
             self.assertTrue(Path(updated["agent:morpheus:main"]["sessionFile"]).exists())
             self.assertTrue(session_file.exists())
             self.assertTrue(trajectory_file.exists())
@@ -148,6 +163,39 @@ class CanaryCommonTests(unittest.TestCase):
             self.assertTrue((archive_dir / "session-1.jsonl").exists())
             self.assertTrue((archive_dir / "session-1.trajectory.jsonl").exists())
             self.assertTrue((archive_dir / "rotation.json").exists())
+
+    def test_orphan_worker_drafts_detects_draft_without_runtime_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            draft_dir = root / "architect" / "runs" / "project-1" / "T001" / "run-1"
+            draft_dir.mkdir(parents=True)
+            (draft_dir / "draft.md").write_text("# draft\n", encoding="utf-8")
+            original_root = common.WORKSPACES_ROOT
+            common.WORKSPACES_ROOT = root
+            try:
+                drafts = orphan_worker_drafts("project-1", "architect")
+            finally:
+                common.WORKSPACES_ROOT = original_root
+
+            self.assertEqual(len(drafts), 1)
+            self.assertEqual(drafts[0]["draft_file"], str(draft_dir / "draft.md"))
+            self.assertFalse(drafts[0]["state_file_exists"])
+
+    def test_orphan_worker_drafts_ignores_runtime_owned_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            draft_dir = root / "architect" / "runs" / "project-1" / "T001" / "run-1"
+            draft_dir.mkdir(parents=True)
+            (draft_dir / "draft.md").write_text("# draft\n", encoding="utf-8")
+            (draft_dir / "state.json").write_text("{}\n", encoding="utf-8")
+            original_root = common.WORKSPACES_ROOT
+            common.WORKSPACES_ROOT = root
+            try:
+                drafts = orphan_worker_drafts("project-1", "architect")
+            finally:
+                common.WORKSPACES_ROOT = original_root
+
+            self.assertEqual(drafts, [])
 
 
 if __name__ == "__main__":
