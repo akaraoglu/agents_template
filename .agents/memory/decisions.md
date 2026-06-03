@@ -437,6 +437,10 @@
   Phase canaries that need a clean live model context should rotate the registered main session instead of inventing arbitrary `sessions.send` keys.
   The rotation must archive the prior session registry and transcript files under `.openclaw/session-resets/`, then seed a new empty transcript entry for the same key such as `agent:morpheus:main` so gateway delivery still succeeds.
   Canary reports should record the rotation metadata in preflight.
+- Morpheus task-session rule:
+  Runtime-dispatched Morpheus IMPLEMENT work should use a registered run-scoped session key `agent:morpheus:run:<run_id>` instead of `agent:morpheus:main`.
+  The runtime must seed the key in the OpenClaw session registry before `sessions.send`, clone the existing main entry under a lock, preserve `usageFamilyKey=agent:morpheus:main`, and store the session key/id/file in run state.
+  Repair/resume prompts for the same run must reuse the stored task session key.
 - Morpheus subteam contract rule:
   Morpheus may use `sessions_spawn` only for its internal Planner -> Implementer -> Tester sequence.
   The runtime owns the contract files, exact spawn-task text, planner/tester Markdown validation, artifact import, test execution, and final Niaobe message.
@@ -450,7 +454,7 @@
   Morpheus IMPLEMENT work now starts from a runtime-dispatched `TASK_PACKET`, not an agent-called `prepare`.
   The runtime bootstraps run identity, bounded context, draft paths, manifest path, and validation command before the model turn.
   Morpheus owns artifact content and validation judgment, but runtime owns `dispatch`, `resume`, `advance`, artifact import, project-exec validation evidence, and final DONE/BLOCKED acceptance.
-  `manifest.validation_report` is required and must match `manifest.test_command`; runtime records the actual project-exec evidence before accepting DONE.
+  `manifest.validation_report` is optional/backward-compatible; runtime records the actual project-exec evidence before accepting DONE.
 - Project safe-write rule:
   Project agents should not rely on raw filesystem `write` for protocol-critical artifacts when a runtime-scoped writer is available.
   The default write destination for worker artifacts is the current run's draft directory, addressed by short relative paths, not the final project path.

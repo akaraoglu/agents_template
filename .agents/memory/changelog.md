@@ -1,3 +1,24 @@
+## 2026-06-03 13:32:04 EEST
+- User request: Execute step 1 of the stable Morpheus action plan by checking whether Morpheus can safely deny outbound session tools despite global `tools.alsoAllow`.
+- Agent action: Inspected OpenClaw's effective tool policy resolver, matcher, policy pipeline, and current repo/live OpenClaw plus exec approval configs.
+- Result: Confirmed the pipeline applies global policy first and agent policy afterward, with deny checked before allow inside each policy, so Morpheus can remove `sessions_send`, `sessions_spawn`, `sessions_list`, and `sessions_history` via its agent `deny` even while global `tools.alsoAllow` contains session tools. Also confirmed repo/live Morpheus exec approvals already include the stable wrappers needed for the action catalog: `morpheus_run_task.sh`, `resolve_project.sh`, `verify_artifact.sh`, `project_read.sh`, `project_mkdir.sh`, `project_write.sh`, `project_exec.sh`, and `python_claw.sh`.
+
+## 2026-06-03 13:16:30 EEST
+- User request: Plan implementation for stable Morpheus actions and a smaller raw command/session-tool surface while preserving Morpheus ownership of implementation, repair, and block decisions.
+- Agent action: Inspected Morpheus tool policy, role docs, runtime task-packet output, exec approvals, and sync behavior; ran a critique pass on the proposed plan.
+- Result: Recommended hardening Morpheus by denying outbound session tools, replacing generic command wording with an explicit action catalog (`python_claw`, write drafts, write manifest, `morpheus_report`, `morpheus_block`), keeping literal report/block commands as compatibility fields, adding config/docs/runtime tests, and verifying OpenClaw allow/deny precedence before live rollout.
+
+## 2026-06-03 13:02:52 EEST
+- User request: Implement item 1 from the Morpheus reliability plan: make Morpheus task sessions fresh/task-scoped so repeated runs do not reuse a stale main-session context.
+- Agent action: Added runtime registration for Morpheus run-scoped OpenClaw sessions, dispatching `TASK_PACKET`s to `agent:morpheus:run:<run_id>` and preserving the same key for resume/continuation; registry writes are lock-protected and idempotent, and session metadata is persisted in run state.
+- Validation: `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_worker_runtime.py -k 'morpheus_dispatch or morpheus_resume'` -> `3 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_worker_runtime.py` -> `62 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `125 passed`.
+- Result: New Morpheus implementation tasks start in fresh registered transcripts instead of accumulating stale task packets in `agent:morpheus:main`, while retries stay in the same task session.
+
+## 2026-06-03 11:34:54 EEST
+- User request: Plan implementation for task-scoped Morpheus sessions, stable Morpheus actions instead of fragile raw command construction, a recovery monitor for denied/incomplete turns, and state-visible incomplete-turn events.
+- Agent action: Inspected current worker runtime dispatch/resume paths, Morpheus role docs/tool policy, exec approvals, and relevant tests to map the implementation onto existing `dispatch_artifact_task`, `resume_artifact_task`, and artifact run state.
+- Result: Recommended a phased implementation: task-scoped session targeting, typed runtime action adapters, a transcript/project-state recovery monitor with bounded retries/escalation, and run-state event persistence for `exec_denied`/`non_deliverable_terminal_turn` stalls.
+
 ## 2026-06-03 11:10:00 EEST
 - User request: Add a `python_claw` tool backed by `/home/alik/workspace/clawspace/venv-claw` and make it available to all agents.
 - Agent action: Added the structured `python_claw.py` adapter and synced `python_claw.sh` helper, added direct ReAct `python_claw` tool wiring, documented the helper in all agent tool/skill surfaces, added it to helper sync and exec approvals, and aligned Smith's task-progress helper manifest/allowlist drift caught by sync validation.

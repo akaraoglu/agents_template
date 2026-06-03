@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import fcntl
 import io
 import json
 import os
@@ -103,12 +104,25 @@ class RuntimeOutcome:
         return payload
 
 
+@dataclass(frozen=True)
+class RegisteredSession:
+    key: str
+    session_id: str
+    session_file: str
+    created: bool
+    task_scoped: bool
+
+
 def workspace_root() -> Path:
     return Path(os.environ.get("CLAWSPACE_WORKSPACE_ROOT", "/home/alik/workspace/clawspace/workspaces"))
 
 
 def live_bin_root() -> Path:
     return Path(os.environ.get("CLAWSPACE_BIN_ROOT", "/home/alik/workspace/clawspace/bin"))
+
+
+def openclaw_root() -> Path:
+    return Path(os.environ.get("OPENCLAW_ROOT", "/home/alik/.openclaw"))
 
 
 def iso_now() -> str:
@@ -524,6 +538,155 @@ def send_session_message(session_key: str, message: str, *, timeout_ms: int = 20
     if result.returncode != 0:
         raise WorkerRuntimeError(f"sessions.send failed: {command_details(result)}", code="send_failed")
     return (result.stdout or "").strip()
+
+
+def task_scoped_session_key(agent: str, run_id: str) -> str:
+    normalized_agent = agent.strip().lower()
+    if not normalized_agent:
+        raise WorkerRuntimeError("cannot create task session key without an agent", code="session_registration_failed")
+    safe_run_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", run_id.strip()).strip(".-").lower()
+    if not safe_run_id:
+        raise WorkerRuntimeError("cannot create task session key without a run_id", code="session_registration_failed")
+    return f"agent:{normalized_agent}:run:{safe_run_id[:96]}"
+
+
+def _session_registry_path(agent: str) -> Path:
+    return openclaw_root() / "agents" / agent / "sessions" / "sessions.json"
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _new_session_entry(source_entry: Mapping[str, Any], *, session_key: str, session_file: Path) -> dict[str, Any]:
+    now_ms = int(time.time() * 1000)
+    entry = dict(source_entry)
+    session_id = session_file.stem
+    key_parts = session_key.split(":")
+    usage_agent = key_parts[1] if len(key_parts) > 2 else "main"
+    entry.update(
+        {
+            "sessionId": session_id,
+            "sessionFile": str(session_file),
+            "updatedAt": now_ms,
+            "sessionStartedAt": now_ms,
+            "lastInteractionAt": now_ms,
+            "systemSent": False,
+            "abortedLastRun": False,
+            "compactionCount": 0,
+            "totalTokens": 0,
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "status": "done",
+        }
+    )
+    if "key" in entry:
+        entry["key"] = session_key
+    entry["usageFamilyKey"] = f"agent:{usage_agent}:main"
+    return entry
+
+
+def ensure_registered_task_session(agent: str, run_id: str) -> RegisteredSession:
+    agent = agent.strip().lower()
+    session_key = task_scoped_session_key(agent, run_id)
+    sessions_path = _session_registry_path(agent)
+    sessions_dir = sessions_path.parent
+    main_key = f"agent:{agent}:main"
+    if not sessions_path.exists():
+        raise WorkerRuntimeError(
+            f"OpenClaw session registry missing for {agent}: {sessions_path}",
+            code="session_registration_failed",
+        )
+
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = sessions_path.with_suffix(".lock")
+    with lock_path.open("w", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            try:
+                payload = json.loads(sessions_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise WorkerRuntimeError(
+                    f"OpenClaw session registry invalid for {agent}: {exc}",
+                    code="session_registration_failed",
+                ) from exc
+            if not isinstance(payload, dict):
+                raise WorkerRuntimeError(
+                    f"OpenClaw session registry is not an object: {sessions_path}",
+                    code="session_registration_failed",
+                )
+
+            existing = payload.get(session_key)
+            if isinstance(existing, dict):
+                session_file = str(existing.get("sessionFile", "")).strip()
+                if session_file:
+                    Path(session_file).parent.mkdir(parents=True, exist_ok=True)
+                    Path(session_file).touch(exist_ok=True)
+                return RegisteredSession(
+                    key=session_key,
+                    session_id=str(existing.get("sessionId", "")),
+                    session_file=session_file,
+                    created=False,
+                    task_scoped=True,
+                )
+
+            source_entry = payload.get(main_key)
+            if not isinstance(source_entry, dict):
+                raise WorkerRuntimeError(
+                    f"OpenClaw main session registry missing for {agent}: {main_key}",
+                    code="session_registration_failed",
+                )
+
+            session_id = str(uuid4())
+            session_file = sessions_dir / f"{session_id}.jsonl"
+            session_file.write_text("", encoding="utf-8")
+            payload[session_key] = _new_session_entry(source_entry, session_key=session_key, session_file=session_file)
+            _write_json_atomic(sessions_path, payload)
+            return RegisteredSession(
+                key=session_key,
+                session_id=session_id,
+                session_file=str(session_file),
+                created=True,
+                task_scoped=True,
+            )
+        finally:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+def artifact_dispatch_session(contract: ArtifactWorkerContract, state: Mapping[str, Any]) -> RegisteredSession:
+    if contract.role != "morpheus":
+        key = f"agent:{contract.expected_to}:main"
+        return RegisteredSession(key=key, session_id="", session_file="", created=False, task_scoped=False)
+    run_id = str(state.get("run_id") or "").strip()
+    return ensure_registered_task_session(contract.expected_to, run_id)
+
+
+def parse_send_response_ids(response: str) -> dict[str, str]:
+    if not response.strip():
+        return {}
+    try:
+        payload = json.loads(response)
+    except json.JSONDecodeError:
+        return {}
+    found: dict[str, str] = {}
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                normalized = key.lower()
+                if normalized in {"runid", "run_id", "gatewayrunid", "gateway_run_id"} and isinstance(nested, str):
+                    found.setdefault("gateway_run_id", nested)
+                elif normalized in {"sessionid", "session_id"} and isinstance(nested, str):
+                    found.setdefault("gateway_session_id", nested)
+                walk(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+
+    walk(payload)
+    return found
 
 
 def build_run_dir(contract: WorkerContract, project_id: str, task_id: str) -> Path:
@@ -1664,15 +1827,21 @@ def dispatch_artifact_task(contract: ArtifactWorkerContract, envelope_raw: str) 
         dispatch_prepare_output=buffered_output.getvalue(),
         dispatched_at=iso_now(),
     )
-    dispatch_session_key = f"agent:{contract.expected_to}:main"
-    response = send_session_message(dispatch_session_key, packet)
+    dispatch_session = artifact_dispatch_session(contract, state)
+    response = send_session_message(dispatch_session.key, packet)
+    response_ids = parse_send_response_ids(response)
     write_json(
         prepared.run_dir / "dispatch.json",
         {
             "status": "sent",
             "sent_at": iso_now(),
-            "session_key": dispatch_session_key,
+            "session_key": dispatch_session.key,
+            "session_id": dispatch_session.session_id,
+            "session_file": dispatch_session.session_file,
+            "task_scoped_session": dispatch_session.task_scoped,
+            "session_created": dispatch_session.created,
             "response": response,
+            "response_ids": response_ids,
             "task_packet_file": str(packet_file),
         },
     )
@@ -1680,7 +1849,12 @@ def dispatch_artifact_task(contract: ArtifactWorkerContract, envelope_raw: str) 
         prepared.run_dir,
         last_send_response=response,
         dispatch_response=response,
-        dispatch_session_key=dispatch_session_key,
+        dispatch_session_key=dispatch_session.key,
+        dispatch_session_id=dispatch_session.session_id,
+        dispatch_session_file=dispatch_session.session_file,
+        dispatch_task_scoped_session=dispatch_session.task_scoped,
+        dispatch_session_created=dispatch_session.created,
+        dispatch_response_ids=response_ids,
         status="awaiting_artifacts",
     )
 
@@ -1724,8 +1898,26 @@ def resume_artifact_task(contract: ArtifactWorkerContract, run_dir: Path) -> dic
     ) + "\n"
     continuation_file = run_dir / f"continuation-{attempts:02d}.md"
     write_text(continuation_file, continuation)
-    session_key = str(state.get("dispatch_session_key") or f"agent:{contract.expected_to}:main")
+    if contract.role == "morpheus":
+        stored_session_key = str(state.get("dispatch_session_key") or "").strip()
+        expected_task_key = task_scoped_session_key(contract.expected_to, str(state.get("run_id") or run_dir.name))
+        if not stored_session_key or stored_session_key == expected_task_key:
+            dispatch_session = ensure_registered_task_session(contract.expected_to, str(state.get("run_id") or run_dir.name))
+            session_key = dispatch_session.key
+        else:
+            session_key = stored_session_key
+            dispatch_session = RegisteredSession(
+                key=session_key,
+                session_id=str(state.get("dispatch_session_id", "")),
+                session_file=str(state.get("dispatch_session_file", "")),
+                created=False,
+                task_scoped=session_key != f"agent:{contract.expected_to}:main",
+            )
+    else:
+        session_key = str(state.get("dispatch_session_key") or f"agent:{contract.expected_to}:main")
+        dispatch_session = RegisteredSession(key=session_key, session_id="", session_file="", created=False, task_scoped=False)
     response = send_session_message(session_key, continuation)
+    response_ids = parse_send_response_ids(response)
     append_log(run_dir, "resume", f"sent continuation attempt {attempts}; missing={', '.join(missing) if missing else 'none'}")
     return update_state(
         run_dir,
@@ -1735,6 +1927,11 @@ def resume_artifact_task(contract: ArtifactWorkerContract, run_dir: Path) -> dic
         last_recovery_missing=missing,
         last_recovery_file=str(continuation_file),
         last_send_response=response,
+        last_recovery_response_ids=response_ids,
+        dispatch_session_key=dispatch_session.key,
+        dispatch_session_id=dispatch_session.session_id,
+        dispatch_session_file=dispatch_session.session_file,
+        dispatch_task_scoped_session=dispatch_session.task_scoped,
     )
 
 

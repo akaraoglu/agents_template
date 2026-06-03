@@ -67,6 +67,11 @@ def helper_ok_output(action: str) -> str:
     return f"OUTCOME_JSON: {json.dumps(payload, separators=(',', ':'))}\n"
 
 
+def session_send_params(call: mock._Call) -> dict[str, object]:
+    command = call.args[0]
+    return json.loads(command[command.index("--params") + 1])
+
+
 def valid_architect_draft() -> str:
     return (
         "\n".join(
@@ -98,20 +103,42 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.addCleanup(self.temp_dir.cleanup)
         self.workspace_root = Path(self.temp_dir.name) / "workspaces"
         self.bin_root = Path(self.temp_dir.name) / "bin"
+        self.openclaw_root = Path(self.temp_dir.name) / ".openclaw"
         self.project_path = Path(self.temp_dir.name) / "projects" / "demo-project"
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self.bin_root.mkdir(parents=True, exist_ok=True)
         self.project_path.mkdir(parents=True, exist_ok=True)
+        self._seed_openclaw_agent_session("morpheus")
         self.env_patch = mock.patch.dict(
             os.environ,
             {
                 "CLAWSPACE_WORKSPACE_ROOT": str(self.workspace_root),
                 "CLAWSPACE_BIN_ROOT": str(self.bin_root),
+                "OPENCLAW_ROOT": str(self.openclaw_root),
             },
             clear=False,
         )
         self.env_patch.start()
         self.addCleanup(self.env_patch.stop)
+
+    def _seed_openclaw_agent_session(self, agent: str) -> None:
+        sessions_dir = self.openclaw_root / "agents" / agent / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        session_id = f"{agent}-main-session"
+        session_file = sessions_dir / f"{session_id}.jsonl"
+        session_file.write_text("", encoding="utf-8")
+        payload = {
+            f"agent:{agent}:main": {
+                "sessionId": session_id,
+                "sessionFile": str(session_file),
+                "usageFamilyKey": f"agent:{agent}:main",
+                "systemSent": True,
+                "status": "done",
+                "model": "ollama/gemma4:26b",
+                "contextTokens": 262144,
+            }
+        }
+        (sessions_dir / "sessions.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     def _morpheus_done_work_result(self, *, evidence_paths: list[str] | None = None) -> dict[str, object]:
         return {
@@ -775,9 +802,57 @@ class WorkerRuntimeTests(unittest.TestCase):
             call for call in run_mock.call_args_list if call.args and call.args[0][:4] == ["openclaw", "gateway", "call", "sessions.send"]
         ]
         self.assertEqual(len(send_calls), 1)
-        send_command = " ".join(send_calls[0].args[0])
-        self.assertIn("TASK_PACKET_BEGIN", send_command)
-        self.assertIn("agent:morpheus:main", send_command)
+        send_params = session_send_params(send_calls[0])
+        self.assertIn("TASK_PACKET_BEGIN", str(send_params["message"]))
+        session_key = str(send_params["key"])
+        self.assertTrue(session_key.startswith("agent:morpheus:run:"))
+        self.assertNotEqual(session_key, "agent:morpheus:main")
+        self.assertEqual(state["dispatch_session_key"], session_key)
+        self.assertEqual(state["dispatch_task_scoped_session"], True)
+        self.assertTrue(Path(str(state["dispatch_session_file"])).is_file())
+        registry = json.loads(
+            (self.openclaw_root / "agents" / "morpheus" / "sessions" / "sessions.json").read_text(encoding="utf-8")
+        )
+        self.assertIn(session_key, registry)
+        self.assertEqual(registry[session_key]["usageFamilyKey"], "agent:morpheus:main")
+        self.assertEqual(registry[session_key]["systemSent"], False)
+
+    @mock.patch("worker_runtime.subprocess.run")
+    def test_morpheus_dispatches_use_distinct_task_sessions(self, run_mock: mock.Mock) -> None:
+        run_mock.side_effect = self._fake_run
+        first_envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "morpheus",
+                "phase": "IMPLEMENT",
+                "instructions": "Implement the first task.",
+            }
+        )
+        second_envelope = json.dumps(
+            {
+                "project_id": "demo-project",
+                "task_id": "T001",
+                "from": "niaobe",
+                "to": "morpheus",
+                "phase": "IMPLEMENT",
+                "instructions": "Implement the second task.",
+            }
+        )
+
+        first_state = dispatch_artifact_task(MORPHEUS_CONTRACT, first_envelope)
+        second_state = dispatch_artifact_task(MORPHEUS_CONTRACT, second_envelope)
+
+        self.assertNotEqual(first_state["dispatch_session_key"], second_state["dispatch_session_key"])
+        self.assertTrue(str(first_state["dispatch_session_key"]).startswith("agent:morpheus:run:"))
+        self.assertTrue(str(second_state["dispatch_session_key"]).startswith("agent:morpheus:run:"))
+        registry = json.loads(
+            (self.openclaw_root / "agents" / "morpheus" / "sessions" / "sessions.json").read_text(encoding="utf-8")
+        )
+        self.assertIn(first_state["dispatch_session_key"], registry)
+        self.assertIn(second_state["dispatch_session_key"], registry)
+        self.assertIn("agent:morpheus:main", registry)
 
     @mock.patch("worker_runtime.subprocess.run")
     def test_morpheus_report_with_draft_root_fails_visibly(self, run_mock: mock.Mock) -> None:
@@ -846,6 +921,15 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertIn("README.md", continuation)
         self.assertIn("tests/test_main.py", continuation)
         self.assertEqual(resumed["recovery_attempts"], 1)
+        send_calls = [
+            call for call in run_mock.call_args_list if call.args and call.args[0][:4] == ["openclaw", "gateway", "call", "sessions.send"]
+        ]
+        self.assertEqual(len(send_calls), 2)
+        dispatch_key = str(session_send_params(send_calls[0])["key"])
+        resume_key = str(session_send_params(send_calls[1])["key"])
+        self.assertTrue(dispatch_key.startswith("agent:morpheus:run:"))
+        self.assertEqual(resume_key, dispatch_key)
+        self.assertEqual(resumed["dispatch_session_key"], dispatch_key)
 
     @mock.patch("worker_runtime.subprocess.run")
     def test_morpheus_advance_completes_when_artifacts_are_ready(self, run_mock: mock.Mock) -> None:
