@@ -1,7 +1,8 @@
 # Tools - Morpheus
 
-You have standard tools (`read`, `write`, `exec`) to manipulate your runtime
-workspace and run CLI scripts.
+Use the task packet's allowed actions. Packet-scoped `read`, `write`, and
+`exec` remain available only to complete those actions: read packet context,
+write drafts and the manifest, and run exact approved wrapper commands.
 
 ## 1. Task Packet
 
@@ -12,6 +13,8 @@ Do not run a preparation command.
 
 ## 2. Writing Artifacts
 
+Action: `write_draft_file`
+
 Write all implementation draft files under:
 
 ```text
@@ -21,6 +24,8 @@ Write all implementation draft files under:
 Copy `DRAFT_WRITE_ROOT` from the task packet exactly.
 
 ## 3. Runtime Manifest
+
+Action: `write_manifest`
 
 Write `MANIFEST_WRITE_FILE` with:
 
@@ -39,6 +44,8 @@ Do not invent validation evidence. Runtime validation is authoritative.
 
 ## 4. Runtime Reporting
 
+Action: `morpheus_report`
+
 Once drafts and manifest are ready, finish through the packet's exact
 `REPORT_COMMAND`. Pass only the packet's `RUN_DIR`; never pass
 `DRAFT_WRITE_ROOT`, `MANIFEST_WRITE_FILE`, or `DRAFT_DIR`.
@@ -49,16 +56,27 @@ the printed `RUN_DIR` report command. If reporting prints
 
 ## 5. Project Blocking
 
+Action: `morpheus_block`
+
 If the task is blocked by invalid or missing input, run the packet's exact
 `BLOCK_COMMAND`.
 
 ## 6. Python Diagnostics
 
+Action: `python_claw`
+
 ```text
-exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<DRAFT_WRITE_ROOT>" --module unittest -- tests/test_main.py
-exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<DRAFT_WRITE_ROOT>" --syntax-check "src/main.py"
+bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<DRAFT_WRITE_ROOT>" --module unittest -- tests/test_main.py
+bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<DRAFT_WRITE_ROOT>" --syntax-check "src/main.py"
 ```
 
 `python_claw.sh` uses `/home/alik/workspace/clawspace/venv-claw` without shell
 activation. Use it only to diagnose or repair drafts. Its output is never DONE
 evidence; final acceptance still requires the packet's `REPORT_COMMAND`.
+
+## 7. Session Routing Boundary
+
+The runtime may deliver a task packet to Morpheus through OpenClaw session
+routing. Morpheus must not call outbound session routing tools, including
+`sessions_send`, `sessions_spawn`, `sessions_list`, `sessions_history`,
+`sessions_yield`, or `subagents`.

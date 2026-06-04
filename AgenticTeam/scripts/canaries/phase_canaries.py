@@ -1280,9 +1280,19 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
         )
     final_state = current.get("state", state_summary(project_dir))
     events = current.get("events", load_handoff_events(project_dir))
-    session_detail = session_delta_for_key("morpheus", snapshot=morpheus_before, expected_project_id=project_id)
-    session_state = latest_session_state("morpheus", morpheus_before)
     worker_state = current.get("worker_state") or load_latest_worker_state(project_id, "morpheus")
+    dispatch_session_key = str((worker_state or {}).get("dispatch_session_key") or "").strip()
+    session_detail = session_delta_for_key(
+        "morpheus",
+        session_key=dispatch_session_key or None,
+        snapshot=None if dispatch_session_key else morpheus_before,
+        expected_project_id=project_id,
+    )
+    session_state = latest_session_state(
+        "morpheus",
+        None if dispatch_session_key else morpheus_before,
+        session_key=dispatch_session_key or None,
+    )
     result_file = terminal_result_file_for_worker_state(worker_state)
     raw_text = (session_detail or {}).get("raw_text", "")
     task_packet_file = current.get("task_packet_file")
@@ -1319,7 +1329,7 @@ def morpheus_direct_implementation(timeout_seconds: int | None = None, stall_sec
     add_invariant(checked, "state:owner", final_state["owner"] == "niaobe", f"owner={final_state['owner']}")
     add_invariant(checked, "state:task_phase", final_state["task_phase"] == "IMPLEMENT", f"task_phase={final_state['task_phase']}")
     add_invariant(checked, "handoff:niaobe->morpheus", handoff_exists(events, event_type="handoff_sent", from_agent="niaobe", to_agent="morpheus", phase="IMPLEMENT", task_id="T001"), "niaobe->morpheus handoff recorded")
-    add_invariant(checked, "session:task_packet", "TASK_PACKET_BEGIN" in raw_text, "Morpheus received runtime task packet" if "TASK_PACKET_BEGIN" in raw_text else "Morpheus session did not receive runtime task packet")
+    add_invariant(checked, "session:task_packet", "TASK_PACKET_BEGIN" in raw_text, "Morpheus received runtime task packet" if "TASK_PACKET_BEGIN" in raw_text else "Morpheus task-scoped session did not receive runtime task packet")
     prepare_tool_call = "morpheus_run_task.sh prepare '" in raw_text or 'morpheus_run_task.sh prepare "' in raw_text
     add_invariant(checked, "session:no_prepare_call", not prepare_tool_call, "Morpheus did not call exposed prepare" if not prepare_tool_call else "Morpheus session contains exposed prepare call")
     project_exec_seen = (
@@ -1472,9 +1482,19 @@ def morpheus_forced_repair(timeout_seconds: int | None = None, stall_seconds: in
     )
     final_state = current.get("state", state_summary(project_dir))
     events = current.get("events", load_handoff_events(project_dir))
-    session_detail = session_delta_for_key("morpheus", snapshot=morpheus_before, expected_project_id=project_id)
-    session_state = latest_session_state("morpheus", morpheus_before)
     worker_state = current.get("worker_state") or load_latest_worker_state(project_id, "morpheus")
+    dispatch_session_key = str((worker_state or {}).get("dispatch_session_key") or "").strip()
+    session_detail = session_delta_for_key(
+        "morpheus",
+        session_key=dispatch_session_key or None,
+        snapshot=None if dispatch_session_key else morpheus_before,
+        expected_project_id=project_id,
+    )
+    session_state = latest_session_state(
+        "morpheus",
+        None if dispatch_session_key else morpheus_before,
+        session_key=dispatch_session_key or None,
+    )
     raw_text = (session_detail or {}).get("raw_text", "")
     worker_payload = (worker_state or {}).get("result_payload") or {}
     worker_instructions = str(worker_payload.get("instructions", ""))

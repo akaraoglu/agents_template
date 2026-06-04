@@ -170,15 +170,17 @@
           "allow": [
             "exec",
             "read",
-            "write",
-            "sessions_send",
-            "sessions_spawn",
-            "sessions_list",
-            "sessions_history"
+            "write"
           ],
           "deny": [
             "edit",
             "apply_patch",
+            "sessions_send",
+            "sessions_spawn",
+            "sessions_list",
+            "sessions_history",
+            "sessions_yield",
+            "subagents",
             "browser",
             "canvas",
             "nodes",

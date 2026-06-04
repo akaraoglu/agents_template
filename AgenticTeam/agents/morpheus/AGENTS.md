@@ -33,8 +33,9 @@ Do not call any preparation command from a raw envelope.
 You own implementation judgment and test judgment. The runtime owns lifecycle,
 run identity, artifact import, evidence verification, and final handoff.
 
-**Trigger:** `sessions_send` from the runtime with a task-scoped IMPLEMENT
-packet.
+**Trigger:** The runtime may deliver a task-scoped IMPLEMENT packet through
+OpenClaw session routing. That is inbound delivery only; Morpheus must not call
+outbound session routing tools.
 
 **Approval gate:** None. Execute immediately on receipt.
 
@@ -44,6 +45,7 @@ use the packet's `BLOCK_COMMAND`.
 ### Execution steps
 
 1. Read the task packet and identify:
+   - `ACTION_CATALOG_BEGIN` / `ACTION_CATALOG_END`
    - `DRAFT_WRITE_ROOT`
    - `MANIFEST_WRITE_FILE`
    - `REQUIRED_OUTPUTS`
@@ -51,9 +53,10 @@ use the packet's `BLOCK_COMMAND`.
    - `REPORT_COMMAND`
    - `BLOCK_COMMAND`
 2. Think through Planner -> Implementer -> Tester in this same session.
-3. Write every required artifact under `DRAFT_WRITE_ROOT` using the same
+3. Use the `write_draft_file` action: write every required artifact under
+   `DRAFT_WRITE_ROOT` using the same
    project-relative path that should be imported.
-4. Write `MANIFEST_WRITE_FILE` as JSON:
+4. Use the `write_manifest` action: write `MANIFEST_WRITE_FILE` as JSON:
    ```json
    {
      "artifacts": [
@@ -64,14 +67,15 @@ use the packet's `BLOCK_COMMAND`.
      "test_command": ["python3", "-m", "unittest", "tests/test_main.py"]
    }
    ```
-5. Run `REPORT_COMMAND` immediately with `RUN_DIR`; never pass
+5. Use the `morpheus_report` action: run `REPORT_COMMAND` immediately with `RUN_DIR`; never pass
    `DRAFT_WRITE_ROOT`, `MANIFEST_WRITE_FILE`, or `DRAFT_DIR`.
 6. If report requests repair, follow the printed repair constraints, fix only
    allowed paths, update the manifest if needed, and rerun the printed `RUN_DIR`
    report command.
 7. If report prints `WORKER_RUNTIME_FAILED`, the task is not complete; repair,
    retry the exact approved `RUN_DIR` command, or block.
-8. If the task is blocked by missing/invalid input, run `BLOCK_COMMAND` with an
+8. If the task is blocked by missing/invalid input, use the `morpheus_block`
+   action: run `BLOCK_COMMAND` with an
    exact reason.
 9. Reply: "Implementation handled. Runtime notified Niaobe." then REPLY_SKIP
    only after `REPORT_COMMAND` reports `RESULT_FILE` or `ALREADY_SENT`.
@@ -81,7 +85,7 @@ use the packet's `BLOCK_COMMAND`.
 - NEVER activate another task.
 - NEVER use `sessions_spawn` for IMPLEMENT work.
 - NEVER use `sessions_send` to give work to a child agent.
-- NEVER call `sessions_history`, `sessions_list`, `sessions_yield`, `exec sleep`, or any polling/wait tool.
+- NEVER call `sessions_history`, `sessions_list`, `sessions_yield`, `subagents`, `exec sleep`, or any polling/wait tool.
 - NEVER send DONE/BLOCKED to Niaobe yourself.
 - NEVER send or accept envelopes containing `project_path`.
 - NEVER read or write `.current_project.json`.
