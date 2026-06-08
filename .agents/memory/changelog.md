@@ -1,3 +1,50 @@
+## 2026-06-08 10:12:18 EEST
+- User request: Create an implementation plan for the V4 plan using the same filename with an `_implementation` suffix, including milestones, phases, and validations agents can follow.
+- Agent action: Added `AgenicTeamPlanV4_implementation.md` with milestone-gated execution from baseline/isolation through contracts, event store, typed tools, Smith, Morpheus Worker, Oracle, Fibonacci E2E, default-switch decision, and deferred MCP/sandbox/PR/specialist work. Recorded the durable implementation rule in `.agents/memory/decisions.md`.
+- Validation: `rg -n "^## Milestone|^### Phase|Milestone 0|Milestone 7|Phase Report Template|Milestone Report Template|Recommended First Work Order|Stop Conditions|Validation Levels" AgenicTeamPlanV4_implementation.md` -> expected phase/gate sections found; `wc -l AgenicTeamPlanV4_implementation.md` -> `1013`; `git diff --check -- AgenicTeamPlanV4_implementation.md .agents/memory/decisions.md .agents/memory/changelog.md` -> clean.
+- Result: V4 now has an agent-followable implementation plan with validations after each phase and milestone.
+
+## 2026-06-08 10:06:38 EEST
+- User request: Update the V4 plan after reviewing the separate V6 design file and deciding what to keep.
+- Agent action: Folded the useful V6 ideas into `AgenicTeamPlanV4.md`: roads-only runtime, typed/scoped tool plane, work-order leases, append-only events, structured repairable tool errors, communication as visibility only, and deferred PR/sandbox/specialist hierarchy. Recorded the durable V4+V6 direction in `.agents/memory/decisions.md`.
+- Validation: `rg -n "V6 Lessons Adopted|V6-Style Tool Categories|Communication Is Not State|work-order lease|Deferred PR, Sandbox|shell-wrapper payload|roads only|typed, scoped, inspectable tools" AgenicTeamPlanV4.md .agents/memory/decisions.md .agents/memory/changelog.md` -> expected V6/V4 integration terms found; `wc -l AgenicTeamPlanV4.md` -> `1112`; `git diff --check -- AgenicTeamPlanV4.md .agents/memory/decisions.md .agents/memory/changelog.md` -> clean.
+- Result: V4 plan now imports the practical V6 infrastructure ideas while keeping the first implementation lane lean.
+
+## 2026-06-08 09:35:11 EEST
+- User request: Set Morpheus as the V4 Worker responsible for task implementation, task-local planning, and tests, while Oracle verifies overall project validation.
+- Agent action: Updated `AgenicTeamPlanV4.md` to make Morpheus the first V4 Worker, move Oracle to final whole-project validation for the first lane, and adjust lifecycle, migration phases, risks, acceptance criteria, and implementation slice naming. Recorded the decision in `.agents/memory/decisions.md`.
+- Validation: `rg -n "Morpheus is the first V4 Worker|Oracle is not a required gate|Oracle verifies the whole project|smith_v4_dispatch_morpheus_worker|oracle_project_v4_submit|Oracle verifies each task|Smith dispatches Oracle after valid Worker result" AgenicTeamPlanV4.md .agents/memory/decisions.md` -> expected new wording found and old per-task Oracle gate wording absent; `wc -l AgenicTeamPlanV4.md` -> `964`.
+- Result: V4 plan now treats Morpheus as Worker and Oracle as final project validator for the first implementation lane.
+
+## 2026-06-08 09:26:30 EEST
+- User request: Create a full V4 plan document for simplifying the agent team, improving communication/state/tool design, and filling design gaps.
+- Agent action: Added `AgenicTeamPlanV4.md` with a lean `Neo -> Smith -> Worker -> Oracle` organization, event/state truth model, typed TaskPack/WorkResult/OracleResult contracts, MCP-shaped tool strategy, failure handling, migration phases, acceptance gates, and first-slice recommendation. Recorded the V4 direction in `.agents/memory/decisions.md`.
+- Validation: `wc -l AgenicTeamPlanV4.md` -> `950`; `rg -n "Target Team Organization|Source Of Truth|MCP Direction|Migration Plan|Acceptance Criteria|First Implementation Slice" AgenicTeamPlanV4.md` -> all key sections found.
+- Result: V4 design plan is now documented for review before implementation.
+
+## 2026-06-04 14:39:47 EEST
+- User request: Add the local failure analyzer to `.agents` tools so any agent can use it.
+- Agent action: Documented `AgenticTeam/scripts/failure_analyzer.py` in `.agents/capabilities/tools.md`, added it to the debugging skill for live OpenClaw stalls, and inserted it into the OpenClaw canary playbook before root-cause classification.
+- Validation: `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_failure_analyzer.py` -> `3 passed`.
+- Result: Future agents reading `.agents` can discover and use the analyzer as a read-only diagnostic step before choosing a fix layer.
+
+## 2026-06-04 14:35:57 EEST
+- User request: Build a local failure analyzer that reads agent session JSONL, project state, handoff ledger, worker state, and gateway/tool-denial logs, then reports timeline, repeated tool calls, denied commands, expected versus actual action, and likely fault layer.
+- Agent action: Added a read-only `AgenticTeam/scripts/failure_analyzer.py` CLI with auto-discovery hooks for project/session/state inputs and focused tests covering exec allowlist denials, agent loops, and runtime contract failures.
+- Validation: `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_failure_analyzer.py` -> `3 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `140 passed`; `./env-python/bin/python AgenticTeam/scripts/failure_analyzer.py --project-id smoke` -> rendered a compact report.
+- Result: Local failure analysis can now produce a compact evidence-backed report for stalled OpenClaw runs without mutating project or live agent state.
+
+## 2026-06-04 13:20:00 EEST
+- User request: Make Oracle like Morpheus by allowing only `exec` and denying direct file, session, yield, and subagent tools.
+- Agent action: Hardened Oracle's OpenClaw tool policy, reframed Oracle prompt/tool surfaces around the `oracle_verify` wrapper action, added contract tests for the wrapper-only surface, synced the live OpenClaw config/docs, rotated `agent:oracle:main`, restarted the gateway as the user service, and verified the live Oracle path.
+- Validation: `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_oracle_contract.py tests/test_morpheus_contract.py` -> `8 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `133 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/sync_live_openclaw.py --apply` -> `0 create, 5 update, 60 unchanged`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_openclaw_phase_canary.py --phase oracle_verification --timeout-seconds 300 --stall-seconds 60` -> `PASS`.
+- Result: Oracle can no longer directly read/write runtime files or call outbound session tools; the live canary completed through `oracle_run_task.sh verify` and runtime-owned `project_exec.sh` evidence without the wrong-path raw-read loop.
+
+## 2026-06-04 11:40:00 EEST
+- User request: Stop the live Niaobe/Oracle loop and analyze what happened.
+- Agent action: Aborted/rotated the live `agent:niaobe:main` and `agent:oracle:main` sessions, archived their loop transcripts, inspected the active Fibonacci project state, handoff log, runtime result files, Niaobe/Oracle helper code, and `write_state.sh` guard behavior.
+- Result: Found that the same stale Morpheus `IMPLEMENT COMPLETE` signal for T002 was repeatedly replayed from Niaobe's main-session context; `niaobe_run_task.sh child` and `write_state.sh` lacked idempotency/current-phase guards, so each replay reset the project to `VERIFY` and sent Oracle again while Oracle kept producing PASS results.
+
 ## 2026-06-04 11:24:22 EEST
 - User request: Continue Morpheus hardening by removing outbound session tools, adding stable action language to task packets, cleaning Morpheus docs, testing, syncing live config/docs, rotating Morpheus, restarting the gateway, and proving repeated runs do not stall.
 - Agent action: Denied Morpheus outbound session/subagent tools, added `ACTION_CATALOG_BEGIN` / `ACTION_CATALOG_END` to runtime packets, updated Morpheus prompt surfaces to use `write_draft_file`, `write_manifest`, `python_claw`, `morpheus_report`, and `morpheus_block`, added Morpheus contract tests, synced live OpenClaw files, rotated `agent:morpheus:main`, verified the user-restarted gateway, and fixed the Morpheus canary to inspect runtime-created task-scoped sessions instead of stale `agent:morpheus:main`.
@@ -1548,3 +1595,126 @@
   - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_task_progress.py` -> `6 passed`
   - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_worker_runtime.py -k "smith_planning_complete_imports_verifies_handoffs_and_sends or smith_planning_first_verification_failure_sets_repair_needed or smith_planning_second_verification_failure_blocks"` -> `3 passed, 57 deselected`
   - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `118 passed`
+
+## 2026-06-04 15:04:51 EEST
+- User request: Converge Architect on the Morpheus native-`write` artifact pattern (write the design `DRAFT_FILE` with the native write tool instead of pushing markdown through fragile `exec` argv), add a contract linter enforcing agreement across all Architect surfaces, then live-roll and run the Fibonacci E2E.
+- Agent action: Granted Architect `tools.allow=[exec,read,write]` (Morpheus parity; session-routing tools still denied). Rewrote `worker_runtime` catalog/prepare/repair text to instruct native-write of the exact `DRAFT_FILE` and dropped the `WRITE_DRAFT_COMMAND` argv path (hidden `write-draft` CLI kept for back-compat); relaxed `ensure_expected_draft` to existence+non-empty. Updated `agent_runner` repair brief, `niaobe_run_task` Architect handoff wording, and all four Architect role docs to native-write language. Replaced the canary `architect_section_cli_args` helper with `architect_draft_markdown`, updated both direct Architect canaries and the live-session invariants to assert no argv draft payload. Added `contract_linter.py` (+ tests) as a pre-rollout gate that bans argv draft tokens, requires native-write language, and verifies the hidden CLI is retained. Inverted the worker-runtime and architect-contract tests accordingly. Live-synced Architect docs+config, rotated the Architect main session, and re-ran the E2E.
+- Validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `147 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/contract_linter.py` -> `CONTRACT_LINT_OK`
+  - `... run_openclaw_phase_canary.py --phase architect_worker_runtime` -> `PASS_WITH_WARNINGS` (all native-write invariants PASS)
+  - `... run_openclaw_phase_canary.py --phase architect_missing_draft_repair` -> `PASS_WITH_WARNINGS` (repair brief + native-write repair PASS, completion_attempts=2)
+  - Live preflight: live Architect docs contain no `write-draft`/`--section`/`--content-b64`/`WRITE_DRAFT_COMMAND`; live config Architect `tools.allow=[exec,read,write]`.
+  - `... run_e2e_fibonacci_test.py` on `run-e2e-fibonacci-test-20260604-1502` -> project `phase=DONE`, `task_phase=VERIFY`, no faults; Architect produced a real `draft.md`/`T001.md` and Morpheus implemented, both `last_error=None`.
+
+## 2026-06-04 — Runtime-owned child-result pointer + atomic terminal writes
+- Request: "niaobe and oracle stuck in a loop"; later diagnosis (other agent): T002 false-repair loop caused by model-corrupted run_id (ffe438af -> ffe438arm -> 202606/202604T...) in child-result path resolution; runtime_contract fault, not tool policy.
+- Action: `worker_runtime.write_text` made atomic (temp + `os.replace`) so terminal `state.json`/`result.json`/`LATEST.json` are never read half-written. Added `child_latest_pointer_path()` and `write_child_latest_pointer()`; runtime writes a stable, runtime-owned `workspaces/<role>/runs/<project>/<task>/LATEST.json` after every terminal child->Niaobe send (4 sites: artifact complete/block, worker complete/block). `niaobe_run_task.parse_child_result` now resolves the child result via LATEST.json (keyed only by validated low-entropy project_id+task_id), validates project/task/from/phase, and treats the envelope `run_id` as a hint only (records `envelope_run_id`/`run_id_source`/`run_id_mismatch`); falls back to envelope run_id when the pointer is absent.
+- Tests/validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `149 passed` (added pointer-resolution-on-corruption, pointer-missing-fallback, and writer-side LATEST.json assertion).
+  - `./env-python/bin/python AgenticTeam/scripts/contract_linter.py` -> `CONTRACT_LINT_OK`.
+  - `... run_openclaw_phase_canary.py --phase morpheus_direct_implementation` -> `PASS`. Trace also live-reproduced the worker corrupting its own RUN_DIR/project-id in `report` commands ("run state missing"), then self-correcting — motivating the still-pending stable-alias work for RUN_DIR in action commands.
+
+## 2026-06-05 — Stable per-role run-handle alias for callback commands
+- Request: "implement the alias, then live-roll the whole batch + e2e" — finish the stable-alias work motivated by the T002 false-repair loop (local model corrupts long opaque run_ids/paths it must retype in callback commands).
+- Action: Callback/control commands (complete, report, repair, block, dispatch/resume/advance) now emit a low-entropy per-role handle `workspaces/<role>/runs/active-run` (a symlink repointed to the current run_dir at packet emission) plus an explicit `--task TNNN` validator, instead of the corruptible long run_dir. Handlers resolve handle->real via `resolve_run_dir_arg` (detects handle by basename `active-run`; literal real paths pass through for back-compat; validates `state.task_id == --task`, fails closed with `stale_handle`). DRAFT_FILE/DRAFT_WRITE_ROOT/MANIFEST_WRITE_FILE stay REAL/run-stable (never aliased) to avoid cross-task contamination. Edited `worker_runtime.py` (helpers, command builders, prepare/draft/packet/planning sites, parsers `--task`, main handlers) and `agent_runner.py` (`print_repair_brief`).
+- Tests/validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `155 passed` (added `RunHandleAliasTests`, updated dispatch packet test).
+  - `contract_linter.py` -> `CONTRACT_LINT_OK`; architect canary `PASS_WITH_WARNINGS` (== baseline).
+  - `morpheus_direct_implementation` canary -> `PASS`; trace shows `RUN_DIR=.../morpheus/runs/active-run` (handle) carried by the live model, real run_dir only in TASK_PACKET_FILE.
+  - Rotated 5 live sessions (smith/niaobe/architect/morpheus/oracle), then full e2e fibonacci -> `phase=DONE`, `waiting_for=none`, last_task_result=PASS, all outputs present, no corrupted run_id artifacts. The T002 false-repair loop did not recur.
+- Note: live wrappers `exec` the repo runtime directly, so runtime code changes are live without sync/gateway restart; only stale sessions needed rotation.
+
+## 2026-06-05 — Low-entropy draft-write handle (Fix #1; extends alias to draft paths)
+- Request: new e2e fibonacci failure — Morpheus stuck in a repair loop after a self-test failure, then wrote drafts to a corrupted path `draft-aliases/20260605T093102Z-d9ธิบาย/src/main.py` and empty-stopped without reporting/blocking. Root cause: the draft-WRITE paths were deliberately left REAL/high-entropy in the prior alias rollout, and the local model corrupts them on retype exactly like it corrupted callback run_ids. User scope: "Just do Fix #1 now; discuss liveness design separately."
+- Action: extended the low-entropy per-role handle pattern to the draft-write surface.
+  - `worker_runtime.py`: added `DRAFT_HANDLE_NAME="active-draft"`, `draft_handle_path(role)` (= `workspaces/<role>/draft-aliases/active-draft`), `repoint_draft_handle(role, draft_dir)` (atomic tmp+`os.replace` symlink; raises `runtime_conflict` if the handle path exists as a real dir).
+  - `prepare_artifact_run` (Morpheus): replaced per-run `ensure_directory_alias(.../draft-aliases/<run_id>)` with `repoint_draft_handle`; `DRAFT_WRITE_ROOT`/`MANIFEST_WRITE_FILE` now resolve via the `active-draft` handle.
+  - `prepare_planning_run` (Smith): `draft_write_root` was REAL `draft_dir`; now the `active-draft` handle.
+  - `prepare_run`/`write_draft_run` (Architect single-file native write): printed `DRAFT_FILE` now uses the `active-run` handle (`active-run/draft.md`) instead of the real run_dir path; same for the architect repair brief in `agent_runner.py`.
+  - Collection unchanged: runtime still reads drafts/manifest from the REAL `state['draft_dir']`/`state['manifest_file']`/`state['draft_file']`; the handle is a low-entropy WRITE surface only.
+- Tests/validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `159 passed` (added `DraftHandleTests`; added architect `DRAFT_FILE` handle assertions; updated the morpheus prepare test to assert `active-draft` resolves to the real draft_dir).
+  - `contract_linter.py` -> `CONTRACT_LINT_OK`; architect live canary `PASS_WITH_WARNINGS` (== baseline); morpheus `active-draft` symlink confirmed created live.
+- Rubber-duck residual risks (deferred to the liveness/design discussion, not blocking): (1) shared `active-*` handles have no `--task` guard on native writes, so a stale/retried write after a later prepare could land in the new run — bounded by serial-per-role + ack-based handoff; (2) a corrupted real `active-draft` dir would fail-closed (`runtime_conflict`) for that role until cleanup; (3) architect `handoff.json` still stores the real `draft_file` (internal only; model is directed to the printed handle path).
+
+## 2026-06-05 — Fix #3: Niaobe transition idempotency via state preconditions (Phases 1+2)
+- Request: design upgrade so duplicate model-driven control invocations stop re-advancing/wedging projects (root cause of `run-e2e-fibonacci-test-20260605-1326`: 4 Niaobe runs processed the same Oracle result -> done,done,done,failed -> T003 never acked). Directed flow: plan -> rubberduck -> replan -> implement.
+- Diagnosis: model-driven control transitions in `niaobe_run_task.py` are not idempotent/terminal/owner-aware. Each replay mkdir'd a fresh run, re-ran `write_state`, re-sent downstream; the 4th replay raced Smith's ownership -> owner-mismatch -> block cascade (also owner-mismatch) -> `status=failed`.
+- Change:
+  - New module `AgenticTeam/scripts/transition_guard.py`: `transition_lock` (project-level `fcntl.flock` on `management/.transition.lock`), `read_project_state` (parses authoritative `PROJECT_STATE.md` bullet fields), `classify_child`/`classify_accept` (exact state preconditions), `event_key` (sha256 audit id), `record_transition`/`read_ledger` (locked JSONL audit at `management/.transition_ledger.jsonl`), `is_owner_mismatch`, `EXPECTED_PHASE`, `Decision`.
+  - Wired both `accept_task_handoff` and `continue_child_result` to run inside `transition_lock`, classify against current `PROJECT_STATE.md`, and `_standdown` (status="superseded", NO write_state/send/block, no raise, exit 0) when the transition is no longer current. Applied transitions record an `applied` ledger entry; owner-mismatch raised mid-apply (primary write or block cascade) now converts to SUPERSEDED instead of `failed`.
+  - Correctness comes from preconditions (after any transition `waiting_for`/`task_phase` advance, so replays fail the predicate); the ledger is audit-only. Fail-open when no authoritative state exists (preserves unit-harness behavior; prod always has the file).
+- Tests/validation:
+  - New `tests/test_transition_guard.py` (17 pure-unit: parsing, classify all phases incl. post-transition supersession + 1326 owner=smith repro, event_key determinism, ledger roundtrip, flock serialization, owner-mismatch detector).
+  - New niaobe integration tests in `tests/test_worker_runtime.py` (accept replay -> superseded; oracle owner=smith race -> superseded + no send; architect replay-after-advance -> single delegation + ledger applied,superseded; write_state owner-mismatch mid-apply -> superseded not failed). Added `_seed_project_state` helper.
+  - `pytest -q` -> `180 passed`; `contract_linter.py` -> `CONTRACT_LINT_OK`; canary preflight exit 0 (gateway reachable). Full live e2e fibonacci to be run separately by the user.
+- Deferred (Phase 3, user-gated): liveness watchdog (empty-stop/deadline enforcement + send-after-state-advance crash window). Receiver-side dedup (deterministic transition_id in envelopes) is a follow-up needing Smith-side changes.
+
+## 2026-06-05 — Slice A: deterministic liveness watchdog (empty-stop reaper)
+- Request: implement the minimal deterministic liveness watchdog (Slice A) that stops the
+  "hang forever" failure class (e2e 1230/1430): a worker empty-stops after a self-test failure,
+  never runs `report`/`block`, and the project hangs at `waiting_for=<role>` because the flow is a
+  pure event-chain with no live supervisor.
+- Action: new `AgenticTeam/scripts/liveness_watchdog.py` — an on-demand/cron reaper (NOT a daemon).
+  - Pure `classify_liveness(state, now, last_activity, idle_threshold, terminal_pending)`: only acts
+    when owner=niaobe, waiting_for in {architect,morpheus,oracle}, task_status=IN_PROGRESS,
+    task_phase=EXPECTED_PHASE[role], and idle (now-last_activity) >= threshold (default
+    RUN_DEADLINE_SECONDS=1800).
+  - `last_activity` = max(PROJECT_STATE.md mtime, newest mtime under `runs/<project>/<task>/` AND
+    `runtime/<run_id>/`) so an actively-writing worker (drafts live under runtime/<run_id>) is not
+    falsely reaped.
+  - `worker_terminal_pending` guard (the "1502" protection): if the worker already produced a
+    terminal result it is NOT reaped (that's a Niaobe-side hang). Checks `LATEST.json` AND every
+    run's `result.json` — Oracle writes only result.json (no pointer), so the pointer check alone
+    left finished Oracle runs unprotected.
+  - `reap_project` runs under `transition_lock`, re-checks `classify_child` AND `worker_terminal_pending`
+    (stands down if a real callback/terminal landed since assessment), then calls
+    `mark_child_runtime_blocked` (write_state.sh BLOCKED -> owner=smith + Smith TASK_BLOCKED — identical
+    to a real worker block), then `record_transition` kind="watchdog". Idempotent: a reap advances state
+    so the next sweep skips. Owner-mismatch mid-reap -> superseded (no block cascade).
+  - CLI mirrors failure_analyzer.py: `--project-dir` (repeatable) | `--projects-root` (scan active/),
+    `--idle-seconds`, `--dry-run`, `--format text|json`.
+- Rubber-duck (implementation): adopted the two real safety gaps — (1) Morpheus runtime-dir activity
+  was invisible (false-reap risk) -> scan runtime/<run_id>; (2) Oracle writes no LATEST.json
+  (finished Oracle reap risk) -> terminal guard also reads result.json. Added in-lock terminal re-check
+  and iter_project_dirs OSError guard. Documented the two accepted limitations (bias-to-skip on stale
+  terminal after re-dispatch; send-after-state-advance window inherent to the existing block path).
+- Tests/validation: new `tests/test_liveness_watchdog.py` (22: pure classify cases incl. terminal-pending
+  guard + phase/owner/status/idle skips; parse_project_id; LATEST.json + Oracle result.json terminal
+  detection; Morpheus runtime activity; integration reap drives write_state BLOCKED + Smith send + ledger;
+  dry-run no-op; terminal-pending skip; defensive stand-down; idempotent second pass).
+  `pytest -q` -> 202 passed; `contract_linter.py` -> CONTRACT_LINT_OK; canary preflight exit 0.
+  Live dry-run sweep: 35 projects scanned, oracle-awaited finished runs now correctly skipped
+  (worker_terminal_pending) instead of would_reap. NOT wired to cron/heartbeat yet (proposing to user).
+
+## 2026-06-05 — Liveness watchdog Part 2: niaobe-ack stall class
+- Request: e2e fibonacci 1622 hung at `owner=smith, active_task=T002, task_phase=TASK_HANDOFF,
+  task_status=READY, waiting_for=niaobe` — Niaobe never acked Smith's handoff (shared niaobe session
+  empty-stopped/busy). failure_analyzer mislabeled it `exec_allowlist` (cross-project session noise);
+  the real class is a dropped TASK_HANDOFF, distinct from the Slice A worker-hang class. User chose:
+  "idempotent superseded-callback handling + extend watchdog to reap stale niaobe acks." Part 1
+  (owner-mismatch -> benign superseded) was already shipped in Fix #3; the new work is the watchdog class.
+- Action: extended `AgenticTeam/scripts/liveness_watchdog.py` with a SECOND liveness class. `classify_liveness`
+  now branches: owner=niaobe -> worker-hang (unchanged); owner=smith & waiting_for=niaobe & task_phase=
+  TASK_HANDOFF & task_status=READY -> niaobe-ack class (action `reap_niaobe_ack` / skip /
+  `niaobe_ack_terminal_pending`). New `reap_niaobe_ack` (sibling of reap_project, NOT in niaobe_run_task.py)
+  runs under transition_lock, re-asserts the ack class, RECOMPUTES idle in-lock (so a niaobe that just
+  started accepting wins), re-checks a generation-bound terminal guard, then drives `_block_niaobe_ack`:
+  `write_state.sh BLOCKED smith --actor smith --expect-owner smith --task-phase TASK_HANDOFF --task-status
+  BLOCKED --increment-blocked` (owner stays smith; mirrors mark_child_runtime_blocked shape) + send_smith_result
+  (phase=TASK_BLOCKED, instructs Smith NOT to re-handoff without rotating Niaobe's session) + ledger
+  `niaobe_ack_reaped_blocked` with a state-mtime generation token. Owner-mismatch during the block ->
+  superseded standdown.
+- Rubber-duck adopted: #1 in-lock idle recompute (no false-block of a just-starting ack); #2 mirror the
+  existing Niaobe block protocol so Smith's blocked handler is reused idempotently; #3 generation-bind the
+  niaobe terminal check via PROJECT_STATE.md mtime (a stale "sent" from a prior handoff generation must NOT
+  mask a freshly dropped ack). #4 reap<->re-handoff oscillation NOT fully solved (real fix = session
+  rotation); mitigated via --increment-blocked visibility + explicit Smith instruction; documented as a
+  known limitation.
+- Tests/validation: 11 new tests in `tests/test_liveness_watchdog.py` (pure ack classify: stale-reap,
+  within-budget skip, terminal-pending, smith-owner-non-ack -> plain skip; IO: mtime-gated terminal
+  pending, reap drives BLOCKED+expect-owner smith+actor smith+increment-blocked+Smith send+ledger, dry-run
+  no-op, in-lock idle-recompute standdown, in-lock terminal standdown, idempotent second pass). `pytest -q`
+  -> 213 passed; `contract_linter.py` -> CONTRACT_LINT_OK; canary preflight exit 0. Live dry-run against
+  1622 now reports `reap_niaobe_ack` (idle 1807s >= 1800s); full sweep flags only 1622 (no false positives).

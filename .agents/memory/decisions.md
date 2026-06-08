@@ -1,3 +1,20 @@
+## 2026-06-08
+- AgenticTeam V4 direction is a lean direct-control lane: `Neo -> Smith -> Morpheus/Worker -> Smith -> Oracle -> Smith -> Neo`.
+  Smith is the only normal project-progress owner; Morpheus/Worker owns bounded task design/implementation/tests through typed tools and one `WorkResult`; Oracle verifies the overall project independently; Niaobe and separate live Architect handoffs are paused for the first V4 slice. V4 should be built beside the existing V3 system, prove repeated Fibonacci E2E passes, then decide whether to reintroduce specialists.
+
+- Morpheus is the first V4 Worker.
+  Morpheus should own each task's local plan/design, implementation, and task tests before submitting one `WorkResult` to Smith. Oracle is the overall project verifier in the first V4 lane, not a mandatory verifier after every task; Smith should call Oracle after accepted task WorkResults complete the planned project, and Oracle FAIL creates a repair task for Morpheus.
+
+- V4 adopts V6's infrastructure philosophy without adopting V6's full team hierarchy yet.
+  Runtime should be "roads only" (identity, leases, capability grants, sandbox lifecycle, event logging, resource limits, kill switches). Normal agent work should move through typed, scoped, inspectable tools (`fs.write`, `fs.patch`, `tests.run`, `work.submit`, `oracle.verify`) rather than shell payload wrappers or chat-driven control state. Mattermost/session messages are visibility only; typed events and results are truth. PR lifecycle, sandbox broker, Niaobe default coordination, Architect specialist handoff, and release/sentinel roles stay deferred until the lean Morpheus Worker lane is repeatable.
+
+- V4 implementation must be milestone-gated and additive.
+  Agents should implement `AgenicTeamPlanV4_implementation.md` one phase at a time, validate after each phase, run broader milestone gates before proceeding, keep V3 intact, and require user approval before making V4 the live default or adding deferred MCP/sandbox/PR/specialist capabilities.
+
+## 2026-06-04
+- Oracle should use a wrapper-only `exec` surface for VERIFY work.
+  The only normal VERIFY action is `oracle_run_task.sh verify '<JSON envelope>'`; Oracle must not directly read/write project or runtime files, inspect `RESULT_FILE`/`result.json`, or call outbound session routing tools.
+
 ## 2026-06-03
 - Agents should use `python_claw.sh` for local Python diagnosis instead of activating venvs or constructing raw `cd ... && python ...` shell commands.
   The helper resolves `/home/alik/workspace/clawspace/venv-claw` internally, exposes structured module/script/syntax-check modes, and remains diagnostic only; runtime `project_exec`/role completion helpers remain the authoritative final evidence path.
@@ -473,3 +490,48 @@
   Smith now uses a shared `task_progress.py` helper and `smith_task_progress.sh` CLI to advance the backlog, rewrite `CURRENT_TASK.md`, and hand off the next task after each `TASK_DONE`. The helper is the normal progression path; the lower-level write/state/handoff tools remain available only for manual re-scope when a block proves the plan needs revision.
 - Smith live brief and self-heal rule:
   Smith reads `BRIEF.md` as the short human-facing task brief for the active step. If `PROJECT_STATE.md`, `CURRENT_TASK.md`, `BRIEF.md`, and `BACKLOG.md` disagree, Smith must run `smith_task_progress.sh sync` before handing off the next task. The brief is a doc-level contract, not a runtime heuristic.
+- Architect native-write artifact rule:
+  Architect writes its design `DRAFT_FILE` directly with its native `write` tool (Morpheus parity), never by pushing markdown through `exec` argv (`--section`/`--content-b64`/`WRITE_DRAFT_COMMAND`). Architect `tools.allow` is `[exec,read,write]`; session-routing tools (`sessions_send/list/spawn/history/yield`, `subagents`) stay denied. Runtime only requires the `DRAFT_FILE` to exist and be non-empty before `verify_draft_content`; runtime verification stays the authority. The hidden `write-draft` CLI subcommand is retained for back-compat only and must not be advertised in any Architect surface.
+- Contract-linter gate rule:
+  `AgenticTeam/scripts/contract_linter.py` is the pre-rollout agreement gate for Architect surfaces. It generates the actual runtime catalog text (rather than grepping source), bans argv draft tokens, requires native-write language and `outbound session routing tools` forbidding, and asserts the hidden `write-draft` subparser still exists. Run it (expect `CONTRACT_LINT_OK`) before any Architect live sync.
+
+- Runtime-owned child-result pointer rule:
+  Child->Niaobe completion must be resolved through a runtime-owned `workspaces/<role>/runs/<project_id>/<task_id>/LATEST.json` pointer, never by rebuilding the path from the model-relayed `run_id`. The local model corrupts long opaque tokens (run_ids, absolute paths), so Niaobe treats the envelope `run_id` as a hint only and trusts the pointer (validated against project_id/task_id/from/phase). The pointer path is keyed solely on low-entropy validated tokens. Terminal artifacts (`state.json`/`result.json`/`LATEST.json`) are written atomically via temp + `os.replace` (see `worker_runtime.write_text`). Principle: runtime owns long ids/paths; the model only carries tiny stable tokens.
+
+## 2026-06-05
+- Worker callback/control commands (complete, report, repair, block, dispatch/resume/advance) must carry the stable low-entropy per-role handle `workspaces/<role>/runs/active-run` plus an explicit `--task TNNN`, never a long opaque run_dir/run_id. The local model reliably corrupts long opaque tokens it is asked to retype; the handle removes that entropy and `--task` + `resolve_run_dir_arg` (fail-closed `stale_handle` on task mismatch) guards against pointing at the wrong run.
+  - DRAFT_FILE / DRAFT_WRITE_ROOT / MANIFEST_WRITE_FILE stay REAL/run-stable and are NEVER aliased, to prevent cross-task write contamination. The handle is for callbacks/control only.
+- Avoid `git stash` for baseline canary diffs: tracked `.pyc` files cause merge conflicts on `stash pop` that silently revert tracked source edits. Compare via `git show HEAD:<path>` or copy a file aside instead.
+
+- Draft-write paths use low-entropy handles (supersedes "draft paths stay REAL"):
+  The prior rule that `DRAFT_FILE`/`DRAFT_WRITE_ROOT`/`MANIFEST_WRITE_FILE` stay REAL is REVERSED. The local model corrupts those real high-entropy draft-write paths on retype (observed: `draft-aliases/<run_id>` -> `...-d9ธิบาย`, chain-of-thought leaked into the path). Draft writes now go through stable per-role symlink handles: multi-file artifact/planning workers (Morpheus/Smith) write under `workspaces/<role>/draft-aliases/active-draft`; the single-file native-write worker (Architect) writes `DRAFT_FILE` under the existing `active-run` run handle. The handle is a WRITE surface only — the runtime always COLLECTS from the REAL paths in `state` (`draft_dir`/`manifest_file`/`draft_file`), so corruption that creates sibling dirs (e.g. `active-draftX`) fails closed via missing-draft/repair rather than silently reporting DONE. Safe because execution is strictly serial per role and the handle repoints atomically at each prepare. `repoint_draft_handle` fail-closes (`runtime_conflict`) if the handle path is a real directory.
+
+- Niaobe control-plane transitions are idempotent via authoritative-state preconditions (not a ledger):
+  Because the local model re-issues the same `accept`/`child` control command, `accept_task_handoff` and `continue_child_result` now run inside a project-level `transition_lock` and classify the event against the current `PROJECT_STATE.md`. A transition is applied ONLY when state still shows that exact actor awaited at that exact phase (child: owner=niaobe, active_task=task, waiting_for=from, task_phase=EXPECTED_PHASE[from]; accept: owner=smith, active_task=task, waiting_for=niaobe, task_phase=TASK_HANDOFF). Any other state -> SUPERSEDED clean no-op (status="superseded", no write_state/send/block, exit 0). This works because each applied transition advances `waiting_for`/`task_phase`, so replays fail the predicate. The `management/.transition_ledger.jsonl` is audit/watchdog substrate only, NOT the correctness guard. Owner-mismatch raised mid-apply is treated as a lost race -> SUPERSEDED (never `failed`/block cascade). `read_project_state` fails OPEN (CURRENT) when no authoritative state file exists; production always has the file, so this only preserves unit-harness behavior. Module: `AgenticTeam/scripts/transition_guard.py`.
+
+- Liveness is enforced by a deterministic on-demand watchdog, not a model heartbeat or a daemon:
+  `AgenticTeam/scripts/liveness_watchdog.py` (Slice A) replaces the unreliable model-driven
+  `phase-watchdog` reasoning. It is a stateless reaper safe to run repeatedly (cron/on-demand), not a
+  long-lived supervisor — matching the fire-and-forget runtime. Correctness reuses the Fix #3 substrate:
+  it acts under `transition_lock`, gates on the same authoritative `PROJECT_STATE.md` preconditions
+  (owner=niaobe, waiting_for=<worker>, task_status=IN_PROGRESS, task_phase=EXPECTED_PHASE[role]) plus a
+  wall-clock idle budget, and synthesizes the worker's missing terminal via the EXISTING
+  `mark_child_runtime_blocked` path (write_state BLOCKED -> Smith TASK_BLOCKED) so downstream behavior is
+  identical to a real worker block. Idempotency is automatic (a reap advances state; the next sweep skips).
+  Safety bias = NEVER false-block: it stands down if the worker produced any terminal evidence
+  (`LATEST.json` OR `result.json` — Oracle has no pointer) and treats `runtime/<run_id>` writes as live
+  activity so an actively-writing-but-slow worker is not reaped. Default idle budget = RUN_DEADLINE_SECONDS
+  (1800s). Not yet wired into cron/heartbeat (wiring needs a niaobe exec-allowlist entry if run from the
+  heartbeat; deferred to a user decision).
+
+- 2026-06-05 — Liveness watchdog has TWO deterministic classes, not one. Besides the Slice A worker-hang
+  class (owner=niaobe awaiting a worker), it also reaps a DROPPED Smith->Niaobe handoff (owner=smith,
+  waiting_for=niaobe, task_phase=TASK_HANDOFF, task_status=READY past the idle budget). A successful Niaobe
+  ack always advances owner->niaobe BEFORE writing its result, so that exact state past the budget proves
+  the handoff was dropped. The reap escalates to BLOCKED for Smith (owner stays smith: write_state.sh
+  --actor smith --expect-owner smith, NO --set-owner) reusing Smith's existing blocked handler — it NEVER
+  re-delivers to Niaobe (that just feeds the wedged shared session). The niaobe terminal guard MUST be
+  generation-bound (only counts a niaobe result newer than PROJECT_STATE.md's mtime); otherwise a stale
+  "sent" from an earlier handoff generation masks a freshly dropped ack forever. Known limitation:
+  reap<->re-handoff oscillation is bounded (one block per idle budget, visible via blocked_count) but only
+  truly fixed by rotating Niaobe's session.
