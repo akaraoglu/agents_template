@@ -30,7 +30,7 @@ from AgenticTeam.scripts.v4_state import project_state_from_events
 from AgenticTeam.scripts.v4_events import clear_events_v4, read_events_v4
 from AgenticTeam.scripts.v4_contracts import TaskPackV4, WorkResultV4, OracleResultV4
 
-def run_single_e2e(run_index: int, dry_run: bool = False) -> bool:
+def run_single_e2e(run_index: int, dry_run: bool = False, keep_workspace: bool = False) -> bool:
     print(f"\n==========================================")
     print(f"Starting E2E Run #{run_index} (dry_run={dry_run})")
     print(f"==========================================\n")
@@ -411,8 +411,11 @@ def test_render():
     print("E2E tests verify successfully!")
     
     # Cleanup
-    shutil.rmtree(temp_dir)
-    print(f"Cleanup completed. Run #{run_index} PASSED!")
+    if keep_workspace:
+        print(f"Keeping workspace at {temp_dir} for inspection.")
+    else:
+        shutil.rmtree(temp_dir)
+        print(f"Cleanup completed. Run #{run_index} PASSED!")
     return True
 
 def main():
@@ -424,12 +427,13 @@ def main():
     parser.add_argument("--repeat", type=int, default=1, help="Number of consecutive repetitions")
     parser.add_argument("--timeout-seconds", type=int, default=900, help="Max execution time in seconds (ignored/for compatibility)")
     parser.add_argument("--stall-seconds", type=int, default=180, help="Stall detection time in seconds (ignored/for compatibility)")
+    parser.add_argument("--keep-workspace", action="store_true", help="Do not delete the temporary workspace after completion")
     args = parser.parse_args()
     
     successes = 0
     for idx in range(1, args.repeat + 1):
         try:
-            passed = run_single_e2e(idx, dry_run=args.dry_run)
+            passed = run_single_e2e(idx, dry_run=args.dry_run, keep_workspace=args.keep_workspace)
             if passed:
                 successes += 1
             else:
