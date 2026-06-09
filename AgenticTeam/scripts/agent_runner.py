@@ -96,9 +96,9 @@ def extract_json(text: str) -> dict[str, Any] | None:
     return None
 
 
-def load_agent_prompts(role: str) -> str:
+def load_agent_prompt(role:str, v4: bool = False) -> str:
     """Loads and compiles system prompts for the given agent role."""
-    agents_dir = Path(__file__).resolve().parent.parent / "agents" / role
+    agents_dir = Path(__file__).resolve().parent.parent / ("v4" / role if v4 else role)
     
     parts = []
     for name in ["IDENTITY.md", "SOUL.md", "AGENT.md", "SKILLS.md"]:
@@ -109,13 +109,13 @@ def load_agent_prompts(role: str) -> str:
     return "\n\n".join(parts)
 
 
-def run_react_loop(role: str, run_dir: Path) -> dict[str, Any]:
+def run_react_loop(role: str, run_dir: Path, v4_mode: bool = False) -> dict[str, Any]:
     """Runs a tool-calling ReAct loop for the specified role in the given run directory."""
     state = load_state(run_dir)
     project_path = Path(state["project_path"])
     
     # 1. Compile System Prompt
-    base_prompt = load_agent_prompts(role)
+    base_prompt = load_agent_prompt(role, v4=v4_mode)
     
     react_instructions = """
 You are executing in a tool-driven ReAct loop. You MUST interact ONLY using JSON objects formatted exactly as follows:
@@ -204,7 +204,7 @@ Test Command to run:
                     "temperature": 0.0
                 }
             }
-            res = requests.post(OLLAMA_URL, json=payload, timeout=300)
+            res = requests.post(OLLAMA_URL, json=payload, timeout=600)
             res.raise_for_status()
             response_json = res.json()
             response_content = response_json["message"]["content"]
@@ -411,17 +411,11 @@ def complete_run_graph(contract: Any, run_dir: Path) -> dict[str, Any]:
     from worker_runtime import WorkerRuntimeError, complete_run, load_state, update_state
 
     state = load_state(run_dir)
-    attempt = int(state.get("completion_attempts", 0)) + 1
-    update_state(
-        run_dir,
-        completion_attempts=attempt,
-    )
     try:
         res_state = complete_run(contract, run_dir)
         res_state = update_state(
             run_dir,
             runtime_engine="langgraph",
-            completion_attempts=attempt,
         )
 
         result_file = run_dir / "result.json"
@@ -446,7 +440,7 @@ def complete_run_graph(contract: Any, run_dir: Path) -> dict[str, Any]:
 
 def print_repair_brief(contract: Any, run_dir: Path) -> dict[str, Any]:
     """Compatible entrypoint to print repair brief for Morpheus/Architect."""
-    from worker_runtime import load_state, WorkerRuntimeError, append_log, update_state
+    from worker_runtime import load_state, WorkerRuntimeError, append_log, update_state, run_handle_path, repoint_run_handle
     
     state = load_state(run_dir)
     if state.get("role") != contract.role:
@@ -457,7 +451,10 @@ def print_repair_brief(contract: Any, run_dir: Path) -> dict[str, Any]:
     last_error = state.get("last_error") if isinstance(state.get("last_error"), dict) else {}
     error_message = str(last_error.get("message", "no error detail"))
 
-    print(f"RUN_DIR={run_dir}")
+    run_handle = repoint_run_handle(contract.role, run_dir)
+    task_id = str(state.get("task_id") or "")
+    task_suffix = f" --task {task_id}" if task_id else ""
+    print(f"RUN_DIR={run_handle}")
     if contract.role == "morpheus":
         repair_guard = state.get("repair_guard") if isinstance(state.get("repair_guard"), dict) else {}
         allowed = [str(path) for path in repair_guard.get("allowed_repair_paths", []) if str(path).strip()]
@@ -477,10 +474,12 @@ def print_repair_brief(contract: Any, run_dir: Path) -> dict[str, Any]:
         print(error_message[:4000])
         print("REPAIR_EVIDENCE_END")
         from worker_runtime import live_bin_root
-        print("NEXT_REQUIRED=bash " + str(live_bin_root() / "morpheus_run_task.sh") + f' report "{run_dir}"')
+        print("NEXT_REQUIRED=bash " + str(live_bin_root() / "morpheus_run_task.sh") + f' report "{run_handle}"{task_suffix}')
         append_log(run_dir, "repair", "repair brief printed")
     else:
         # Architect
+        from worker_runtime import worker_action_catalog_lines, worker_draft_section_names
+
         update_state(
             run_dir,
             repair_brief_printed_at=state.get("repair_brief_printed_at") or "2026-05-29T12:00:00Z",
@@ -488,13 +487,13 @@ def print_repair_brief(contract: Any, run_dir: Path) -> dict[str, Any]:
         )
         print("REPAIR_MODE=architecture_draft")
         print(f"CONTEXT_FILE={state.get('context_file')}")
-        print(f"DRAFT_FILE={state.get('draft_file')}")
-        required_sections = [
-            pattern.removeprefix("^## ")
-            for pattern in contract.render_verify_patterns(task_id=str(state["task_id"]))
-            if pattern.startswith("^## ")
-        ]
-        print("NEXT_REQUIRED=" + ", ".join(required_sections))
+        print(f"DRAFT_FILE={run_handle / contract.draft_file_name}")
+        print("DRAFT_FILE_USAGE=Create exactly this path with your native write tool using the repaired section text; do not pass content through exec arguments.")
+        for line in worker_action_catalog_lines(contract, run_dir, task_id=str(state["task_id"])):
+            print(line)
+        required_sections = worker_draft_section_names(contract, task_id=str(state["task_id"]))
+        print("REQUIRED_SECTIONS=" + ", ".join(required_sections))
+        print("NEXT_REQUIRED=Rewrite DRAFT_FILE with your native write tool (every required section), then run COMPLETE_COMMAND.")
         append_log(run_dir, "repair", "repair brief printed")
         
     return state
@@ -504,7 +503,9 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Unified Agent ReAct Loop Runner")
     parser.add_argument("--role", required=True, help="Agent role (morpheus or architect)")
+    parser.add_argument("--v4", action="store_true", help="Use V4 agent pre-set")
     parser.add_argument("--run-dir", required=True, help="Active worker run directory")
     args = parser.parse_args()
+    args.v4 = args.v4 or os.environ.get("AGENT_TEAM_V4") == "true"
     
-    run_react_loop(args.role, Path(args.run_dir))
+    run_react_loop(args.role, Path(args.run_dir), v4_mode=args.v4)

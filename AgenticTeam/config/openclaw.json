@@ -5,7 +5,7 @@
         "mode": "default",
         "notifyUser": true
       },
-      "maxConcurrent": 4,
+      "maxConcurrent": 4, "v4_enabled": false,
       "model": {
         "fallbacks": [],
         "primary": "ollama/gemma4:26b"
@@ -141,15 +141,17 @@
           "allow": [
             "exec",
             "read",
-            "write",
-            "sessions_send",
-            "sessions_list"
+            "write"
           ],
           "deny": [
             "edit",
             "apply_patch",
+            "sessions_send",
+            "sessions_list",
             "sessions_spawn",
             "sessions_history",
+            "sessions_yield",
+            "subagents",
             "browser",
             "canvas",
             "nodes",
@@ -199,17 +201,19 @@
         ],
         "tools": {
           "allow": [
-            "exec",
+            "exec"
+          ],
+          "deny": [
             "read",
             "write",
             "sessions_send",
-            "sessions_list"
-          ],
-          "deny": [
+            "sessions_list",
             "edit",
             "apply_patch",
             "sessions_spawn",
             "sessions_history",
+            "sessions_yield",
+            "subagents",
             "browser",
             "canvas",
             "nodes",

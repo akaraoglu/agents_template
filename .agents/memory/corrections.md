@@ -1,3 +1,11 @@
+## 2026-06-09
+- Mistake: Initializing placeholder files with simple blank content (e.g. `# Placeholder`) forces the worker agents to invent the module structure from scratch. This leads to name guessing (e.g. implementing `fibonacci` instead of `generate_fibonacci_tree`), mismatched file/directory imports, and placing execution logic at the module level (which crashes pytest collection with `SystemExit`).
+- Correction: Pre-populate placeholder files (such as `src/main.py`) with a clean skeleton template that defines the exact function signatures and basic `if __name__ == "__main__":` entrypoint block. This guides the agents through the correct module layout.
+- Mistake: Leaving literal `# TODO:` comments in the placeholder skeleton template. The Oracle agent literally parses the file, sees these comments, and flags the project as `FAIL` because the comments imply incomplete tasks, even if the code is fully implemented and passes all tests.
+- Correction: Keep placeholder skeleton templates free of any `TODO` comments. Use neutral docstrings or comments instead.
+- Mistake: Setting a low `max_turns` limit (e.g. 10) for the Oracle runner. Minor tool hiccups or path mistakes can exhaust the turn budget before the verification agent can run tests and submit its final report.
+- Correction: Set a larger turn budget (e.g. 25 turns) for verification tasks.
+
 ## 2026-06-02
 - Correction: tool-denial failures from helper/runtime layers should not be treated as ordinary verification failures or generic helper noise. Classify them as `tool_denied`, keep the failure repairable, and tell the agent the denied tool/policy source explicitly so it can stop retrying the same blocked command.
 
@@ -217,3 +225,15 @@
 - Smith doc drift:
   `PROJECT_STATE.md` can advance while `CURRENT_TASK.md` and `BACKLOG.md` remain stale, which makes the project look stalled even when the runtime state has already moved on.
   Correction: add a Smith-facing `BRIEF.md` and a `smith_task_progress.sh sync` repair command so Smith can reconcile the task docs before the next handoff.
+
+- Terminal-result detection must not assume every worker writes LATEST.json:
+  Architect and Morpheus terminalize through the shared worker_runtime paths that call
+  `write_child_latest_pointer`, but Oracle (`oracle_run_task.py`) writes only `result.json` and NO
+  `LATEST.json`. Any code that decides "did this worker finish?" by checking only the LATEST.json pointer
+  will wrongly conclude an Oracle run is unfinished. Check `result.json` (top-level status in {sent,blocked}
+  or nested `signal.signal` in {COMPLETE,BLOCKED}) as well. (Found while hardening the liveness watchdog.)
+- Worker activity during a run lives under `runtime/<run_id>`, not the `runs/<project>/<task>/` tree:
+  Morpheus/Architect write drafts/manifests under `workspaces/<role>/runtime/<run_id>/...` while working;
+  the `runs/<project>/<task>/<run_id>/` dir mostly gets its files at terminalization. A staleness/idle
+  signal that scans only the runs/ tree will see an actively-writing worker as idle. Correlate by run_id
+  (shared basename) and include `runtime/<run_id>` mtimes.

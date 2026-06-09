@@ -1,0 +1,31 @@
+Milestone: 6
+Completed phases:
+- Phase 6.1: Add Oracle V4 Verification Surface
+- Phase 6.2: Add Oracle Result Handling In Smith
+- Phase 6.3: Add Oracle Positive And Negative Canaries
+
+Gate validation:
+- PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_oracle.py tests/test_v4_smith.py tests/test_v4_contracts.py: 14 passed
+- run_v4_oracle_canary.py (Positive): Success (Oracle finished in 8.99 seconds, Canary PASSED)
+- run_v4_oracle_canary.py (Negative): Success (Oracle finished in 7.08 seconds, Canary PASSED)
+
+Regression validation:
+- Full local test suite: 265 passed, 1 warning (0 failures)
+
+Faults found:
+- None.
+
+Repairs made:
+- Added completed_minimal_project.md and broken_minimal_project.md fixtures.
+- Implemented v4_oracle.py, tests/test_v4_oracle.py, and run_v4_oracle_canary.py.
+- Modified smith_handle_oracle_result in v4_smith.py to plan a T002 repair task when Oracle reports FAIL, transitioning the project to BLOCKED.
+- Updated run_v4_oracle_canary.py to check expect_fail directly to decide whether to write broken files.
+
+Evidence:
+- Pytest logs showing 14 passed (Milestone 6 tests) and 265 passed (full suite).
+- Canary logs for positive and negative runs passing successfully.
+
+Decision needed:
+- None.
+
+Next milestone allowed: yes

@@ -1,0 +1,96 @@
+import pytest
+import unittest.mock as mock
+import json
+import datetime
+from pathlib import Path
+from AgenticTeam.scripts.v4_contracts import LeaseV4, OracleResultV4
+from AgenticTeam.scripts.v4_oracle import V4OracleRunner
+from AgenticTeam.scripts.v4_leases import acquire_lease
+from AgenticTeam.scripts.v4_events import clear_events_v4, read_events_v4
+
+@pytest.fixture(autouse=True)
+def clean_logs():
+    clear_events_v4()
+    yield
+    clear_events_v4()
+
+def test_oracle_prompt_compilation(tmp_path):
+    lease = LeaseV4(
+        lease_id="l1",
+        resource_id="none",
+        owner="oracle",
+        expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=10),
+        metadata={"project_id": "p1"}
+    )
+    runner = V4OracleRunner(str(tmp_path), lease)
+    prompt = runner._compile_system_prompt()
+    
+    assert "Oracle" in prompt
+    assert "IDENTITY.md" in prompt or "oracle" in prompt.lower()
+    assert "oracle_report" in prompt
+    assert "fs_write" not in prompt
+
+def test_oracle_react_loop_mock_execution(tmp_path):
+    # Acquire a lease
+    lease = acquire_lease(
+        workspace_root=str(tmp_path),
+        resource_id="none",
+        owner="oracle",
+        duration_seconds=30,
+        metadata={"project_id": "p1", "attempt_id": "oracle-attempt"}
+    )
+    assert lease is not None
+    
+    runner = V4OracleRunner(str(tmp_path), lease)
+    
+    # Mock Ollama chat responses
+    mock_responses = [
+        # Turn 1: fs_list
+        {
+            "message": {
+                "content": json.dumps({
+                    "thought": "I will list the workspace directory.",
+                    "tool": "fs_list",
+                    "parameters": {"relative_path": "."}
+                })
+            }
+        },
+        # Turn 2: oracle_report
+        {
+            "message": {
+                "content": json.dumps({
+                    "thought": "Everything looks good. Submitting PASS.",
+                    "tool": "oracle_report",
+                    "parameters": {
+                        "status": "PASS",
+                        "summary": "Verified project successfully.",
+                        "evidence_paths": ["."]
+                    }
+                })
+            }
+        }
+    ]
+    
+    # Mock requests.post
+    with mock.patch("requests.post") as mock_post:
+        mock_response_objs = []
+        for r in mock_responses:
+            m_res = mock.Mock()
+            m_res.status_code = 200
+            m_res.json.return_value = r
+            mock_response_objs.append(m_res)
+            
+        mock_post.side_effect = mock_response_objs
+        
+        result = runner.run(max_turns=2)
+        
+    assert result == "Success"
+    
+    # Check events emitted
+    events = read_events_v4()
+    event_types = [ev.event_type for ev in events]
+    assert "oracle_passed" in event_types
+    
+    passed_event = next(ev for ev in events if ev.event_type == "oracle_passed")
+    assert passed_event.payload["project_id"] == "p1"
+    assert passed_event.payload["status"] == "PASS"
