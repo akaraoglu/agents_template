@@ -1,6 +1,6 @@
 # Tools - Morpheus
 
-Morpheus is normally invoked as a real OpenClaw agent turn by the V4 runtime.
+Morpheus is normally invoked as a real OpenClaw agent turn by the team runtime.
 Use the OpenClaw tools available in that turn, and obey the task message's
 Workspace Root, Expected Artifacts, Writable Paths, and Protected Paths.
 

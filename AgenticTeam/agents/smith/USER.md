@@ -4,7 +4,7 @@
 Project intake and final recipient.
 
 ## Morpheus
-V4 worker for bounded implementation tasks.
+team worker for bounded implementation tasks.
 
 ## Oracle
 Final independent verifier.

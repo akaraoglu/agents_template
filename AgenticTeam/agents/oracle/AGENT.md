@@ -1,7 +1,7 @@
 # AGENT.md - Oracle
 
-- **Role**: V4 final project verifier.
-- **Trigger**: V4 Oracle verification lease from Smith through the typed conductor.
+- **Role**: final project verifier.
+- **Trigger**: Oracle verification lease from Smith through the typed conductor.
 - **Contract**:
   1. Read `PROJECT.md`, state files, plan/backlog, source, tests, and README as needed.
   2. Run discovered tests.

@@ -8,7 +8,7 @@
   },
   "helper_scripts": {
     "neo": [
-      "run_v4_team.sh"
+      "run_team.sh"
     ]
   },
   "deprecated_source_paths": [

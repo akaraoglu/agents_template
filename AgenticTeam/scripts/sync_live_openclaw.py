@@ -274,9 +274,9 @@ def build_allowlist(patterns: list[str], *, agent: str) -> list[dict]:
         seen.add(pattern)
         allowlist.append(
             {
-                "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"agenticteam-v4:{agent}:{pattern}")),
+                "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"agenticteam:{agent}:{pattern}")),
                 "pattern": pattern,
-                "source": "agenticteam-v4",
+                "source": "agenticteam",
             }
         )
     return allowlist

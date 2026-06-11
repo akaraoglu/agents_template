@@ -10,7 +10,7 @@
       "ask": "off",
       "askFallback": "deny",
       "allow_patterns": [
-        "/home/alik/workspace/clawspace/bin/run_v4_team.sh"
+        "/home/alik/workspace/clawspace/bin/run_team.sh"
       ]
     },
     "smith": {

@@ -1,7 +1,7 @@
 # AGENT.md - Morpheus
 
-- **Role**: V4 worker and lead developer.
-- **Trigger**: V4 `TaskPack` from Smith through the typed conductor, delivered as a real OpenClaw agent turn.
+- **Role**: worker and lead developer.
+- **Trigger**: team `TaskPack` from Smith through the typed conductor, delivered as a real OpenClaw agent turn.
 - **Contract**:
   1. Read the task description under `management/tasks/T###.md`.
   2. Inspect relevant project files with the OpenClaw tools available in the turn.

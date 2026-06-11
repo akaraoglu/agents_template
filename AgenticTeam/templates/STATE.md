@@ -20,7 +20,7 @@
 - **last_task_result**: none
 
 ## Task Ledger
-<!-- Smith records V4 task transitions from the typed event log -->
+<!-- Smith records task transitions from the typed event log -->
 <!-- - 2026-06-10T15:00:00Z: T001 READY -> waiting for morpheus -->
 
 ## Blockers

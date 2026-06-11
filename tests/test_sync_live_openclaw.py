@@ -41,7 +41,7 @@ def test_replace_exec_approvals_preserves_socket_and_drops_legacy_agents(tmp_pat
                         "security": "allowlist",
                         "ask": "off",
                         "askFallback": "deny",
-                        "allow_patterns": ["/home/alik/workspace/clawspace/bin/run_v4_team.sh"],
+                        "allow_patterns": ["/home/alik/workspace/clawspace/bin/run_team.sh"],
                     },
                     "smith": {
                         "security": "allowlist",
@@ -60,11 +60,11 @@ def test_replace_exec_approvals_preserves_socket_and_drops_legacy_agents(tmp_pat
     assert changed is True
     assert replaced["socket"] == {"path": "/tmp/openclaw.sock", "token": "secret"}
     assert set(replaced["agents"]) == {"neo", "smith"}
-    assert replaced["agents"]["neo"]["allowlist"][0]["pattern"].endswith("run_v4_team.sh")
+    assert replaced["agents"]["neo"]["allowlist"][0]["pattern"].endswith("run_team.sh")
     assert replaced["agents"]["smith"]["allowlist"] == []
 
 
-def test_merge_openclaw_config_prunes_invalid_v4_defaults_flag(tmp_path):
+def test_merge_openclaw_config_prunes_legacy_defaults_flag(tmp_path):
     live_path = tmp_path / "live-openclaw.json"
     overlay_path = tmp_path / "openclaw.json"
 

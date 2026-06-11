@@ -1,4 +1,23 @@
 ## 2026-06-11
+- User request: Clean the remaining legacy V4 naming from the active AgenticTeam path, make the lean team runtime the default-named system, preserve project-management files/folders, validate, sync live OpenClaw, and rerun the real Neo Fibonacci E2E.
+- Agent action:
+  - Renamed active runtime modules, scripts, shell entrypoints, and tests from `v4_*` / `run_v4_*` / `test_v4_*` names to default team names such as `contracts.py`, `run_team.py`, `run_team.sh`, `openclaw_worker.py`, `smith_runtime.py`, `oracle_runtime.py`, `run_e2e_fibonacci_test.py`, and `run_e2e_fibonacci_neo_test.py`.
+  - Rewrote active imports, class/function names, status labels, prompts, `.agents` guidance, config allowlists, and live sync manifest references to use the default team naming.
+  - Left `v4_enabled` only as a stale live-config cleanup key in `sync_live_openclaw.py` and its regression test.
+  - Applied live sync to Neo, Smith, Morpheus, and Oracle; created `/home/alik/workspace/clawspace/bin/run_team.sh`; removed stale live `run_v4_team.sh` and `workspaces/neo/v4_PROJECT.md`.
+  - Fixed Smith repair-task artifact extraction so Oracle evidence labels like `tests/test_main.py (line 10)` do not become impossible expected artifacts.
+  - Tightened the Fibonacci fixture task contract so scaled CLI output must include a visible `|` trunk/root line.
+  - Removed the Oracle canary's hard-coded `gemma3:12b` override so it uses the configured OpenClaw model.
+- Validation/results:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_contracts.py tests/test_events.py tests/test_leases.py tests/test_state.py tests/test_tools.py tests/test_team_start.py tests/test_neo_e2e_runner.py tests/test_sync_live_openclaw.py` -> `35 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_smith_runtime.py tests/test_neo_e2e_runner.py tests/test_fibonacci_semantics.py` -> `18 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `77 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/sync_live_openclaw.py --agent neo --agent smith --agent morpheus --agent oracle --apply` -> live prompts/config/entrypoint synced.
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_oracle_canary.py --fixture completed_minimal_project --timeout-seconds 300 --stall-seconds 90` -> Oracle canary passed on configured `gemma4:26b`.
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_neo_test.py --project-root /home/alik/workspace/clawspace/projects/active` -> latest live run created `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-neo-20260611-073926` but ended `BLOCKED` after Morpheus/OpenClaw returned no assistant payload three times on T002; runtime treated this as `missing_work_result` and did not falsely complete.
+- Result: The source and live OpenClaw entrypoints now use default team names and local tests pass. The remaining blocker is live OpenClaw/Ollama no-payload instability during a Morpheus worker turn, not a leftover V4 naming path.
+
+## 2026-06-11
 - User request: Commit the working V4 team state after the real Neo-driven Fibonacci E2E passed.
 - Agent action:
   - Prepared a V4 milestone commit containing the OpenClaw-backed worker path, V4 team runtime, fixture semantic gates, prompt/config updates, tests, documentation/memory updates, and legacy cleanup already present in the worktree.

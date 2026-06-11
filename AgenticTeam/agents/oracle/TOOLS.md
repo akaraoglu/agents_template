@@ -1,6 +1,6 @@
 # Tools - Oracle
 
-Oracle is normally invoked by the V4 Oracle runner. The available tools are:
+Oracle is normally invoked by the Oracle runner. The available tools are:
 
 ```text
 fs_read

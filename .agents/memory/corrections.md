@@ -1,3 +1,11 @@
+## 2026-06-11
+- Correction: The lean AgenticTeam runtime is now default-named. Use `run_team.py`, `run_team.sh`, `run_e2e_fibonacci_test.py`, and `run_e2e_fibonacci_neo_test.py` for new work. Older `run_v4_*` and `test_v4_*` references in historical memory are audit history, not current commands.
+
+- Mistake: Treating Oracle evidence strings as artifact paths can create impossible repair tasks, for example `tests/test_main.py (line 10)` becoming an expected artifact.
+- Correction: Smith repair planning must sanitize Oracle evidence before adding artifact scope: accept clean relative workspace paths, strip harmless backticks, and reject line labels, colon-line suffixes, protected docs, absolute paths, and parent traversal.
+
+- Correction: An OpenClaw agent turn that returns no assistant payload is a live agent/model failure, not proof that the task artifact contract is wrong. The runtime should keep rejecting false completion and classify/report the missing WorkResult clearly.
+
 ## 2026-06-09
 - Mistake: Initializing placeholder files with simple blank content (e.g. `# Placeholder`) forces the worker agents to invent the module structure from scratch. This leads to name guessing (e.g. implementing `fibonacci` instead of `generate_fibonacci_tree`), mismatched file/directory imports, and placing execution logic at the module level (which crashes pytest collection with `SystemExit`).
 - Correction: Pre-populate placeholder files (such as `src/main.py`) with a clean skeleton template that defines the exact function signatures and basic `if __name__ == "__main__":` entrypoint block. This guides the agents through the correct module layout.

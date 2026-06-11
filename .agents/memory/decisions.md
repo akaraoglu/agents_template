@@ -1,3 +1,13 @@
+## 2026-06-11
+- AgenticTeam's lean team runtime is now the default-named path, not a V4-labeled path.
+  Active entrypoints are `AgenticTeam/scripts/run_team.py`, `AgenticTeam/scripts/run_team.sh`, `AgenticTeam/scripts/run_e2e_fibonacci_test.py`, and `AgenticTeam/scripts/run_e2e_fibonacci_neo_test.py`. Live Neo starts `/home/alik/workspace/clawspace/bin/run_team.sh --background`. Historical `v4_*` names may appear in older memory entries only; they must not be used for new work.
+
+- The production worker backend remains OpenClaw-hosted.
+  Morpheus is invoked through the configured OpenClaw agent, while the runtime owns task packs, leases, write-boundary checks, expected-artifact checks, WorkResult parsing, deterministic fixture gates, and state projection. The direct raw Ollama worker is still debug-only and must not be used as the default live team path.
+
+- The live sync layer intentionally drops legacy `v4_enabled`.
+  `v4_enabled` may remain in `sync_live_openclaw.py` and its tests only as a stale-config cleanup key. It is not an active runtime flag.
+
 ## 2026-06-10
 - AgenticTeam is now V4-only in source and live OpenClaw config.
   The active path is `Neo -> run_v4_team -> Smith -> Morpheus -> Smith -> Oracle -> Smith`. Niaobe, Architect, Covenant/V3 worker runtimes, phase canaries, chat/session handoff helpers, and the abandoned V4 env-var/event-bus prototype are removed from the repository source. Live OpenClaw config lists only `main`, `neo`, `smith`, `morpheus`, and `oracle`; live exec approvals are replaced with the V4 allowlist, where only Neo may run `/home/alik/workspace/clawspace/bin/run_v4_team.sh`.
