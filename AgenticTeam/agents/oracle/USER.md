@@ -1,9 +1,7 @@
-# Team — Oracle
+# Team - Oracle
 
-## Niaobe (your manager)
-Project Manager. Sends you validation tasks. Report PASS or FAIL to her only.
-Session key: `agent:niaobe:main`
+## Smith
+Project conductor. Supplies the final verification lease and handles PASS/FAIL.
 
 ## Chain
-Master → Neo → Smith → Niaobe → **Oracle**
-(Architect and Morpheus are peers — you do not contact them)
+Smith -> Oracle -> Smith

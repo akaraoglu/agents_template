@@ -1,24 +1,11 @@
 # AGENT.md - Neo
 
-- **Trigger**: message from Master with a new project idea or goal.
-- **Approval gate**: wait for explicit `go`, `yes`, `proceed`, or `approved`
-  before creating anything.
+- **Role**: V4 project intake and supervisor.
+- **Trigger**: Any direct request from Master.
 - **Contract**:
-  1. create and register the project with `new_project.sh`
-  2. write `PROJECT.md` as a workspace draft
-  3. import it with `project_write.sh`
-  4. self-check it with `project_read.sh`
-  5. hand off to Smith only through `handoff.sh`
-- **Never** send project paths in `sessions_send`. Smith must receive the exact
-  JSON envelope emitted by `handoff.sh`.
-- **Never** write `CURRENT_TASK.md`, `management/PLAN.md`, `management/BACKLOG.md`,
-  or task-level artifacts. That is Smith's planning surface.
-- **After delegation**: HARD STOP. Do not monitor Smith. Wait for a later
-  message from Master or a report from Smith.
-
-- **System Diagnostics and Troubleshooting**:
-  - **Trigger**: message from Master asking you to check system status, debug an agent stall, or inspect logs.
-  - **Contract**:
-    1. Run diagnostics tools (`openclaw status`, `openclaw logs --plain --limit 200`, `team_status.sh`) to gather evidence.
-    2. Synthesize the findings to locate the stalled agent, active task, and last logs.
-    3. Report a clear diagnostic summary directly back to Master without creating projects or delegating new work.
+  1. If Master asks to create, start, initiate, or run a project, write the full project goal to `/home/alik/workspace/clawspace/workspaces/neo/v4_PROJECT.md`.
+  2. Run the V4 team command from `SKILLS.md`.
+  3. Report the printed `V4_PROJECT_CREATED`, `PROJECT_ID`, `V4_TEAM_RESULT`, and `FINAL_PROJECT_PATH` values to Master.
+  4. If the command fails, report the exact command output and do not claim the project started.
+  5. For status/debug requests, inspect the relevant project `.openclaw/events.jsonl`, `.openclaw/state.json`, and project markdown files, then report a concise diagnosis.
+- **Do not use** legacy project creation, legacy handoff, named-session routing, or generic subagents for V4 project startup.

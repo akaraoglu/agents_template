@@ -14,6 +14,23 @@ def test_task_pack_valid():
     )
     assert tp.task_id == "T001"
     assert "file1.txt" in tp.allowed_artifacts
+    assert tp.effective_expected_artifacts() == ["file1.txt"]
+    assert "src/**" in tp.writable_paths
+    assert "tests/**" in tp.writable_paths
+    assert "PROJECT.md" in tp.protected_paths
+
+
+def test_task_pack_separates_expected_artifacts_from_writable_scope():
+    tp = TaskPackV4(
+        project_id="p1",
+        task_id="T001",
+        workspace_root="/tmp/test",
+        expected_artifacts=["src/main.py"],
+    )
+
+    assert tp.effective_expected_artifacts() == ["src/main.py"]
+    assert "tests/**" in tp.writable_paths
+    assert "tests/test_main.py" not in tp.effective_expected_artifacts()
 
 def test_task_pack_invalid_id():
     with pytest.raises(ValueError, match="task_id must match T###"):

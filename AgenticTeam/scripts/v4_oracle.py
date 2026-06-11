@@ -12,7 +12,7 @@ scripts_dir = str(Path(__file__).resolve().parent)
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
-from AgenticTeam.scripts.agent_runner import OLLAMA_URL, extract_json, load_ollama_runtime_config
+from AgenticTeam.scripts.v4_model import OLLAMA_URL, extract_json, load_ollama_runtime_config
 
 class V4OracleRunner:
     def __init__(self, workspace_root: str, lease: LeaseV4, actor: str = "oracle"):
@@ -24,14 +24,15 @@ class V4OracleRunner:
         
     def _compile_system_prompt(self) -> str:
         role = self.actor
-        agents_dir = Path(__file__).resolve().parent.parent / "agents" / "v4" / role
+        agents_dir = Path(__file__).resolve().parent.parent / "agents" / role
         parts = []
         for name in ["IDENTITY.md", "SOUL.md", "AGENT.md", "SKILLS.md"]:
             path = agents_dir / name
             if path.is_file():
                 parts.append(path.read_text(encoding="utf-8"))
         
-        base_prompt = "\n\n".join(parts) if parts else f"You are the {role.upper()} oracle agent."
+        display_role = role[:1].upper() + role[1:]
+        base_prompt = "\n\n".join(parts) if parts else f"You are the {display_role} oracle agent."
         
         react_instructions = f"""
 You are executing in a tool-driven ReAct loop. You MUST interact ONLY using JSON objects formatted exactly as follows:
@@ -61,6 +62,13 @@ Rules:
 - Output ONLY the raw JSON object. Do not wrap it in markdown code blocks or add any other text outside the JSON.
 - Do not stop until you have called "oracle_report".
 - Ensure Oracle does not attempt to mutate or write any files. You do not have write permissions or write tools.
+- Do not PASS only because tests pass. Inspect `PROJECT.md`, source files, and tests enough to verify the implementation matches the stated acceptance criteria.
+- For Fibonacci Tree Visualizer projects, FAIL if the project only returns Fibonacci numbers, only renders nested value dictionaries, lacks depth-controlled branch drawing, or lacks tests for CLI/configuration behavior.
+- For Fibonacci Tree Visualizer projects, specifically verify that `generate_fibonacci_tree(5, scale=1.5, angle=42, thickness=2)` returns exactly 5 layer dictionaries and that the final layer has `fibonacci == 5`, `branches == 5`, `angle == 42`, and `thickness == 2`.
+- For Fibonacci Tree Visualizer projects, verify `src/main.py` defines the public function exactly as `def fibonacci(`. FAIL if it was renamed to `fib`, `fib_simple`, or another helper-only name.
+- For Fibonacci Tree Visualizer projects, verify `tests/test_main.py` defines its own `nonempty_lines(text)` helper. FAIL if `nonempty_lines` is imported from `src.main` or added to `src/main.py`.
+- For Fibonacci Tree Visualizer projects, FAIL if `render_tree(...)` cannot produce one non-empty visible branch line per requested depth or if changing `--scale` does not change rendered output.
+- Treat ASCII or Unicode branch characters as valid when the project says ASCII/Unicode terminal rendering. Do not FAIL an ASCII tree only because it lacks Unicode unless `PROJECT.md` explicitly requires Unicode-only rendering.
 """
         return f"{base_prompt}\n\n{react_instructions}"
 

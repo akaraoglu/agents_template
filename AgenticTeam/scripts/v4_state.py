@@ -4,7 +4,7 @@ import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
-from AgenticTeam.scripts.v4_contracts import EventV4
+from AgenticTeam.scripts.v4_contracts import DEFAULT_PROTECTED_PATHS, DEFAULT_WRITABLE_PATHS, EventV4
 
 class ProjectStateV4(BaseModel):
     project_id: str = "none"
@@ -40,8 +40,18 @@ def project_state_from_events(events: List[EventV4]) -> ProjectStateV4:
                     "task_id": task_id,
                     "title": payload.get("title", ""),
                     "status": "PENDING",
-                    "note": ""
+                    "note": "",
+                    "expected_artifacts": payload.get("expected_artifacts", []),
+                    "writable_paths": payload.get("writable_paths") or list(DEFAULT_WRITABLE_PATHS),
+                    "protected_paths": payload.get("protected_paths") or list(DEFAULT_PROTECTED_PATHS),
                 }
+
+        elif ev.event_type == "task_scope_expanded":
+            task_id = payload.get("task_id")
+            if task_id in state.tasks:
+                expanded = payload.get("expanded_allowed_artifacts") or payload.get("expanded_expected_artifacts")
+                if expanded:
+                    state.tasks[task_id]["expected_artifacts"] = expanded
                 
         elif ev.event_type in ("task_dispatched", "task_started"):
             task_id = payload.get("task_id", "none")
@@ -202,7 +212,7 @@ def render_markdown_views(state: ProjectStateV4, workspace_root: str):
 - **last_task_result**: {json.dumps(state.last_result) if state.last_result else "none"}
 
 ## Task Ledger
-<!-- Smith and Niaobe append one line per task transition -->
+<!-- Smith records V4 task transitions from the typed event log -->
 
 ## Blockers
 

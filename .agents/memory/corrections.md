@@ -237,3 +237,25 @@
   the `runs/<project>/<task>/<run_id>/` dir mostly gets its files at terminalization. A staleness/idle
   signal that scans only the runs/ tree will see an actively-writing worker as idle. Correlate by run_id
   (shared basename) and include `runtime/<run_id>` mtimes.
+
+- V4 import-time CLI parsing repair gap:
+  After expected artifacts were separated from writable scope, Morpheus could edit `src/main.py` and
+  `tests/test_main.py`, but a live Fibonacci run still failed when pytest collection exposed
+  `argparse.parse_args()` executing at import time. The model tried to weaken tests/block instead of
+  repairing the source. Correction: test-run output now adds `ACTIONABLE_TEST_FAILURE[import_time_cli_parse]`
+  when argparse/SystemExit collection failures indicate source import-safety problems; task text should say
+  to fix `src/main.py`, not tests, by moving parser setup/`parse_args()`/printing under `main(argv=None)` or
+  `if __name__ == "__main__"`.
+
+- V4 full-team E2E scope gap:
+  `run_e2e_fibonacci_v4_test.py` validates the lower-level Smith/Morpheus/Oracle conductor path, but it does
+  not prove the real user flow where Master gives project info to Neo. Correction: use
+  `run_e2e_fibonacci_v4_neo_test.py` as the full-team acceptance gate. Neo must start the V4 team with
+  `run_v4_team.sh --background`; running the entire project synchronously inside one Neo agent turn can fail
+  mid-project due OpenClaw agent/tool/model timeouts and leave the project `IN_PROGRESS`.
+
+- Host Ollama blocker for Neo entry:
+  Live Neo E2E attempts on 2026-06-10 were blocked before project creation by OpenClaw's 120s Ollama fetch
+  timeout. `ollama ps` showed `gemma4:26b` stuck in `Stopping...`; repo/user-level commands could not restart
+  the system Ollama service or kill the `ollama` user runner processes. Correction: clear/restart the host
+  Ollama service before classifying Neo prompt or V4 runtime behavior from those runs.

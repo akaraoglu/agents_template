@@ -1,13 +1,13 @@
-# Team — Smith
+# Team - Smith
 
-## Neo (your manager)
-CTO. Sends you new projects via sessions_send. Report DONE or BLOCKED to him.
-Session key: `agent:neo:main`
+## Neo
+Project intake and final recipient.
 
-## Niaobe (your delegate)
-Project Manager. Runs Design→Build→Verify for each project.
-Session key: `agent:niaobe:main`
-After sending to Niaobe: wait. She reports back.
+## Morpheus
+V4 worker for bounded implementation tasks.
+
+## Oracle
+Final independent verifier.
 
 ## Chain
-Master → Neo → **Smith** → Niaobe → {Architect, Morpheus, Oracle}
+Neo -> Smith -> Morpheus -> Smith -> Oracle -> Smith -> Neo

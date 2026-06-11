@@ -4,7 +4,8 @@
 Find the root cause of a bug or failing behavior with minimal guesswork.
 
 ## Trigger
-Use this skill when a defect, regression, or unexplained failure must be diagnosed.
+Use this skill when a defect, regression, or unexplained failure must be
+diagnosed.
 
 ## Inputs
 - Failing symptom or error message
@@ -19,10 +20,21 @@ Use this skill when a defect, regression, or unexplained failure must be diagnos
 5. Fix the root cause, not just the visible symptom.
 6. Add or update a test if the bug could recur.
 
+## OpenClaw V4 Failure Analysis
+- Inspect typed state first:
+  `.openclaw/events.jsonl`, `.openclaw/state.json`, `.openclaw/leases.json`,
+  `PROJECT_STATE.md`, `CURRENT_TASK.md`, and `management/BACKLOG.md`.
+- Classify the failing boundary before editing:
+  `project_start`, `smith_plan`, `taskpack_scope`, `worker_tools`,
+  `work_result`, `oracle_result`, `smith_finalization`, or `sync`.
+- Reproduce through the narrowest V4 gate, then rerun the same gate after the
+  fix.
+- Use the V4 Fibonacci E2E only after the narrow gate is green.
+
 ## Verification
-- Reproduction no longer fails
-- Relevant tests pass
-- Nearby behavior still works as expected
+- Reproduction no longer fails.
+- Relevant tests pass.
+- Nearby behavior still works as expected.
 
 ## Notes
 - Avoid speculative changes across multiple areas at once.

@@ -29,6 +29,7 @@ FORBIDDEN_DOC_TOKENS = (
     "Project folder: /home/alik/workspace/clawspace/projects/active/",
     "/home/alik/workspace/clawspace/projects/active/<",
 )
+OPENCLAW_AGENTS_DEFAULTS_DROP_KEYS = {"v4_enabled"}
 
 
 @dataclass
@@ -253,11 +254,53 @@ def merge_openclaw_config(live_path: Path, overlay_path: Path) -> tuple[dict, bo
     live = load_json(live_path)
     overlay = load_json(overlay_path)
     merged = deep_merge(live, overlay)
+    agents_defaults = merged.get("agents", {}).get("defaults")
+    if isinstance(agents_defaults, dict):
+        for key in OPENCLAW_AGENTS_DEFAULTS_DROP_KEYS:
+            agents_defaults.pop(key, None)
     changed = merged != live
     if set(live.keys()) - set(merged.keys()):
         missing = ", ".join(sorted(set(live.keys()) - set(merged.keys())))
         raise RuntimeError(f"openclaw merge dropped live top-level keys: {missing}")
     return merged, changed
+
+
+def build_allowlist(patterns: list[str], *, agent: str) -> list[dict]:
+    allowlist: list[dict] = []
+    seen: set[str] = set()
+    for pattern in patterns:
+        if pattern in seen:
+            continue
+        seen.add(pattern)
+        allowlist.append(
+            {
+                "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"agenticteam-v4:{agent}:{pattern}")),
+                "pattern": pattern,
+                "source": "agenticteam-v4",
+            }
+        )
+    return allowlist
+
+
+def replace_exec_approvals(live_path: Path, baseline_path: Path) -> tuple[dict, bool]:
+    live = load_json(live_path)
+    baseline = load_json(baseline_path)
+
+    replaced: dict = {}
+    for key in ("version", "socket"):
+        if key in live:
+            replaced[key] = live[key]
+    replaced["defaults"] = baseline["defaults"]
+    replaced["agents"] = {}
+    for agent, base_conf in baseline["agents"].items():
+        target = {
+            key: base_conf[key]
+            for key in ("security", "ask", "askFallback")
+            if key in base_conf
+        }
+        target["allowlist"] = build_allowlist(base_conf.get("allow_patterns", []), agent=agent)
+        replaced["agents"][agent] = target
+    return replaced, replaced != live
 
 
 def merge_exec_approvals(live_path: Path, baseline_path: Path) -> tuple[dict, bool]:
@@ -314,7 +357,13 @@ def sync_managed_config(repo_root: Path, manifest: dict, *, apply: bool) -> list
 
     approvals_path = Path(managed["exec_approvals"]["destination"])
     approvals_source = repo_root / managed["exec_approvals"]["source"]
-    merged_approvals, changed_approvals = merge_exec_approvals(approvals_path, approvals_source)
+    approvals_strategy = managed["exec_approvals"]["strategy"]
+    if approvals_strategy == "replace-allowlist":
+        merged_approvals, changed_approvals = replace_exec_approvals(approvals_path, approvals_source)
+    elif approvals_strategy == "additive-allowlist-merge":
+        merged_approvals, changed_approvals = merge_exec_approvals(approvals_path, approvals_source)
+    else:
+        raise RuntimeError(f"unsupported exec approvals strategy: {approvals_strategy}")
     actions.append(
         Action(
             "update" if changed_approvals else "unchanged",

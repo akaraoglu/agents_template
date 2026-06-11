@@ -11,13 +11,13 @@
 
 ## Inputs
 - BRIEF.md
-- PROJECT.md plus management/tasks/Txxx.md and related architecture/docs
+- PROJECT.md plus management/tasks/Txxx.md and related project docs
 
 ## Deliverables
 <!-- Expected files or outputs for the active task -->
 
 ## Completion Signal
-<!-- What Niaobe must receive before returning TASK_DONE or TASK_BLOCKED -->
+<!-- What Morpheus must submit as typed WorkResult evidence -->
 
 ## Repair Rule
 <!-- If PROJECT_STATE.md, CURRENT_TASK.md, BRIEF.md, and BACKLOG.md disagree, Smith repairs them before handing off. -->

@@ -28,6 +28,12 @@ def test_oracle_prompt_compilation(tmp_path):
     assert "Oracle" in prompt
     assert "IDENTITY.md" in prompt or "oracle" in prompt.lower()
     assert "oracle_report" in prompt
+    assert "Do not PASS only because tests pass" in prompt
+    assert "depth-controlled branch drawing" in prompt
+    assert "def fibonacci(" in prompt
+    assert "branches == 5" in prompt
+    assert "nonempty_lines(text)" in prompt
+    assert "Do not FAIL an ASCII tree only because it lacks Unicode" in prompt
     assert "fs_write" not in prompt
 
 def test_oracle_react_loop_mock_execution(tmp_path):

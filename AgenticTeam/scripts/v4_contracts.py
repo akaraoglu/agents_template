@@ -6,6 +6,27 @@ from pydantic import BaseModel, Field, field_validator
 
 TASK_ID_RE = re.compile(r"T\d{3}")
 
+DEFAULT_WRITABLE_PATHS = [
+    "src/**",
+    "tests/**",
+    "README.md",
+    "docs/**",
+]
+
+DEFAULT_PROTECTED_PATHS = [
+    ".openclaw/**",
+    "PROJECT.md",
+    "PROJECT_STATE.md",
+    "CURRENT_TASK.md",
+    "BRIEF.md",
+    "RESULT.md",
+    "DONE_REPORT.md",
+    "BLOCKED_REPORT.md",
+    "management/PLAN.md",
+    "management/BACKLOG.md",
+    "management/tasks/**",
+]
+
 class EventV4(BaseModel):
     """Represents an immutable event in the system state."""
     timestamp: datetime.datetime = Field(default_factory=datetime.datetime.now)
@@ -27,6 +48,10 @@ class TaskPackV4(BaseModel):
     project_id: str
     task_id: str
     workspace_root: str
+    expected_artifacts: List[str] = Field(default_factory=list)
+    writable_paths: List[str] = Field(default_factory=lambda: list(DEFAULT_WRITABLE_PATHS))
+    protected_paths: List[str] = Field(default_factory=lambda: list(DEFAULT_PROTECTED_PATHS))
+    # Compatibility alias for older V4 callers. Do not use this as the write gate.
     allowed_artifacts: List[str] = Field(default_factory=list)
     deadline: Optional[datetime.datetime] = None
     constraints: Dict[str, Any] = Field(default_factory=dict)
@@ -37,6 +62,16 @@ class TaskPackV4(BaseModel):
         if not TASK_ID_RE.match(v):
             raise ValueError("task_id must match T###")
         return v
+
+    def effective_expected_artifacts(self) -> List[str]:
+        return self.expected_artifacts or self.allowed_artifacts
+
+
+class ArtifactPolicyV4(BaseModel):
+    """Separates task deliverables from the project-safe write boundary."""
+    expected_artifacts: List[str] = Field(default_factory=list)
+    writable_paths: List[str] = Field(default_factory=lambda: list(DEFAULT_WRITABLE_PATHS))
+    protected_paths: List[str] = Field(default_factory=lambda: list(DEFAULT_PROTECTED_PATHS))
 
 class WorkResultV4(BaseModel):
     """Represents the result of a completed task."""

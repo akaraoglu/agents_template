@@ -1,3 +1,22 @@
+## 2026-06-10
+- AgenticTeam is now V4-only in source and live OpenClaw config.
+  The active path is `Neo -> run_v4_team -> Smith -> Morpheus -> Smith -> Oracle -> Smith`. Niaobe, Architect, Covenant/V3 worker runtimes, phase canaries, chat/session handoff helpers, and the abandoned V4 env-var/event-bus prototype are removed from the repository source. Live OpenClaw config lists only `main`, `neo`, `smith`, `morpheus`, and `oracle`; live exec approvals are replaced with the V4 allowlist, where only Neo may run `/home/alik/workspace/clawspace/bin/run_v4_team.sh`.
+
+- V4 live worker execution is OpenClaw-hosted.
+  The production V4 worker backend must invoke the configured Morpheus OpenClaw agent and let OpenClaw own model calls, session state, tool transport, and provider errors. V4 runtime owns the project contract around that turn: task pack, lease, write-boundary verification, expected-artifact verification, WorkResult parsing, and state projection. The raw direct Ollama worker remains a debug backend only and must not be the default live team path.
+
+- The active `gemma4-26b:latest` OpenClaw context window is capped at 65,536 tokens.
+  The installed model supports 262,144 tokens, but that allocation was too fragile for repeated live V4 team turns on the current host. V4 should pass compact task packs and project files instead of relying on a maximum context window.
+
+- Morpheus live V4 worker turns use OpenClaw `read` and `write`, not generic `exec`.
+  Generic shell discovery such as `ls -R` repeatedly triggered allowlist-denial loops and empty final turns. Until V4 has a scoped project test tool exposed through OpenClaw, Morpheus should inspect known project paths directly and leave validation enforcement to runtime artifact checks, host semantic gates, and Oracle.
+
+- V4 worker tasks may defer semantic test creation when tests are not part of the current TaskPack.
+  Morpheus must not block only because `tests/test_main.py` is not in `Allowed Artifacts` for an implementation-only task. It should run existing tests when available, submit evidence for the task artifacts, and let a later test task or Oracle own full-project validation. This preserves strict write boundaries without forcing every task to own test creation.
+
+- Known V4 fixture acceptance requires deterministic parent-side gates in addition to Oracle review.
+  For the Fibonacci Tree Visualizer fixture, a model-generated Oracle PASS is not sufficient for final DONE. The V4 team loop must run the deterministic fixture artifact gate before Smith handles a PASS, and downgrade it to a repairable Oracle FAIL when public API, semantic model, helper placement, or CLI behavior is wrong. This keeps agent autonomy while preventing false completion on known acceptance fixtures.
+
 ## 2026-06-08
 - AgenticTeam V4 direction is a lean direct-control lane: `Neo -> Smith -> Morpheus/Worker -> Smith -> Oracle -> Smith -> Neo`.
   Smith is the only normal project-progress owner; Morpheus/Worker owns bounded task design/implementation/tests through typed tools and one `WorkResult`; Oracle verifies the overall project independently; Niaobe and separate live Architect handoffs are paused for the first V4 slice. V4 should be built beside the existing V3 system, prove repeated Fibonacci E2E passes, then decide whether to reintroduce specialists.
@@ -10,6 +29,19 @@
 
 - V4 implementation must be milestone-gated and additive.
   Agents should implement `AgenicTeamPlanV4_implementation.md` one phase at a time, validate after each phase, run broader milestone gates before proceeding, keep V3 intact, and require user approval before making V4 the live default or adding deferred MCP/sandbox/PR/specialist capabilities.
+
+## 2026-06-09
+- V4 live project startup must preserve the existing project-management layout.
+  Persistent V4 projects are created under the normal active-projects root and keep `PROJECT.md`, `PROJECT_STATE.md`, `CURRENT_TASK.md`, `BRIEF.md`, `RESULT.md`, `DONE_REPORT.md`, `BLOCKED_REPORT.md`, `.openclaw/`, `management/PLAN.md`, `management/BACKLOG.md`, `management/tasks/`, `management/architecture/`, `management/validation/`, `src/`, and `tests/`. `.openclaw/events.jsonl`, `.openclaw/state.json`, and leases are the typed truth/evidence layer, while the markdown files remain the human-readable project process surface.
+
+- V4 Worker allowed artifacts are enforced by the runner, not only by prompts.
+  Morpheus may read broadly inside the project workspace, but `fs_write`, `fs_patch`, and `fs_mkdir` for V4 task work must be constrained to the current TaskPack's `allowed_artifacts`. If a worker needs another file, it must block or receive a new/updated TaskPack from Smith.
+
+- V4 known-artifact scope blocks are repairable Smith decisions.
+  When Morpheus blocks because a required edit target is outside the current TaskPack, Smith may expand allowed artifacts and retry only if the requested path is already a known planned project artifact. Unknown paths and vague failures remain blocked. This keeps worker write boundaries strict while avoiding fatal stalls from an underspecified task scope.
+
+- V4 E2E acceptance must include deterministic semantic gates, not only agent-written tests or Oracle PASS.
+  For project fixtures such as Fibonacci Tree Visualizer, the parent runner must verify the actual project goal directly: depth affects rendered output, configuration flags matter, output is a visible tree rather than numeric-only text, and final state files agree on DONE. Oracle remains useful review, but tests-passed plus Oracle PASS is not sufficient evidence by itself.
 
 ## 2026-06-04
 - Oracle should use a wrapper-only `exec` surface for VERIFY work.
@@ -535,3 +567,35 @@
   "sent" from an earlier handoff generation masks a freshly dropped ack forever. Known limitation:
   reap<->re-handoff oscillation is bounded (one block per idle budget, visible via blocked_count) but only
   truly fixed by rotating Niaobe's session.
+
+- 2026-06-09 — V4 Oracle FAIL is repairable before terminal failure. Smith must create a typed/evented repair
+  task and write the matching `management/tasks/T###.md` document; the runner/orchestrator may dispatch the
+  repair with the known project artifacts, then rerun Oracle within a bounded repair budget. Oracle is a
+  verifier, not the final blocker on first FAIL.
+
+- 2026-06-09 — For Fibonacci Tree Visualizer projects, ASCII branch rendering is acceptable when the project
+  says ASCII/Unicode. Oracle must not fail an ASCII tree solely for lacking Unicode unless `PROJECT.md`
+  explicitly requires Unicode-only output. Required failures remain numeric-only output, nested value-dict
+  output, lack of depth-controlled branch drawing, and missing CLI/configuration validation.
+
+- 2026-06-09 — The V4 Fibonacci semantic gate must reject test-helper leakage into production source.
+  `nonempty_lines` belongs in `tests/test_main.py`, not `src/main.py`, and tests must not import it from
+  `src.main`. T004 may repair both tests and implementation, but a passing project must contain clean source
+  with exactly one `fibonacci`, one `generate_fibonacci_tree`, and one `render_tree` implementation.
+
+- 2026-06-10 — V4 artifact policy separates deliverables from write scope. `expected_artifacts` are the
+  files a task must deliver before DONE; `writable_paths` are the files/directories a worker may edit while
+  doing the task; `protected_paths` are runtime/project-control files the worker must not mutate. Do not use
+  task-local expected artifacts as the write boundary. The default writable scope is source, tests, README,
+  and docs; Smith may narrow or extend it via explicit task metadata when needed.
+
+- 2026-06-10 — Neo starts V4 projects by launching `run_v4_team.sh --background` and reporting startup
+  evidence (`V4_TEAM_STARTED`, `PROJECT_ID`, `EXPECTED_PROJECT_PATH`, `V4_TEAM_PID`, `V4_TEAM_LOG`). Neo does
+  not keep a single agent turn open for Smith/Morpheus/Oracle execution. The real full-team acceptance gate is
+  the Neo-driven Fibonacci E2E; the direct conductor E2E remains a lower-level diagnostic.
+
+- 2026-06-10 — Smith Oracle-repair tasks must be executable contracts, not only prose. On Oracle FAIL, Smith
+  creates a concise repair task, puts the full Oracle failure in `management/tasks/T###.md`, and derives
+  `expected_artifacts`, `writable_paths`, and `protected_paths` from existing project task contracts plus
+  writable Oracle evidence paths. Repair dispatch metadata must not be empty; Morpheus receives the dispatch
+  policy as the task pack source of truth.

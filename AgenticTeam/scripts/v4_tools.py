@@ -16,6 +16,39 @@ from AgenticTeam.scripts.v4_contracts import (
 from AgenticTeam.scripts.v4_events import append_event_v4
 from AgenticTeam.scripts.v4_leases import validate_lease
 
+
+def augment_test_feedback(output: str) -> str:
+    """Add compact repair hints for common test failures without hiding raw output."""
+    text = output or ""
+    lowered = text.lower()
+    is_import_time_cli_parse = (
+        "argparse" in lowered
+        and "parse_args" in lowered
+        and (
+            "systemexit: 2" in lowered
+            or "unrecognized arguments" in lowered
+            or "invalid int value" in lowered
+        )
+    )
+    if not is_import_time_cli_parse or "ACTIONABLE_TEST_FAILURE[import_time_cli_parse]" in text:
+        return text
+
+    hint = (
+        "ACTIONABLE_TEST_FAILURE[import_time_cli_parse]: pytest is importing project modules during "
+        "test collection, but project code is parsing CLI arguments at import time. Fix the source "
+        "module, not the tests: keep importable functions side-effect free, move ArgumentParser setup, "
+        "parse_args(), and printing into main(argv=None) or under if __name__ == \"__main__\", then rerun tests."
+    )
+    return f"{hint}\n\n--- Original test output ---\n{text}"
+
+
+def process_test_output(process: subprocess.CompletedProcess[str]) -> str:
+    output = "\n".join(part for part in (process.stdout, process.stderr) if part)
+    if process.returncode != 0:
+        return augment_test_feedback(output)
+    return output
+
+
 class V4ToolError(Exception):
     """Base exception for V4 tool errors."""
     def __init__(self, error_code: str, message: str = ""):
@@ -251,7 +284,7 @@ class V4Tools:
                 "stdout": process.stdout,
                 "stderr": process.stderr
             }, actor=actor)
-            return process.stdout or process.stderr
+            return process_test_output(process)
         except Exception as e:
             raise V4ToolError("invalid_payload", f"Failed to execute tests: {e}")
 
@@ -347,3 +380,118 @@ class V4Tools:
             "summary": oracle_result.summary
         }, actor=actor)
         return "Success"
+
+    # --- Mattermost Tools ---
+
+    def mm_send_message(self, message: str, target: str, actor: str, reply_to: Optional[str] = None) -> str:
+        """Sends a message via Mattermost by calling the OpenClaw CLI."""
+        if not message.strip():
+            raise V4ToolError("invalid_payload", "Message body cannot be empty")
+        if not target.strip():
+            raise V4ToolError("invalid_payload", "Target channel/user cannot be empty")
+
+        cmd = [
+            "openclaw", "message", "send",
+            "--account", actor,
+            "--channel", "mattermost",
+            "--target", target,
+            "--message", message
+        ]
+        if reply_to:
+            cmd.extend(["--reply-to", reply_to])
+
+        self._log_event("mm_message_sent", {
+            "target": target,
+            "message": message,
+            "reply_to": reply_to
+        }, actor=actor)
+
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            stdout = res.stdout.strip()
+            return f"Success: {stdout}"
+        except subprocess.CalledProcessError as e:
+            err = e.stderr.strip() or e.stdout.strip()
+            raise V4ToolError("mm_delivery_failed", f"Failed to send message: {err}")
+
+    def mm_read_messages(self, target: str, actor: str, limit: int = 10) -> str:
+        """Reads recent messages from a channel via Mattermost by calling the OpenClaw CLI."""
+        if not target.strip():
+            raise V4ToolError("invalid_payload", "Target channel/user cannot be empty")
+
+        cmd = [
+            "openclaw", "message", "read",
+            "--account", actor,
+            "--channel", "mattermost",
+            "--target", target,
+            "--limit", str(limit),
+            "--json"
+        ]
+
+        self._log_event("mm_messages_read", {
+            "target": target,
+            "limit": limit
+        }, actor=actor)
+
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return res.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            err = e.stderr.strip() or e.stdout.strip()
+            raise V4ToolError("mm_read_failed", f"Failed to read messages: {err}")
+
+    # --- System Diagnostic Tools ---
+
+    def sys_diagnose(self, actor: str) -> str:
+        """Runs diagnostics on the OpenClaw agent team."""
+        try:
+            status_cmd = ["openclaw", "status"]
+            status_res = subprocess.run(status_cmd, capture_output=True, text=True, check=False)
+            status_out = status_res.stdout.strip()
+
+            logs_cmd = ["openclaw", "logs", "--plain", "--limit", "200"]
+            logs_res = subprocess.run(logs_cmd, capture_output=True, text=True, check=False)
+            logs_out = logs_res.stdout.strip()
+
+            team_status_cmd = ["bash", str(self.project_root / "AgenticTeam" / "scripts" / "team_status.sh")]
+            team_status_res = subprocess.run(team_status_cmd, capture_output=True, text=True, check=False)
+            team_status_out = team_status_res.stdout.strip()
+
+            self._log_event("sys_diagnose_run", {}, actor=actor)
+
+            return (
+                f"=== OpenClaw Status ===\n{status_out}\n\n"
+                f"=== Team Status Script ===\n{team_status_out}\n\n"
+                f"=== Recent Logs ===\n{logs_out}"
+            )
+        except Exception as e:
+            raise V4ToolError("sys_diagnose_failed", f"Failed to run diagnostics: {e}")
+
+    def sys_run_tests(self, test_path: str, actor: str) -> str:
+        """Runs tests locally for diagnostics without requiring a lease."""
+        target_path = self._validate_path(test_path)
+
+        import sys
+        python_exe = "./env-python/bin/python"
+        if not (self.project_root / python_exe).exists():
+            python_exe = sys.executable
+
+        import os
+        env = os.environ.copy()
+        proj_root_str = str(self.project_root)
+        env["PYTHONPATH"] = f"{proj_root_str}:{proj_root_str}/src:" + env.get("PYTHONPATH", "")
+
+        cmd = f"PYTHONDONTWRITEBYTECODE=1 {python_exe} -m pytest -q {target_path}"
+        try:
+            process = subprocess.run(
+                cmd,
+                shell=True,
+                cwd=self.project_root,
+                env=env,
+                capture_output=True,
+                text=True
+            )
+            self._log_event("sys_run_tests", {"test_path": test_path}, actor=actor)
+            return process_test_output(process)
+        except Exception as e:
+            raise V4ToolError("sys_run_tests_failed", f"Failed to run diagnostic tests: {e}")

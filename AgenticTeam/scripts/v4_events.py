@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import List, Optional
 from AgenticTeam.scripts.v4_contracts import EventV4
 
-DEFAULT_EVENT_FILE = os.environ.get("V4_EVENT_FILE", ".openclaw/events.jsonl")
+DEFAULT_EVENT_FILE = ".openclaw/events.jsonl"
 
 def get_event_file_path() -> Path:
-    return Path(DEFAULT_EVENT_FILE)
+    return Path(os.environ.get("V4_EVENT_FILE", DEFAULT_EVENT_FILE))
 
 def clear_events_v4():
     """Clear all events in the event file (truncates the file or deletes it)."""

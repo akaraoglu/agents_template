@@ -1,58 +1,29 @@
 # Tools - Neo
 
-## Project creation
+## Start V4 Project
 
 ```text
-exec: bash /home/alik/workspace/clawspace/bin/new_project.sh "<Project Title>"
+write: path=/home/alik/workspace/clawspace/workspaces/neo/v4_PROJECT.md content=<full Master project goal>
+exec: bash /home/alik/workspace/clawspace/bin/run_v4_team.sh --background --project-root /home/alik/workspace/clawspace/projects/active --project-id "<project_slug>" --title "<project_title>" --project-file /home/alik/workspace/clawspace/workspaces/neo/v4_PROJECT.md
 ```
 
-Capture `PROJECT_ID` from the `Project ID:` line in the output. `new_project.sh`
-must run before any rooted project helper.
+Use this for all new project starts.
+Do not wait inside your own turn for the whole project to finish; the background V4 runtime owns Smith, Morpheus, Oracle, and finalization.
 
-## Rooted project writes
+For the official V4 Fibonacci E2E fixture only, append:
 
 ```text
-write: /home/alik/workspace/clawspace/workspaces/neo/draft_PROJECT.md
-exec: bash /home/alik/workspace/clawspace/bin/project_write.sh "<PROJECT_ID>" "PROJECT.md" --source-file "/home/alik/workspace/clawspace/workspaces/neo/draft_PROJECT.md" --action neo_project_write
-exec: bash /home/alik/workspace/clawspace/bin/project_read.sh "<PROJECT_ID>" "PROJECT.md"
+--fixture fibonacci_tree_visualizer
 ```
 
-Use rooted helpers only. Do not send project paths to other agents.
+Do not append fixture selectors for normal Master project requests.
 
-## Handoff and notification
+## Diagnose V4 Project
 
 ```text
-exec: bash /home/alik/workspace/clawspace/bin/mm_post.sh neo "🚀 Neo: [<PROJECT_ID>] created and seeded. Handing to Smith."
-exec: bash /home/alik/workspace/clawspace/bin/handoff.sh neo smith "<PROJECT_ID>" "Read PROJECT.md and start sequential planning." HANDOFF
+read: /home/alik/workspace/clawspace/projects/active/PROJECT_ID/.openclaw/state.json
+read: /home/alik/workspace/clawspace/projects/active/PROJECT_ID/.openclaw/events.jsonl
+read: /home/alik/workspace/clawspace/projects/active/PROJECT_ID/PROJECT_STATE.md
+read: /home/alik/workspace/clawspace/projects/active/PROJECT_ID/CURRENT_TASK.md
+read: /home/alik/workspace/clawspace/projects/active/PROJECT_ID/management/PLAN.md
 ```
-
-`sessions_send` to Smith must use the exact `ENVELOPE:` value returned by
-`handoff.sh`.
-
-## sessions_send to Smith
-
-```json
-{
-  "sessionKey": "agent:smith:main",
-  "message": "<ENVELOPE from handoff.sh>"
-}
-```
-
-## Troubleshooting and Diagnostics
-
-```text
-exec: openclaw status
-exec: openclaw logs --plain --limit 200
-exec: bash /home/alik/workspace/agent_template_new/AgenticTeam/scripts/team_status.sh
-```
-
-## Python diagnostics
-
-```text
-exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --module unittest -- tests/test_main.py
-exec: bash /home/alik/workspace/clawspace/bin/python_claw.sh --cwd "<runtime-or-workspace-directory>" --syntax-check "src/main.py"
-```
-
-`python_claw.sh` uses `/home/alik/workspace/clawspace/venv-claw` without shell
-activation. Use it only for local Python diagnosis; role runtime helpers remain
-the authority for project lifecycle and final evidence.

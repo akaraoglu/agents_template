@@ -8,3 +8,10 @@ claw_agents_team/runtime/config/config.local.yaml
 env-python/
 .antigravitycli/
 *.zip
+AgenticTeam/logs/
+
+# Python/generated local state
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.openclaw/

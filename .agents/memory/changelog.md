@@ -1,3 +1,199 @@
+## 2026-06-11
+- User request: Commit the working V4 team state after the real Neo-driven Fibonacci E2E passed.
+- Agent action:
+  - Prepared a V4 milestone commit containing the OpenClaw-backed worker path, V4 team runtime, fixture semantic gates, prompt/config updates, tests, documentation/memory updates, and legacy cleanup already present in the worktree.
+  - Kept live project run files outside the repository untouched.
+
+## 2026-06-10 18:29:48 EEST
+- User request: Move the V4 worker path away from direct raw Ollama, use OpenClaw agents for Morpheus, and get the real Neo-driven Fibonacci E2E passing.
+- Agent action:
+  - Added an OpenClaw-backed V4 Morpheus worker runner that invokes `openclaw agent --agent morpheus`, parses marker-wrapped `WorkResult` JSON, records typed `worker_agent_failed` events on no-output/tool/model failures, and validates expected artifacts plus write boundaries before Smith can accept DONE.
+  - Made the OpenClaw worker backend the default V4 live path while keeping the direct raw Ollama worker as a debug-only backend.
+  - Kept Morpheus on OpenClaw `read`/`write` tools only for V4 worker turns and left shell validation to runtime/Oracle until a scoped test tool exists.
+  - Tightened the Fibonacci fixture task contracts and Oracle verification instructions around public `fibonacci()`, branch-layer semantics, `nonempty_lines`, CLI behavior, and visible tree rendering.
+  - Added a deterministic Fibonacci fixture gate inside the V4 team loop so an Oracle PASS is downgraded to a repairable FAIL before final DONE if fixture semantics are wrong.
+  - Added regression tests for the OpenClaw worker runner, no-result blocking, Neo fixture contract, Oracle prompt, and Fibonacci fixture semantic gate.
+- Validation/results:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_openclaw_worker.py tests/test_v4_team_start.py` -> `7 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_neo_e2e_runner.py tests/test_v4_oracle.py tests/test_v4_fibonacci_semantics.py tests/test_v4_team_start.py` -> `16 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_*.py tests/test_sync_live_openclaw.py` -> `77 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `77 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_neo_test.py --project-root /home/alik/workspace/clawspace/projects/active` -> `NEO_E2E_RESULT=DONE` at `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-neo-20260610-152722`.
+- Result: The real Neo-driven V4 Fibonacci E2E now passes through the intended OpenClaw agent path. The run showed one repairable missing-WorkResult retry on T004, then completed with `PROJECT_STATE.md` phase `DONE` and `waiting_for` `none`.
+
+## 2026-06-10 16:14:03 EEST
+- User request: Explain why the latest real Neo V4 E2E stalls at Morpheus.
+- Agent action:
+  - Inspected `run_v4_team.py`, `v4_worker.py`, `v4_model.py`, the latest V4 team log, the project event ledger, and the Ollama service journal for the T002 window.
+  - Confirmed the V4 Morpheus worker is a direct raw Ollama ReAct loop, not an OpenClaw nested agent session.
+  - Confirmed `V4WorkerRunner` blocks on `requests.post(... /api/chat ..., timeout=600)` and only logs project events after a JSON tool action returns.
+  - Found the T002 model request returned HTTP 500 in Ollama after about 5m4s, with no assistant content/tool action produced.
+- Result: The visible stall is caused by the raw Morpheus worker waiting on an Ollama `/api/chat` call that fails before producing content. Because the runtime does not emit a typed `worker_model_failed` or `task_blocked` event for that pre-tool failure, the project remains at `active_task=T002`, `waiting_for=worker`.
+
+## 2026-06-10 16:09:54 EEST
+- User request: Use `gemma4-26b` for all AgenticTeam agents and run the real Neo-driven E2E.
+- Agent action:
+  - Updated `AgenticTeam/config/openclaw.json` so the default primary model and Neo, Smith, Morpheus, and Oracle all use `ollama/gemma4-26b:latest`.
+  - Synced the source config into `/home/alik/.openclaw/openclaw.json` with `sync_live_openclaw.py --agent neo --agent smith --agent morpheus --agent oracle --apply`.
+  - Verified source and live active agent entries point at `ollama/gemma4-26b:latest`.
+  - Ran `openclaw config validate`; it reported the live config is valid, with only the sandbox blocking its health-state write.
+  - Ran the real Neo Fibonacci E2E for project `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-neo-20260610-130332`.
+- Validation/results:
+  - `ollama ps` confirmed `gemma4-26b:latest` loaded on GPU with `CONTEXT=262144`.
+  - The E2E created the project, Smith planned T001-T004, Morpheus completed T001, Smith accepted T001, and Smith dispatched T002.
+  - The run stalled again after T002 dispatch: no Morpheus `fs_read`, `fs_write`, `work_submit`, or `work_block` appeared after `task_dispatched` for T002.
+  - Stopped only the stalled E2E runner and V4 team process for this project.
+- Result: The model switch succeeded, but the real Neo E2E still fails at the same Morpheus T002 no-output stall. This confirms the active model identifier was not the root cause.
+
+## 2026-06-10 15:54:24 EEST
+- User request: Check the installed `gemma4-26b` Ollama model and inspect it with `ollama show gemma4-26b`.
+- Agent action:
+  - Ran `ollama list` and confirmed both `gemma4-26b:latest` and `gemma4:26b` are installed.
+  - Ran `ollama show gemma4-26b` after sandbox escalation was required for local Ollama socket access.
+- Result:
+  - `gemma4-26b` resolves to `gemma4-26b:latest`.
+  - Model details: architecture `gemma4`, parameters `25.8B`, quantization `Q4_K_M`, context length `262144`, capabilities `completion`, `vision`, `tools`, and `thinking`.
+  - No OpenClaw model config change was applied in this step.
+
+## 2026-06-10 15:52:14 EEST
+- User request: Explain what caused the latest real Neo-driven Fibonacci V4 E2E failure.
+- Agent action:
+  - Inspected the latest V4 team log, project state, and event ledger for `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-neo-20260610-123958`.
+  - Confirmed Smith planned and dispatched T001-T004, Morpheus completed T001, Smith accepted T001, and Smith dispatched T002.
+  - Confirmed the event stream stops immediately after `task_dispatched` for T002, with no Morpheus `fs_read`, `fs_write`, `work_submit`, or `work_block` event for T002.
+  - Checked `ollama ps`; `gemma4:26b` is loaded on GPU with `CONTEXT=262144`.
+- Result: The immediate cause was a Morpheus worker/model turn that never produced output after T002 dispatch. The project state is valid up to `active_task=T002`, `waiting_for=worker`; the missing failure handling is that the V4 runtime does not yet convert a no-output/model stall into a typed blocked/failed project event.
+
+## 2026-06-10 15:46:58 EEST
+- User request: Restart Ollama, ensure all agents use `gemma4:26b`, and rerun the real Neo-driven Fibonacci V4 E2E.
+- Agent action:
+  - Changed Neo's source OpenClaw config model from `ollama/qwen3:8b` back to `ollama/gemma4:26b`; Smith, Morpheus, and Oracle were already on `ollama/gemma4:26b`.
+  - Synced live OpenClaw config with `sync_live_openclaw.py --agent neo --agent smith --agent morpheus --agent oracle --apply`.
+  - Attempted `systemctl --user restart ollama`; it failed because no user-level unit exists.
+  - Restarted the system `ollama.service` successfully with `systemctl restart ollama`.
+  - Ran the real Neo Fibonacci E2E at `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-neo-20260610-123958`.
+- Validation/results:
+  - `systemctl status ollama --no-pager` -> service active with new PID after restart.
+  - Live config check confirmed Neo, Smith, Morpheus, and Oracle all use `ollama/gemma4:26b`.
+  - E2E run created the project, Smith planned T001-T004, Morpheus completed T001, and Smith dispatched T002.
+  - The run then stalled at T002 with no Morpheus turn after dispatch; `ollama ps` showed `gemma4:26b` in `Stopping...`.
+  - Stopped only the stalled E2E runner and its V4 team process.
+- Result: Ollama restart and all-agent `gemma4:26b` configuration succeeded. The real Neo E2E still failed due to a local model-serving stall at Morpheus T002, after making more progress than the previous run.
+
+## 2026-06-10 13:36:21 EEST
+- User request: Fix the V4 team flow so weak Morpheus implementation instructions can be caught by Oracle and converted into executable repair tasks, instead of leaving agents stalled after Oracle failure.
+- Agent action:
+  - Updated Smith's Oracle-failure path so repair tasks use a concise title and keep the full Oracle failure details in the task markdown body.
+  - Added repair artifact-policy derivation from existing task contracts plus writable Oracle evidence paths.
+  - Made repair `task_planned` events include `expected_artifacts`, `writable_paths`, and `protected_paths`, so Smith dispatches Morpheus with a usable repair task pack.
+  - Made V4 state projection apply default writable/protected paths for simple task events and reflect task scope expansion in expected artifacts.
+  - Updated the V4 team runners to build Morpheus `TaskPackV4` from Smith dispatch metadata instead of a parallel guessed artifact list.
+  - Added focused Smith regression tests proving Oracle repair tasks and repair dispatch leases have executable source/test/README contracts.
+- Validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_smith.py tests/test_v4_state.py` -> `13 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_team_start.py tests/test_v4_neo_e2e_runner.py tests/test_v4_fibonacci_semantics.py` -> `11 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_smith.py tests/test_v4_state.py tests/test_v4_team_start.py tests/test_v4_neo_e2e_runner.py tests/test_v4_fibonacci_semantics.py` -> `24 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_v4_team.py --dry-run --project-root /tmp/openclaw-v4-smith-repair-dryrun --project-id smith-repair-dryrun --title "Smith Repair Dryrun" --goal "Create a small Python CLI with tests."` -> `V4_TEAM_RESULT=DONE`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `70 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_neo_test.py --project-root /home/alik/workspace/clawspace/projects/active` -> created `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-neo-20260610-103753`, verified initial task contracts are non-empty, then stalled before Morpheus turn 2 with `gemma4:26b` stuck in `Stopping...`; stopped only the two E2E processes for that run.
+- Result: Oracle FAIL now creates a repair task Morpheus can actually execute through the same V4 task-pack contract used for normal implementation tasks. The live Neo E2E did not reach the repaired Oracle-fail path because the local model stalled on T001 after the first read.
+
+## 2026-06-10 13:07:40 EEST
+- User request: Make the V4 Fibonacci E2E test exercise the real use case: give project information to Neo and let the team handle the rest, instead of calling Smith/Morpheus/Oracle directly from the test harness.
+- Agent action:
+  - Added `AgenticTeam/scripts/run_e2e_fibonacci_v4_neo_test.py`, which sends the Fibonacci project info to Neo through `openclaw agent`, then validates the created project, four task docs, final state, tests, and Fibonacci visualizer semantics.
+  - Added `--background` mode to `run_v4_team.sh` so Neo can start the V4 runtime and return quickly while Smith/Morpheus/Oracle continue independently.
+  - Updated Neo `SKILLS.md` and `TOOLS.md` to use the background V4 team start path and reserve `--fixture fibonacci_tree_visualizer` for the official E2E fixture only.
+  - Updated `.agents` testing/playbook/tool docs so the Neo-driven E2E is the real full-team acceptance gate and the direct conductor E2E is a lower-level debug gate.
+  - Fixed live OpenClaw config sync to prune the schema-invalid legacy `agents.defaults.v4_enabled` key and made source config own the active V4 bindings list so stale Niaobe/Architect bindings are removed.
+  - Changed Neo's configured model from `ollama/gemma4:26b` to configured small `ollama/qwen3:8b` for intake/startup responsiveness; Smith/Morpheus/Oracle remain on the existing heavier model path.
+  - Synced live OpenClaw prompts, helper script, exec approvals, and config.
+- Validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_neo_e2e_runner.py tests/test_v4_team_start.py tests/test_sync_live_openclaw.py` -> `7 passed`
+  - `bash -n AgenticTeam/scripts/run_v4_team.sh` -> passed
+  - `bash AgenticTeam/scripts/run_v4_team.sh --background --dry-run --project-root /tmp/openclaw-v4-background-smoke-2 --project-id bg-v4-smoke-2 --title "Background Smoke" --goal "Create a tiny Python CLI."` -> returned `V4_TEAM_STARTED=1`; background log reached `V4_TEAM_RESULT=DONE`
+  - `openclaw config validate` -> `Config valid: ~/.openclaw/openclaw.json`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `68 passed`
+  - First Neo-driven E2E got past config and created `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-neo-20260610-094811`, but running the whole conductor inside Neo's turn failed mid-project; this led to the background launcher fix.
+  - Later Neo-driven E2E attempts failed before project creation because OpenClaw's Ollama fetch timed out after 120s with `gemma4:26b` stuck in `Stopping...`.
+- Current blocker:
+  - `ollama ps` still reports `gemma4:26b` stuck in `Stopping...`.
+  - `systemctl restart ollama` failed with `Access denied`.
+  - `kill` on the Ollama runner PIDs failed with `Operation not permitted`.
+  - The remaining work is host-level: restart/clear the system Ollama service, then rerun `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_neo_test.py --project-root /home/alik/workspace/clawspace/projects/active`.
+- Result: The correct Neo-driven E2E gate and background runtime start path are implemented and validated locally, but the live full-team run is blocked by a stuck system-level Ollama runner outside this repo's permissions.
+
+## 2026-06-10 12:00:31 EEST
+- User request: Fix the V4 allowed-artifacts policy so Morpheus can edit source and tests needed for a task instead of blocking when a file is not listed as an expected deliverable.
+- Agent action:
+  - Split V4 `TaskPack` artifact policy into `expected_artifacts`, `writable_paths`, and `protected_paths`, keeping `allowed_artifacts` only as a compatibility alias.
+  - Updated Smith planning/dispatch, worker prompts, and worker write gates so expected artifacts are required deliverables while `src/**`, `tests/**`, `README.md`, and `docs/**` are the default writable project scope.
+  - Added protected-path enforcement for project control/state files and default management files.
+  - Added worker completion validation that refuses DONE when expected artifacts are missing.
+  - Added test-run feedback for import-time CLI parsing failures so agents repair source import safety instead of weakening tests or blocking on pytest.
+  - Tightened the V4 Fibonacci T004 task text to require source repair when pytest collection exposes `argparse.parse_args()` at import time.
+- Validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_tools.py tests/test_v4_contracts.py tests/test_v4_morpheus.py tests/test_v4_smith.py tests/test_v4_team_start.py` -> `34 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `64 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_v4_team.py --dry-run --project-root /tmp/openclaw-v4-artifact-policy-dryrun --project-id artifact-policy-dryrun --title "Artifact Policy Dryrun" --goal "Create a small Python CLI with tests."` -> `V4_TEAM_RESULT=DONE`
+  - First live V4 Fibonacci E2E confirmed the artifact-policy fix but exposed a separate import-time CLI parsing repair gap.
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --project-root /home/alik/workspace/clawspace/projects/active --timeout-seconds 900 --stall-seconds 180` -> `E2E Validation Gate PASSED` at `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-20260610-085856-1`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/sync_live_openclaw.py --agent neo --agent smith --agent morpheus --agent oracle` -> `0 create, 0 update, 40 unchanged`
+- Result: Morpheus can now create or repair tests and implementation files within the declared writable scope while the runtime still protects project control files and requires expected deliverables before DONE.
+
+## 2026-06-10 08:50:00 EEST
+- User request: Switch AgenticTeam fully to V4, remove legacy unused files/code/folders, keep the existing project-management files/folders, validate the system, and make the live OpenClaw path use V4.
+- Agent action:
+  - Added `run_v4_team.py` / `run_v4_team.sh` as the Neo-started V4 conductor path and made active agent prompts/config describe only the V4 flow.
+  - Removed repository source for Niaobe, Architect, Covenant/V3 worker runtimes, legacy helper scripts, old phase canaries, abandoned V4 launcher/event-bus prototype files, old agent workspaces/skills, old tests, generated caches, and obsolete V3 planning docs.
+  - Moved shared Ollama JSON/config helpers into `v4_model.py`, pointed worker/oracle prompt compilation at the active `AgenticTeam/agents/<role>` prompts, and added V4 model/sync tests.
+  - Changed live exec-approval sync from additive merge to `replace-allowlist` so old helper approvals are dropped while OpenClaw socket metadata is preserved.
+  - Added the V4 worker rule that implementation-only tasks must not block only because test files are not writable; tests may be created by a later task and Oracle verifies the whole project.
+  - Updated `.agents` V4 testing/debugging/playbook/tool guidance and `.gitignore`.
+  - Applied live sync to `/home/alik/.openclaw` and `/home/alik/workspace/clawspace/bin/run_v4_team.sh`.
+- Validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_*.py` -> `58 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_sync_live_openclaw.py tests/test_v4_*.py` -> `59 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `59 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/sync_live_openclaw.py --agent neo --agent smith --agent morpheus --agent oracle` -> dry-run valid, `1 create, 37 update, 2 unchanged`, exec approvals use `replace-allowlist`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_v4_team.py --dry-run --project-root /tmp/openclaw-v4-clean-dryrun --project-id clean-v4-dryrun --title "Clean V4 Dryrun" --goal "Create a small Python CLI with tests."` -> `V4_TEAM_RESULT=DONE`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --project-root /home/alik/workspace/clawspace/projects/active --timeout-seconds 900 --stall-seconds 180` -> first run exposed Morpheus blocking on test ownership; after the worker/task contract fix, rerun passed with `E2E Validation Gate PASSED` at `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-20260610-084233-1`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/sync_live_openclaw.py --agent neo --agent smith --agent morpheus --agent oracle --apply` -> live sync applied, `1 create, 37 update, 2 unchanged`
+- Result: Source, tests, prompts, live OpenClaw config, and exec approvals are on the V4-only path. Inert legacy helper binaries still exist under `/home/alik/workspace/clawspace/bin`, but they are not referenced by active source config or live exec approvals.
+
+## 2026-06-09 16:09:07 EEST
+- User request: Fix V4 Fibonacci E2E so the project result actually draws a depth-controlled Fibonacci tree and Smith writes final DONE state, instead of passing a weak numeric/tree-dictionary implementation.
+- Agent action:
+  - Fixed Smith's Oracle idempotency path so an already-emitted `oracle_passed` event still syncs `.openclaw/state.json` and markdown views before returning.
+  - Replaced the V4 Fibonacci task contract with branch-layer, renderer, CLI, and semantic-test requirements that reject numeric-only output and the old nested `value/left/right` shape.
+  - Added deterministic final E2E semantic validation for branch-layer schema, CLI depth, scale-sensitive output, branch drawing characters, and final state file consistency.
+  - Updated the persistent V4 project starter's Fibonacci fixture tasks to match the corrected contract.
+  - Added focused semantic-gate and Oracle/Smith state regression tests.
+- Validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_smith.py tests/test_v4_oracle.py tests/test_v4_fibonacci_semantics.py` -> `12 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --dry-run --project-root /tmp/v4-e2e-semantic-dryrun-2` -> `E2E Validation Gate PASSED`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_*.py tests/test_v4_fibonacci_semantics.py` -> `58 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_v4_project.py --project-root /tmp/v4-project-fibonacci-contract-smoke --project-id fib-fixture --title 'Fibonacci Fixture Smoke' --project-file AgenticTeam/fixtures/fibonacci_tree_visualizer.md --fixture fibonacci_tree_visualizer` -> project created with corrected fixture tasks.
+  - First live semantic E2E failed usefully: the new gate exposed malformed source/tests instead of false PASS, and Smith's known-artifact scope expansion was exercised.
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --project-root /tmp/v4-live-e2e-semantic-2 --timeout-seconds 900 --stall-seconds 180` -> `E2E Validation Gate PASSED`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `278 passed, 1 warning`
+- Result: V4 Fibonacci E2E now requires actual depth-controlled branch drawing semantics and final DONE state sync, so the previous numeric/tree-dictionary false success is rejected.
+
+## 2026-06-09 15:40:29 EEST
+- User request: Fix the V4 failure where Morpheus blocks during validation because a needed source file, such as `src/main.py`, is outside the current task's allowed artifacts.
+- Agent action:
+  - Added Smith-side scope expansion helpers that treat "known planned artifact omitted from TaskPack" blocks as repairable parent scope decisions.
+  - Updated the V4 Fibonacci E2E runner to retry the same task with bounded expanded allowed artifacts after recording `task_scope_expanded` and releasing the stale worker lease.
+  - Added Smith regression tests for known-artifact expansion, unknown/vague block rejection, and retry after scope expansion.
+- Validation:
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_smith.py` -> `7 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_morpheus.py tests/test_v4_tools.py` -> `10 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_*.py` -> `53 passed`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --dry-run --project-root /tmp/v4-e2e-recovery-dryrun` -> `E2E Validation Gate PASSED`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --project-root /tmp/v4-live-e2e-recovery --timeout-seconds 900 --stall-seconds 180` -> `E2E Validation Gate PASSED`
+  - `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `275 passed, 1 warning`
+- Result: V4 no longer treats a worker's request to edit a known planned artifact as an unrecoverable failure; Smith can expand the TaskPack scope and retry the same task while preserving strict worker write boundaries.
+
 ## 2026-06-09 13:01:00 EEST
 - User request: finalize the milestones until fibonacci e2e test passes.
 - Agent action:
@@ -58,6 +254,12 @@
   - Run all V4 tests: `tests/test_v4_isolation.py`, `tests/test_v4_contracts.py`, `tests/test_v4_events.py`, `tests/test_v4_event_sourcing_comprehensive.py`, `tests/test_v4_state.py`, `tests/test_v4_leases.py`, `tests/test_v4_tools.py` -> All 24 tests passed.
   - Full local test suite run: `256 passed` (0 failures).
 - Result: V4 event store, state rendering, lease management, and typed tool plane are fully implemented and validated with comprehensive tests.
+
+## 2026-06-09 15:21:29 EEST
+- User request: Implement the V4 live startup plan while keeping the existing project-management files and folders exactly as the project process design.
+- Agent action: Added `v4_project_layout.py` as the shared V4 layout contract, wired Smith V4 planning to create `management/PLAN.md`, `management/tasks/*.md`, `BRIEF.md`, root project reports, `.openclaw` files, and existing folders, added `run_v4_project.py` for persistent active-project creation, added `--project-root` support to the V4 Fibonacci E2E runner, and documented Neo's explicit V4 project-start command. Added focused layout tests.
+- Validation: `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_project_layout.py` -> `4 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_smith.py tests/test_v4_state.py tests/test_v4_events.py` -> `10 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --dry-run --keep-workspace` -> `E2E Validation Gate PASSED`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --dry-run --project-root /tmp/v4-active-projects-smoke` -> `E2E Validation Gate PASSED`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_v4_project.py --project-root /tmp/v4-project-starter-smoke --project-id neo-file-goal-smoke --title 'Neo File Goal Smoke' --project-file /tmp/fibonacci_v4_run_1_bot8e4g1/PROJECT.md --task 'T001|Create README|README.md'` -> project created; first real E2E found Morpheus could write `test_main.py` outside T001 allowed artifacts and blocked; after runner enforcement, `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --project-root /tmp/v4-live-e2e-smoke --timeout-seconds 900 --stall-seconds 180` -> `E2E Validation Gate PASSED`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q tests/test_v4_*.py` -> `50 passed`; `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python -m pytest -q` -> `272 passed, 1 warning`.
+- Result: V4 can now create persistent projects in the existing process layout, and a real local-Ollama V4 Fibonacci run completed through Smith -> Morpheus -> Smith -> Oracle -> Smith.
 
 ## 2026-06-08 10:12:18 EEST
 - User request: Create an implementation plan for the V4 plan using the same filename with an `_implementation` suffix, including milestones, phases, and validations agents can follow.
@@ -1779,3 +1981,20 @@
   no-op, in-lock idle-recompute standdown, in-lock terminal standdown, idempotent second pass). `pytest -q`
   -> 213 passed; `contract_linter.py` -> CONTRACT_LINT_OK; canary preflight exit 0. Live dry-run against
   1622 now reports `reap_niaobe_ack` (idle 1807s >= 1800s); full sweep flags only 1622 (no false positives).
+
+## 2026-06-09 16:47:54 EEST — V4 Oracle repair loop and Fibonacci E2E stabilization
+- Request: after Oracle correctly caught a non-tree Fibonacci result, make the V4 flow recover instead of leaving the project BLOCKED.
+- Action: Smith now writes a normal `management/tasks/T###.md` repair task when Oracle returns FAIL. The V4 Fibonacci E2E runner reruns Morpheus on the Smith-created repair task with the known project artifacts, then reruns Oracle within a bounded repair budget. Worker no-submission/model timeout now releases the lease and retries within the existing task-attempt budget.
+- Action: tightened the Fibonacci task contract: T001-T003 only require `src/main.py`; T004 owns semantic tests and has `src/main.py`, `tests/test_main.py`, and `README.md` in scope so it can repair implementation defects discovered by tests. Added deterministic semantic validation for branch-layer model, CLI output, branch characters, depth, scale behavior, and final state sync.
+- Action: updated Oracle guidance so ASCII branch rendering is valid when `PROJECT.md` says ASCII/Unicode. Oracle must still fail numeric-only output, nested value dictionaries, missing depth-controlled branch drawing, or missing CLI/config tests.
+- Validation: focused tests `tests/test_v4_smith.py tests/test_v4_oracle.py tests/test_v4_morpheus.py tests/test_v4_fibonacci_semantics.py` -> 19 passed. Final post-guard focused tests `tests/test_v4_fibonacci_semantics.py tests/test_v4_smith.py tests/test_v4_oracle.py` -> 15 passed. V4 group `tests/test_v4_*.py tests/test_v4_fibonacci_semantics.py` -> 61 passed. Dry-run E2E -> passed. Live E2E `/tmp/v4-live-e2e-oracle-repair-4/run-e2e-fibonacci-v4-20260609-134626-1` -> DONE and semantic gate passed. Final full `pytest -q` -> 281 passed, 1 existing async warning.
+
+## 2026-06-09 17:08:36 EEST — V4 Fibonacci E2E hygiene gate for active project root
+- Request: fix the exact command `PYTHONDONTWRITEBYTECODE=1 ./env-python/bin/python AgenticTeam/scripts/run_e2e_fibonacci_v4_test.py --project-root /home/alik/workspace/clawspace/projects/active` so it passes reliably and does not accept a dirty implementation.
+- Action: reproduced the live command and found the runner could pass while `src/main.py` contained leaked test-helper code. Tightened the deterministic Fibonacci semantic gate to reject `nonempty_lines` in production source, reject tests importing that helper from `src.main`, and require the helper to live in `tests/test_main.py`. Updated the T004 work order so tests use a local helper and source repair should use a clean full-file write when source structure is corrupted.
+- Validation: `tests/test_v4_fibonacci_semantics.py tests/test_v4_smith.py tests/test_v4_oracle.py` -> 17 passed. Dry-run E2E -> passed. Exact active-root live command -> passed at `/home/alik/workspace/clawspace/projects/active/run-e2e-fibonacci-v4-20260609-140635-1` with `Final Project State Phase: DONE` and `E2E Validation Gate PASSED`. Full `pytest -q` -> 283 passed, 1 existing async warning.
+
+## 2026-06-10 11:04:41 EEST — Neo-to-Smith V4 startup diagnostic
+- Request: diagnose why Neo cannot hand off work to Smith and start the process.
+- Action: inspected the live Neo session, live agent prompts, V4 Neo runner, V4 project starter, Smith runtime docs, and the stalled project `tiny-markdown-counter-20260610-1059`. Found that live Neo used the old V3 path (`new_project.sh` + `handoff.sh` + `sessions_send`) rather than the V4 project starter; the live Neo agent prompt still says to forward everything to `v4_neo.py`, and `v4_neo.py` is diagnostics-only. The attempted Smith handoff went to a Neo-spawned subagent labeled `smith`, not the configured Smith agent, so no Smith planning runtime ran.
+- Result: no code changes made. The missing V4 piece is an explicit Neo startup bridge/conductor that creates the V4 project and invokes the V4 Smith planning/progression path deterministically instead of relying on chat/session handoff.

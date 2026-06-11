@@ -6,6 +6,7 @@ from AgenticTeam.scripts.v4_contracts import TaskPackV4, LeaseV4
 from AgenticTeam.scripts.v4_worker import V4WorkerRunner
 from AgenticTeam.scripts.v4_leases import acquire_lease
 from AgenticTeam.scripts.v4_events import clear_events_v4, read_events_v4
+from AgenticTeam.scripts.v4_tools import V4ToolError
 
 @pytest.fixture(autouse=True)
 def clean_logs():
@@ -32,6 +33,9 @@ def test_morpheus_prompt_compilation(tmp_path):
     assert "Morpheus" in prompt
     assert "IDENTITY.md" in prompt or "morpheus" in prompt.lower()
     assert "fs_write" in prompt
+    assert "Expected Artifacts are the required deliverables" in prompt
+    assert "Writable Paths" in prompt
+    assert "Protected Paths" in prompt
 
 def test_morpheus_react_loop_mock_execution(tmp_path):
     tp = TaskPackV4(
@@ -108,6 +112,145 @@ def test_morpheus_react_loop_mock_execution(tmp_path):
     submitted_event = next(ev for ev in events if ev.event_type == "work_submitted")
     assert submitted_event.payload["task_id"] == "T001"
     assert submitted_event.payload["attempt_id"] == "att-1"
+
+def test_morpheus_can_write_tests_when_only_source_is_expected(tmp_path):
+    tp = TaskPackV4(
+        project_id="p1",
+        task_id="T001",
+        workspace_root=str(tmp_path),
+        expected_artifacts=["src/main.py"]
+    )
+    lease = acquire_lease(
+        workspace_root=str(tmp_path),
+        resource_id="T001",
+        owner="morpheus",
+        duration_seconds=30,
+        metadata={"project_id": "p1", "attempt_id": "att-1"}
+    )
+    assert lease is not None
+
+    runner = V4WorkerRunner(tp, lease)
+
+    result = runner._execute_tool(
+        "fs_write",
+        {"relative_path": "tests/test_main.py", "content": "def test_ok(): assert True"},
+    )
+
+    assert "Success" in result
+    assert (tmp_path / "tests" / "test_main.py").exists()
+
+
+def test_morpheus_rejects_protected_project_paths(tmp_path):
+    tp = TaskPackV4(
+        project_id="p1",
+        task_id="T001",
+        workspace_root=str(tmp_path),
+        expected_artifacts=["src/main.py"],
+    )
+    lease = acquire_lease(
+        workspace_root=str(tmp_path),
+        resource_id="T001",
+        owner="morpheus",
+        duration_seconds=30,
+        metadata={"project_id": "p1", "attempt_id": "att-1"},
+    )
+    assert lease is not None
+
+    runner = V4WorkerRunner(tp, lease)
+
+    with pytest.raises(V4ToolError, match="path_protected"):
+        runner._execute_tool("fs_write", {"relative_path": "PROJECT.md", "content": "# bad"})
+
+    with pytest.raises(V4ToolError, match="path_protected"):
+        runner._execute_tool("fs_write", {"relative_path": ".openclaw/state.json", "content": "{}"})
+
+    with pytest.raises(V4ToolError, match="path_protected"):
+        runner._execute_tool("fs_write", {"relative_path": "management/BACKLOG.md", "content": "# bad"})
+
+
+def test_morpheus_rejects_paths_outside_writable_scope(tmp_path):
+    tp = TaskPackV4(
+        project_id="p1",
+        task_id="T001",
+        workspace_root=str(tmp_path),
+        expected_artifacts=["src/main.py"],
+    )
+    lease = acquire_lease(
+        workspace_root=str(tmp_path),
+        resource_id="T001",
+        owner="morpheus",
+        duration_seconds=30,
+        metadata={"project_id": "p1", "attempt_id": "att-1"},
+    )
+    assert lease is not None
+
+    runner = V4WorkerRunner(tp, lease)
+
+    with pytest.raises(V4ToolError, match="path_not_writable"):
+        runner._execute_tool("fs_write", {"relative_path": "secrets.env", "content": "bad"})
+
+def test_morpheus_allows_declared_artifact_write(tmp_path):
+    tp = TaskPackV4(
+        project_id="p1",
+        task_id="T001",
+        workspace_root=str(tmp_path),
+        allowed_artifacts=["src/main.py", "README.md"]
+    )
+    lease = acquire_lease(
+        workspace_root=str(tmp_path),
+        resource_id="T001",
+        owner="morpheus",
+        duration_seconds=30,
+        metadata={"project_id": "p1", "attempt_id": "att-1"}
+    )
+    assert lease is not None
+
+    runner = V4WorkerRunner(tp, lease)
+    result = runner._execute_tool("fs_write", {"relative_path": "src/main.py", "content": "print('ok')"})
+
+    assert "Success" in result
+    assert (tmp_path / "src" / "main.py").read_text(encoding="utf-8") == "print('ok')"
+
+
+def test_morpheus_done_requires_expected_artifacts(tmp_path):
+    tp = TaskPackV4(
+        project_id="p1",
+        task_id="T001",
+        workspace_root=str(tmp_path),
+        expected_artifacts=["src/main.py"],
+    )
+    lease = acquire_lease(
+        workspace_root=str(tmp_path),
+        resource_id="T001",
+        owner="morpheus",
+        duration_seconds=30,
+        metadata={"project_id": "p1", "attempt_id": "att-1"},
+    )
+    assert lease is not None
+
+    runner = V4WorkerRunner(tp, lease)
+
+    with pytest.raises(V4ToolError, match="missing_expected_artifacts"):
+        runner._execute_tool(
+            "work_submit",
+            {
+                "status": "DONE",
+                "summary": "claimed done",
+                "output": {"artifacts": ["src/main.py"]},
+                "evidence": {"tests_passed": True},
+            },
+        )
+
+    runner._execute_tool("fs_write", {"relative_path": "src/main.py", "content": "print('ok')"})
+    assert runner._execute_tool(
+        "work_submit",
+        {
+            "status": "DONE",
+            "summary": "done",
+            "output": {"artifacts": ["src/main.py"]},
+            "evidence": {"tests_passed": True},
+        },
+    ) == "Success"
 
 def test_morpheus_repair_loop(tmp_path):
     tp = TaskPackV4(

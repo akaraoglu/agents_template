@@ -7,29 +7,8 @@
     "live_bin_root": "/home/alik/workspace/clawspace/bin"
   },
   "helper_scripts": {
-    "architect": [
-      "architect_run_task.sh",
-      "python_claw.sh"
-    ],
-    "smith": [
-      "smith_plan_project.sh",
-      "smith_task_progress.sh",
-      "python_claw.sh"
-    ],
-    "morpheus": [
-      "morpheus_run_task.sh",
-      "python_claw.sh"
-    ],
-    "niaobe": [
-      "niaobe_run_task.sh",
-      "python_claw.sh"
-    ],
-    "oracle": [
-      "oracle_run_task.sh",
-      "python_claw.sh"
-    ],
     "neo": [
-      "python_claw.sh"
+      "run_v4_team.sh"
     ]
   },
   "deprecated_source_paths": [
@@ -56,7 +35,7 @@
     "exec_approvals": {
       "source": "config/exec-approvals.json",
       "destination": "/home/alik/.openclaw/exec-approvals.json",
-      "strategy": "additive-allowlist-merge"
+      "strategy": "replace-allowlist"
     }
   },
   "agents": {
@@ -79,37 +58,6 @@
       "workspace_files": [
         "AGENTS.md",
         "HEARTBEAT.md",
-        "IDENTITY.md",
-        "SOUL.md",
-        "TOOLS.md",
-        "USER.md"
-      ],
-      "agent_dir_files": [
-        "AGENT.md",
-        "IDENTITY.md",
-        "SKILLS.md",
-        "SOUL.md"
-      ]
-    },
-    "niaobe": {
-      "workspace_files": [
-        "AGENTS.md",
-        "HEARTBEAT.md",
-        "IDENTITY.md",
-        "SOUL.md",
-        "TOOLS.md",
-        "USER.md"
-      ],
-      "agent_dir_files": [
-        "AGENT.md",
-        "IDENTITY.md",
-        "SKILLS.md",
-        "SOUL.md"
-      ]
-    },
-    "architect": {
-      "workspace_files": [
-        "AGENTS.md",
         "IDENTITY.md",
         "SOUL.md",
         "TOOLS.md",

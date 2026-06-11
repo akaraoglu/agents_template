@@ -2,7 +2,7 @@ import pytest
 import datetime
 from pathlib import Path
 from AgenticTeam.scripts.v4_contracts import WorkResultV4, OracleResultV4
-from AgenticTeam.scripts.v4_tools import V4Tools, V4ToolError
+from AgenticTeam.scripts.v4_tools import V4Tools, V4ToolError, augment_test_feedback
 from AgenticTeam.scripts.v4_leases import acquire_lease, release_lease
 from AgenticTeam.scripts.v4_events import clear_events_v4
 
@@ -117,6 +117,23 @@ def test_testing_and_execution(workspace_with_lease):
     # and returns test output
     res = tools.tests_run("tests/test_main.py", lease.lease_id, "T001", "worker-1", "att-1")
     assert "passed" in res or "dummy" in res or "test_main.py" in res
+
+
+def test_import_time_cli_parse_failure_gets_actionable_feedback():
+    raw_output = """
+INTERNALERROR>   File "/workspace/src/main.py", line 20, in <module>
+INTERNALERROR>     args = parser.parse_args()
+INTERNALERROR>   File "/usr/lib/python3.12/argparse.py", line 1908, in parse_args
+INTERNALERROR>     args, argv = self.parse_known_args(args, namespace)
+INTERNALERROR> SystemExit: 2
+"""
+
+    feedback = augment_test_feedback(raw_output)
+
+    assert "ACTIONABLE_TEST_FAILURE[import_time_cli_parse]" in feedback
+    assert "Fix the source module, not the tests" in feedback
+    assert "main(argv=None)" in feedback
+    assert raw_output.strip() in feedback
 
 def test_work_and_oracle_submission(workspace_with_lease):
     project_root, lease = workspace_with_lease

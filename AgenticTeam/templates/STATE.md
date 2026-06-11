@@ -20,8 +20,8 @@
 - **last_task_result**: none
 
 ## Task Ledger
-<!-- Smith and Niaobe append one line per task transition -->
-<!-- - 2026-05-20T15:00:00Z: T001 READY -> waiting for niaobe -->
+<!-- Smith records V4 task transitions from the typed event log -->
+<!-- - 2026-06-10T15:00:00Z: T001 READY -> waiting for morpheus -->
 
 ## Blockers
 <!-- Any final blocker summary goes here -->

@@ -5,15 +5,15 @@
         "mode": "default",
         "notifyUser": true
       },
-      "maxConcurrent": 4, "v4_enabled": false,
+      "maxConcurrent": 4,
       "model": {
         "fallbacks": [],
-        "primary": "ollama/gemma4:26b"
+        "primary": "ollama/gemma4-26b:latest"
       },
       "models": {
-        "ollama/gemma4:26b": {
+        "ollama/gemma4-26b:latest": {
           "params": {
-            "num_ctx": 262144
+            "num_ctx": 65536
           }
         },
         "ollama/gemma4:31b": {
@@ -34,21 +34,15 @@
       {
         "agentDir": "/home/alik/.openclaw/agents/neo/agent",
         "id": "neo",
-        "model": "ollama/gemma4:26b",
+        "model": "ollama/gemma4-26b:latest",
         "name": "neo",
         "workspace": "/home/alik/workspace/clawspace/workspaces/neo",
-        "skills": [
-          "plan-mode"
-        ],
+        "skills": [],
         "tools": {
           "allow": [
             "exec",
             "read",
             "write",
-            "sessions_send",
-            "sessions_spawn",
-            "sessions_list",
-            "sessions_history",
             "agents_list",
             "gateway",
             "image",
@@ -59,14 +53,13 @@
             "pdf",
             "process",
             "session_status",
-            "sessions_yield",
-            "subagents",
             "tts"
           ],
           "deny": [
             "apply_patch",
             "browser",
-            "canvas"
+            "canvas",
+            "subagents"
           ]
         }
       },
@@ -74,69 +67,9 @@
         "id": "smith",
         "name": "smith",
         "agentDir": "/home/alik/.openclaw/agents/smith/agent",
-        "model": "ollama/gemma4:26b",
+        "model": "ollama/gemma4-26b:latest",
         "workspace": "/home/alik/workspace/clawspace/workspaces/smith",
-        "skills": [
-          "plan-mode"
-        ],
-        "tools": {
-          "allow": [
-            "exec",
-            "read",
-            "write",
-            "sessions_send",
-            "sessions_list",
-            "sessions_history"
-          ],
-          "deny": [
-            "edit",
-            "apply_patch",
-            "sessions_spawn",
-            "browser",
-            "canvas",
-            "nodes",
-            "cron"
-          ]
-        }
-      },
-      {
-        "id": "niaobe",
-        "name": "niaobe",
-        "agentDir": "/home/alik/.openclaw/agents/niaobe/agent",
-        "model": "ollama/gemma4:26b",
-        "workspace": "/home/alik/workspace/clawspace/workspaces/niaobe",
-        "skills": [
-          "plan-mode"
-        ],
-        "tools": {
-          "allow": [
-            "exec",
-            "read",
-            "write",
-            "sessions_send",
-            "sessions_list",
-            "sessions_history"
-          ],
-          "deny": [
-            "edit",
-            "apply_patch",
-            "sessions_spawn",
-            "browser",
-            "canvas",
-            "nodes",
-            "cron"
-          ]
-        }
-      },
-      {
-        "id": "architect",
-        "name": "architect",
-        "agentDir": "/home/alik/.openclaw/agents/architect/agent",
-        "model": "ollama/gemma4:26b",
-        "workspace": "/home/alik/workspace/clawspace/workspaces/architect",
-        "skills": [
-          "plan-mode"
-        ],
+        "skills": [],
         "tools": {
           "allow": [
             "exec",
@@ -146,12 +79,6 @@
           "deny": [
             "edit",
             "apply_patch",
-            "sessions_send",
-            "sessions_list",
-            "sessions_spawn",
-            "sessions_history",
-            "sessions_yield",
-            "subagents",
             "browser",
             "canvas",
             "nodes",
@@ -163,25 +90,17 @@
         "id": "morpheus",
         "name": "morpheus",
         "agentDir": "/home/alik/.openclaw/agents/morpheus/agent",
-        "model": "ollama/gemma4:26b",
+        "model": "ollama/gemma4-26b:latest",
         "workspace": "/home/alik/workspace/clawspace/workspaces/morpheus",
-        "skills": [
-          "plan-mode"
-        ],
+        "skills": [],
         "tools": {
           "allow": [
-            "exec",
             "read",
             "write"
           ],
           "deny": [
             "edit",
             "apply_patch",
-            "sessions_send",
-            "sessions_spawn",
-            "sessions_list",
-            "sessions_history",
-            "sessions_yield",
             "subagents",
             "browser",
             "canvas",
@@ -194,11 +113,9 @@
         "id": "oracle",
         "name": "oracle",
         "agentDir": "/home/alik/.openclaw/agents/oracle/agent",
-        "model": "ollama/gemma4:26b",
+        "model": "ollama/gemma4-26b:latest",
         "workspace": "/home/alik/workspace/clawspace/workspaces/oracle",
-        "skills": [
-          "plan-mode"
-        ],
+        "skills": [],
         "tools": {
           "allow": [
             "exec"
@@ -206,13 +123,8 @@
           "deny": [
             "read",
             "write",
-            "sessions_send",
-            "sessions_list",
             "edit",
             "apply_patch",
-            "sessions_spawn",
-            "sessions_history",
-            "sessions_yield",
             "subagents",
             "browser",
             "canvas",
@@ -223,6 +135,36 @@
       }
     ]
   },
+  "bindings": [
+    {
+      "match": {
+        "channel": "mattermost",
+        "accountId": "neo"
+      },
+      "agentId": "neo"
+    },
+    {
+      "match": {
+        "channel": "mattermost",
+        "accountId": "smith"
+      },
+      "agentId": "smith"
+    },
+    {
+      "match": {
+        "channel": "mattermost",
+        "accountId": "morpheus"
+      },
+      "agentId": "morpheus"
+    },
+    {
+      "match": {
+        "channel": "mattermost",
+        "accountId": "oracle"
+      },
+      "agentId": "oracle"
+    }
+  ],
   "commands": {
     "native": "auto",
     "nativeSkills": "auto",
@@ -236,13 +178,8 @@
     }
   },
   "tools": {
-    "alsoAllow": [
-      "sessions_list",
-      "sessions_send",
-      "sessions_spawn",
-      "sessions_yield",
-      "subagents"
-    ],
+      "alsoAllow": [
+      ],
     "web": {
       "fetch": {
         "enabled": false
@@ -254,8 +191,8 @@
     "sessions": {
       "visibility": "all"
     },
-    "agentToAgent": {
-      "enabled": true
-    }
+      "agentToAgent": {
+      "enabled": false
+      }
   }
 }

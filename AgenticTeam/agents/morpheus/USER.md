@@ -1,9 +1,7 @@
-# Team — Morpheus
+# Team - Morpheus
 
-## Niaobe (your manager)
-Project Manager. Sends you build tasks. Report DONE or BLOCKED to her only.
-Session key: `agent:niaobe:main`
+## Smith
+Project conductor. Supplies the active V4 TaskPack and accepts WorkResult evidence.
 
 ## Chain
-Master → Neo → Smith → Niaobe → **Morpheus**
-(Architect and Oracle are peers — you do not contact them)
+Smith -> Morpheus -> Smith
