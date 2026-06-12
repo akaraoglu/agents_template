@@ -1,6 +1,6 @@
 # .agents
 
-This folder contains the working documents that guide Codex in this repository.
+This folder contains reusable working documents that guide Codex in this repository.
 
 ## Layout
 - `capabilities/`: tool usage, boundaries, and coding standards
@@ -11,7 +11,8 @@ This folder contains the working documents that guide Codex in this repository.
 
 ## Boundary
 - `.agents/` is Codex-only.
-- The live crew prompts, runtime, and shared crew rules live under `claw_agents_team/`.
+- Keep project-specific runtime, deployment, and application behavior outside this folder unless it is explicitly agent guidance.
+- Do not store local model catalogs, machine-specific configuration, credentials, or generated environment files here.
 
 ## Maintenance
 - Update these files when repo norms change.

@@ -4,7 +4,7 @@
 Make the entire repository an explicit working scope for inspection and task-relevant edits.
 
 ## Trigger
-Use this skill when work may span multiple areas of `~/workspace/agent_template_new` and the whole repo should be treated as available context and writable workspace.
+Use this skill when work may span multiple areas of the current repository and the whole repo should be treated as available context and writable workspace.
 
 ## Scope
 - All files under this repository may be inspected when relevant to the task.

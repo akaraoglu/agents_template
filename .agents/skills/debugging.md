@@ -20,17 +20,6 @@ diagnosed.
 5. Fix the root cause, not just the visible symptom.
 6. Add or update a test if the bug could recur.
 
-## OpenClaw Team Failure Analysis
-- Inspect typed state first:
-  `.openclaw/events.jsonl`, `.openclaw/state.json`, `.openclaw/leases.json`,
-  `PROJECT_STATE.md`, `CURRENT_TASK.md`, and `management/BACKLOG.md`.
-- Classify the failing boundary before editing:
-  `project_start`, `smith_plan`, `taskpack_scope`, `worker_tools`,
-  `work_result`, `oracle_result`, `smith_finalization`, or `sync`.
-- Reproduce through the narrowest gate, then rerun the same gate after the
-  fix.
-- Use the Fibonacci E2E only after the narrow gate is green.
-
 ## Verification
 - Reproduction no longer fails.
 - Relevant tests pass.
