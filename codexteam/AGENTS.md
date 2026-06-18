@@ -9,7 +9,6 @@ Before substantial work, inspect the relevant guidance under `.agents/`:
 - `.agents/capabilities/` for stable environment, safety, and coding standards
 - `.agents/skills/` for reusable workflows that match the task
 - `.agents/playbooks/` for narrow implementation, debugging, or operational procedures
-  - `.agents/playbooks/add-ollama-model-to-codex.md` — register a local Ollama model as a Codex `--profile` (Modelfile, catalog, profile, KV-cache budget, verification)
 - `.agents/memory/` for durable decisions, corrections, and changelog entries
 
 Use the smallest relevant guidance file. Do not treat `.agents/` as application source unless the task is to maintain agent guidance.
