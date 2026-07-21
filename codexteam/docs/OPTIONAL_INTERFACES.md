@@ -1,15 +1,5 @@
 # Optional Interfaces
 
-HTTP and MCP are deferred until after the terminal board and core controller are stable.
+HTTP, MCP, dashboards, remote APIs, and multi-user services are outside the current CodexTeam scope.
 
-Future interfaces must wrap core operations instead of replacing them:
-
-- create team
-- read board
-- submit approval
-- fetch evidence
-- request cleanup
-- request merge
-
-No public network listener is part of the MVP.
-
+Any future interface must wrap the existing deterministic commands and versioned contracts. It must not bypass workspace containment, result validation, independent verification, or leader-owned task closure.

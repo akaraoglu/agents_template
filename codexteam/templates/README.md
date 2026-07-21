@@ -1,7 +1,5 @@
 # CodexTeam Templates
 
-Committed team, task, role, project, and policy templates belong here.
+`project/` is the canonical project initialization template. It produces the complete SDD, state, task, management, verification, and delivery document set.
 
-Templates are data, not executable scripts. They must not contain commands that disable or bypass security policy.
-
-`project_user/` is the default real-project initialization template. It includes project management docs, task handoff files, project-local `AGENTS.md`, and reusable lead-agent skills under `.codexteam/skills/`.
+The initializer renders all `{{TOKEN}}` values before writing, copies the current project-relevant skills into `.codexteam/skills/`, creates a one-page team brief, and ignores `.codexteam/runtime/` session state. Templates must be UTF-8 text, must not contain symlinks, and must not embed commands that bypass workspace or verification policy.

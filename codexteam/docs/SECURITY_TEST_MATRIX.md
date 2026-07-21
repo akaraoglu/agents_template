@@ -1,16 +1,16 @@
 # Security Test Matrix
 
-| Category | Expected Result | Test Coverage |
-| --- | --- | --- |
-| Path traversal | Denied | `tests/phase1/test_paths.py`, `tests/phase3/test_policy.py` |
-| Symlink escape | Denied or reported unsafe | `tests/phase1/test_paths.py`, `tests/phase5/test_workspaces.py` |
-| Hidden paths | Denied by default | `tests/phase3/test_policy.py` |
-| Secret-looking paths | Denied by default | `tests/phase3/test_policy.py` |
-| Raw shell command | Denied | `tests/phase3/test_policy.py` |
-| Process execution | Approval required | `tests/phase3/test_policy.py`, `tests/phase6/test_adapters.py` |
-| Network access | Approval required | `tests/phase3/test_policy.py` |
-| Merge | Approval required | `tests/phase3/test_policy.py`, `tests/phase5/test_workspaces.py` |
-| Cleanup | Approval required | `tests/phase3/test_policy.py`, `tests/phase5/test_workspaces.py` |
-| Worker start before plan approval | Denied | `tests/phase7/test_controller.py` |
-| Worker evidence review | Required | `tests/phase4/test_engines.py`, `tests/phase7/test_controller.py` |
-
+| Category | Expected Result | Coverage |
+|----------|-----------------|----------|
+| Absolute/traversal path | Rejected | `tests/test_paths.py` |
+| Symlink escape | Rejected | `tests/test_paths.py` |
+| Unsafe project ID | Rejected | `tests/test_project_init.py` |
+| Result-directory escape | Rejected | `tests/test_spawn.py` |
+| Missing profile | Rejected before execution | `tests/test_spawn.py` |
+| Missing result fields | Rejected | `tests/test_contracts.py` |
+| Copied result template | Rejected | `tests/test_contracts.py`, `tests/test_spawn.py` |
+| Cross-task/attempt result | Rejected | `tests/test_contracts.py`, `tests/test_spawn.py` |
+| Missing artifact | Blocks closure | `tests/test_close_loop.py` |
+| Failed verification | Leaves task incomplete | `tests/test_close_loop.py` |
+| Repeated closure | No duplicate mutation | `tests/test_close_loop.py` |
+| Shell metacharacter pipe | Rejected | `tests/test_tasks.py`, `tests/test_close_loop.py` |

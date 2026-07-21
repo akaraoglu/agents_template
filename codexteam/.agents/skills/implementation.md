@@ -2,47 +2,62 @@
 
 ## Purpose
 
-Implement project changes safely inside the project workspace.
+Implement a bounded project change safely, verify it, and revise it in response to Project Lead feedback.
 
 ## When To Use
 
-Use when writing or modifying source, tests, docs, scripts, configuration, or examples.
+Use when assigned responsibility for source, related tests, scoped technical documentation, scripts, or configuration.
 
 ## Inputs Needed
 
-- Current task
-- Relevant requirements and acceptance criteria
+- Current task handoff and acceptance criteria
 - Existing source and tests
-- Project constraints
+- Project constraints and accepted decisions
 - Verification command
+- Project Lead feedback for revision turns
 
 ## Workflow
 
-1. Read the relevant files before editing.
-2. Keep changes inside the project root.
-3. Make the smallest coherent change that satisfies the current task.
-4. Prefer standard library and existing project patterns.
-5. Avoid new dependencies unless the operator approved them.
-6. Add or update tests for behavior, not just implementation details.
-7. Run focused verification.
-8. Update project docs and task state with what changed.
+1. Read the relevant files before editing and restate the bounded outcome internally.
+2. Keep changes inside the project root and within the handoff's allowed paths.
+3. Make the smallest coherent implementation that satisfies the task.
+4. Prefer the standard library and established project patterns.
+5. Add or update behavioral tests when needed.
+6. Run focused verification and self-review the diff.
+7. Return a draft describing the outcome, exact evidence, uncertainties, and proposed disposition.
+8. On feedback, preserve accepted work and change only the rejected part.
+9. Update only scoped technical documentation. Propose status to the Project Lead; do not close canonical task state.
+
+## Communication Example
+
+Good: “Draft: the Fibonacci renderer and focused tests changed; 8 tests pass. CLI integration has not yet been independently verified.”
+
+Bad: mark `TASKS.md` complete or claim delivery after running only local unit tests.
 
 ## Expected Output
 
 - Source changes scoped to the current task
-- Tests or smoke checks for the behavior
-- Updated project state docs
+- Focused tests or smoke checks
+- A reviewable draft and, after acceptance, one accurate final result
 
 ## Validation
 
-- Changed files are relevant to the task.
-- Tests pass or failures are documented with exact output.
-- No files outside the project root changed.
-- No secrets, generated caches, or unrelated artifacts are added.
+- Changed files are relevant and inside allowed paths.
+- Tests pass or failures are reported with exact output.
+- Accepted code is not churned during revisions.
+- No secrets, generated caches, unrelated artifacts, or false state transitions are added.
 
 ## Common Mistakes
 
-- Editing before reading.
-- Adding dependencies to avoid simple code.
-- Making broad refactors during an MVP task.
-- Treating generated code as done without tests.
+- Editing before reading
+- Broad refactors during a bounded task
+- Hiding failed checks
+- Replacing accepted work while addressing narrow feedback
+- Treating a developer draft as independently verified completion
+- Creating a one-off helper script for a correction that can be made directly and reviewed plainly
+
+## Related Files
+
+- `.agents/skills/testing.md`
+- `.agents/skills/subagent-orchestration.md`
+- Active file under `management/tasks/`

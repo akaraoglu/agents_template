@@ -1,16 +1,16 @@
-# CodexTeam Docs
+# CodexTeam Documentation
 
-Design notes, threat models, runtime layout, policy descriptions, and operator guides belong here.
+These documents describe the current local workflow toolkit.
 
-Keep generated runtime state and agent outputs in `/home/alik/workspace/codexspace`.
+- `CORE_DOMAIN_MODEL.md`: projects, handoffs, results, evidence, and closure state.
+- `PUBLIC_CONTRACTS.md`: stable CLI and JSON contracts.
+- `RUNTIME_LAYOUT.md`: generated workspace layout.
+- `SECURITY_GUIDE.md`: process, path, model, and result boundaries.
+- `SECURITY_TEST_MATRIX.md`: deterministic negative coverage.
+- `E2E_ACCEPTANCE_PLAN.md`: end-to-end acceptance scenarios.
+- `COLD_START_CANARY_2026-07-17.md`: observed cold-start team canary result and follow-up guidance changes.
+- `ADAPTER_GUIDE.md`: local Codex execution boundary.
+- `USER_GUIDE.md`: operator workflow.
+- `TROUBLESHOOTING.md`: common failures.
 
-## Current Architecture References
-
-- `CORE_DOMAIN_MODEL.md`: current core orchestration model for worker results, requested actions, attempts, health, workspace lifecycle, board read models, operator commands, and E2E evidence bundles.
-- `E2E_ACCEPTANCE_PLAN.md`: release-grade E2E scenarios, evidence bundle requirements, consistency checks, and blockers.
-- `ARCHITECTURE_REVIEW.md`: historical Phase 0 readiness review and local model findings.
-- `RUNTIME_LAYOUT.md`: runtime filesystem layout.
-- `SECURITY_GUIDE.md`: safety and policy guidance.
-- `ADAPTER_GUIDE.md`: dry-run, manual, and local Codex/Ollama adapter guidance.
-- `PUBLIC_CONTRACTS.md`: versioned board/read-model and controller command contract policy.
-- `OPTIONAL_INTERFACES.md`: deferred HTTP, MCP, and app-server notes.
+The documentation does not describe or depend on historical application code, archives, a board, HTTP, or MCP.

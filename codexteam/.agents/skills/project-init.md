@@ -8,6 +8,8 @@ Initiate a real project with enough information for a team to implement it safel
 
 Use when the operator asks to create, start, initialize, or define a project.
 
+When Codex starts in `/home/alik/workspace/agent_template/codexteam`, first read `AGENTS.md` and `.agents/LEAD_BOOT.md`. The root session remains the Project Lead throughout initialization and later execution.
+
 ## Inputs Needed
 
 - Project name
@@ -18,27 +20,21 @@ Use when the operator asks to create, start, initialize, or define a project.
 - Constraints
 - Preferred runtime or language, if any
 - Verification expectation
-- `.codexteam/skills/project-doc-map.md`
-- `.codexteam/skills/document-editing.md`
+- `.codexteam/skills/project-doc-map.md` in a generated project
+- `.codexteam/skills/document-editing.md` in a generated project
 
 ## Workflow
 
-1. Ask for missing details if the request is vague.
-2. Create or update `PROJECT.md` with concrete sections:
-   - Goal
-   - Users / Operators
-   - MVP Scope
-   - Non-Goals
-   - Requirements
-   - Acceptance Criteria
-   - Constraints
-   - Architecture Notes
-   - Verification Plan
-   - Delivery Criteria
-   - Open Questions
-3. Update the initialization file set:
-   - `PROJECT.md`: full project contract.
-   - `BRIEF.md`: concise operator-readable summary.
+1. Reuse facts already supplied and ask only for missing material details. Establish the aim, users, MVP scope, non-goals, constraints, acceptance criteria, verification expectation, and delivery outcome.
+2. Present the proposed project description and project-management plan for approval.
+3. Preview the canonical initializer from the guaranteed repository root:
+   `./scripts/init-project.py "<name>" --goal "<goal>" --projects-root ./projects --dry-run`
+4. After approval, run the same command without `--dry-run`.
+5. Treat initialization as structure creation only. The generated task files are scaffolding, not approved implementation assignments, and no worker may be spawned yet.
+6. Update `PROJECT.md` first with the approved project aim, scope, description, and acceptance criteria.
+7. Then update the initialization file set:
+   - `PROJECT.md`: full project contract covering goal, users/operators, MVP scope, non-goals, requirements, acceptance criteria, constraints, architecture notes, verification plan, delivery criteria, and open questions.
+   - `BRIEF.md`: one-page team orientation with current truth, authority order, role ownership, and working agreement.
    - `PROJECT_STATE.md`: current phase, selected project, and implementation readiness.
    - `CURRENT_TASK.md`: current focus and next required approval.
    - `OPEN_QUESTIONS.md`: unresolved questions or explicit closure.
@@ -48,13 +44,14 @@ Use when the operator asks to create, start, initialize, or define a project.
    - `management/PLAN.md`: execution order and handoff rules.
    - `management/BACKLOG.md`: ready queue and blocked queue.
    - `management/tasks/T001.md` through `T004.md`: task handoff contracts.
-4. Create the initial task breakdown only after the spec is testable.
-5. Stop and ask for approval before implementation starts.
+8. Create project-specific milestones, architecture, implementation plan, and task breakdown only after the specification is testable. Replace generic scaffold wording, and give every task one stable responsible AI label and role.
+9. Stop and ask for approval before implementation or worker spawning starts. An explicit instruction such as `GO` authorizes execution.
 
 ## Expected Output
 
 - Strong `PROJECT.md`
-- Useful `BRIEF.md`
+- A project created beneath `./projects`
+- One-page `BRIEF.md` that a new agent can use without chat history
 - Clear open questions or an explicit statement that none remain
 - Initial task plan ready for approval
 - Worker-ready task files with clear context, scope, allowed paths, outputs, verification, evidence, and stop conditions
@@ -65,6 +62,7 @@ Use when the operator asks to create, start, initialize, or define a project.
 - Requirements are specific enough to implement.
 - Non-goals prevent scope drift.
 - Verification plan names concrete checks.
+- Every task names one responsible AI and supports same-session revision.
 
 ## Common Mistakes
 
@@ -73,3 +71,5 @@ Use when the operator asks to create, start, initialize, or define a project.
 - Starting implementation without user approval.
 - Creating tasks that do not map to acceptance criteria.
 - Passing a task to the team without enough context to execute it independently.
+- Treating initializer task scaffolding as an approved implementation plan.
+- Starting implementation or spawning a worker before the operator authorizes execution.

@@ -1,31 +1,61 @@
-# Testing
+# Testing Skill
 
 ## Purpose
-Choose, write, and run tests that validate behavior without unnecessary scope.
 
-## Trigger
-Use this skill when code changes affect behavior, bug fixes, or integration
-points.
+Produce deterministic behavioral evidence and diagnose failures without silently changing requirements or production code.
 
-## Inputs
+## When To Use
+
+Use for test design, test execution, bug reproduction, integration checks, and independent acceptance testing.
+
+## Inputs Needed
+
+- Approved acceptance criteria and active handoff
 - Changed files or feature area
-- Existing test conventions
-- Available test commands
+- Existing test conventions and commands
+- Expected observable behavior
 
-## Steps
-1. Inspect how the repo currently tests the affected area.
-2. Prefer targeted tests before broader suites.
-3. If tests already exist, update or add tests only when necessary to validate
-   the change.
-4. Keep fixtures simple and deterministic.
-5. Run the smallest relevant set first, then broader quality gates if needed.
+## Workflow
 
-## Verification
-- New or updated tests fail before the fix when applicable.
-- Tests pass after the change.
-- No flaky timing or environment assumptions are introduced.
+1. Map each requested check to an approved behavior.
+2. Inspect existing tests and prefer the smallest relevant command first.
+3. Keep fixtures deterministic and avoid implementation-detail assertions.
+4. Run the check and preserve exact command output or a referenced artifact.
+   For repeated CLI-output checks, use the project's capture-capable test code or subprocess API. Do not create `run1.txt`, `run2.txt`, scratch scripts, or shell-redirection artifacts in the project root.
+5. Classify a failure as product behavior, test expectation, environment, or unresolved evidence.
+6. Report the command, observed result, classification, artifact, and recommendation to the Project Lead.
+7. Do not change production code or approved expectations unless separately assigned.
 
-## Notes
-- Do not overfit tests to internal implementation details.
-- Avoid large test rewrites unless explicitly requested.
-- If a test cannot be run, record what blocked it.
+## Communication Example
+
+Good: “`tree 0` differs from the approved base-case contract; the failing output is preserved in `results/t004-tree-zero.txt`. Classification: product defect. Recommendation: return to the developer.”
+
+Bad: silently change the expected value or production code until the test passes.
+
+## Expected Output
+
+- Reproducible commands and observed results
+- Focused behavioral tests when assigned
+- Honest failure classification and evidence references
+
+## Validation
+
+- New tests fail before the fix when practical and pass afterward.
+- Evidence is reproducible by another agent.
+- No flaky timing or environment assumption is introduced.
+- Testing does not silently redefine the product contract.
+
+## Common Mistakes
+
+- Reporting only “tests pass” without the command
+- Repairing source while acting as independent tester
+- Treating an environment failure as a product defect
+- Editing expected output to manufacture a pass
+- Leaving exploratory scripts or repeated-output scratch files in the delivered project
+- Using shell redirection for determinism evidence when an exact-output test can capture both runs safely
+
+## Related Files
+
+- `.agents/skills/verification.md`
+- `.agents/skills/subagent-orchestration.md`
+- Approved acceptance criteria in `PROJECT.md`

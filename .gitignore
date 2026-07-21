@@ -1,3 +1,6 @@
+# CodexTeam and other local agent runtime state
+codexteam/projects/
+codexspace/
 claw_agents_team/var/
 claw_agents_team/.venv/
 claw_agents_team/**/__pycache__/

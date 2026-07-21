@@ -2,52 +2,62 @@
 
 ## Purpose
 
-Edit existing project documents like a careful engineer: read first, preserve structure, change only what was requested, and verify the result.
+Edit project documents carefully while preserving structure and recording only verified, temporally accurate truth.
 
 ## When To Use
 
-Use whenever updating Markdown, project docs, task files, reports, plans, decisions, README files, or handoff documents.
+Use for Markdown, plans, decisions, task files, briefs, reports, READMEs, and delivery handoffs.
 
 ## Inputs Needed
 
-- User request
-- Target document path
-- Existing document content
-- Relevant project doc map entry
-- Any acceptance criteria or task constraints related to the edit
+- User request or active handoff
+- Target document and project doc map
+- Relevant acceptance criteria and verified evidence
+- Current project phase and task ownership
 
 ## Workflow
 
-1. Resolve the document path from the request. If unclear, use the project doc map or ask a focused question.
-2. Read the existing file before editing.
-3. Identify the exact section, paragraph, table row, or list items that need to change.
-4. Preserve all unrelated headings, metadata, IDs, task IDs, tables, and stable structure.
-5. Make the smallest targeted edit that satisfies the request.
-6. Do not rewrite the whole file unless the user explicitly asks for a full rewrite.
-7. Do not invent requirements, tests, decisions, architecture, or delivery evidence.
-8. If needed details are missing, ask the user or record them in `OPEN_QUESTIONS.md`.
-9. Reread the edited file.
-10. Verify the requested change is present and unrelated content survived.
-11. Report the changed file and changed section.
+1. Resolve and read the existing document before editing.
+2. Identify the smallest section that must change and preserve unrelated metadata and structure.
+3. Match every status or delivery statement to current evidence and tense.
+4. Do not turn future work, readiness, or a worker claim into completed verification.
+5. Edit management state only when the handoff explicitly assigns it and the Project Lead has authorized the transition.
+6. Return missing routine details to the Project Lead; involve the operator only for a genuine showstopper.
+7. Reread the edited file and verify that requested changes are present and unrelated content survived.
+8. Use the repository editing mechanism directly. Do not create one-off Python writers, patch files, scratch documents, or probe files for ordinary Markdown corrections.
+
+## Communication Example
+
+Good: “Focused unit tests passed; end-to-end verification is scheduled and is not yet a delivery claim.”
+
+Bad: “The project is fully verified” when only the test harness is ready.
 
 ## Expected Output
 
-- Minimal document edit
-- Existing document structure preserved
-- Clear report of what changed
+- Minimal, reviewable document edits
+- Preserved structure and stable identifiers
+- Claims whose tense and evidence match current truth
 
 ## Validation
 
 - The file was read before editing.
-- The edit is limited to the requested area.
-- Stable metadata and unrelated sections remain.
-- No placeholder text like `TBD`, `TODO`, `define later`, or fake evidence was introduced.
-- The edited file still makes sense without chat history.
+- No requirements, decisions, ownership, tests, or evidence were invented.
+- Management changes were explicitly assigned and leader-authorized.
+- The document makes sense without chat history.
 
 ## Common Mistakes
 
-- Rewriting `PROJECT.md` from scratch to change one paragraph.
-- Deleting sections that were not mentioned by the user.
-- Renaming headings without being asked.
-- Inventing acceptance criteria or verification results.
-- Guessing a document path instead of listing or asking.
+- Rewriting a whole document for a local correction
+- Inventing delivery or test evidence
+- Converting “will verify” into “verified”
+- Silently changing task ownership or completion state
+- Asking the operator for a routine missing detail the Project Lead can resolve
+- Creating helper scripts or scratch files to perform a one-off document edit
+- Adding a precise timestamp that was not actually observed
+- Leaving carriage returns, broken Markdown delimiters, or temporary patch artifacts after a failed edit
+
+## Related Files
+
+- `.agents/skills/project-doc-map.md`
+- `.agents/skills/subagent-orchestration.md`
+- `BRIEF.md`

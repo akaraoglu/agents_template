@@ -1,117 +1,32 @@
 # Public Contracts
 
-CodexTeam public contracts are the stable shapes intended for scripts, future MCP tools, loopback HTTP UI, external operators, and bounded leader orchestration.
-
 ## Compatibility Policy
 
-- Adding an optional field is allowed in the same major version.
-- Removing a field is a breaking change.
-- Renaming a field is a breaking change.
-- Changing the meaning of a field is a breaking change.
-- Changing required timestamp or ID formats is a breaking change.
-- Adding enum values requires consumers to tolerate unknown values or a deliberate version bump.
-- Internal state-store records are not public contracts unless named in this document.
+- Task IDs are uppercase `T` plus 3-6 digits.
+- Contract version `1.0` fields cannot be removed or renamed without a version change.
+- Optional fields may be added only when existing consumers remain valid.
+- CLI exit codes and dry-run behavior are public operator contracts.
 
-## Board Summary Contract
+## Handoff V1
 
-Schema name: `codexteam.board.summary`
+Machine-readable schema: `schemas/handoff-v1.json`.
 
-Schema version: `1.0`
+Required scope includes handoff ID, team ID, task ID, attempt ID, role, profile, workspace, task context, constraints, and completion criteria.
 
-Required metadata:
+## Result V1
 
-- `schema_name`
-- `schema_version`
-- `generated_at`
-- `team_id`
-- `snapshot_id`
-- `source_state_revision`
+Machine-readable schema: `schemas/result-v1.json`.
 
-Required sections:
+The Python validator performs additional semantic checks for canonical IDs, UTC timestamps, bounded summaries, relative paths, evidence requirements, and copied template content.
 
-- `team`
-- `agents`
-- `tasks`
-- `runs`
-- `attempts`
-- `worker_results`
-- `requested_actions`
-- `review_decisions`
-- `approvals`
-- `workspaces`
-- `review_queue`
-- `pending_approvals`
-- `risks`
+## Command Exit Codes
 
-`source_state_revision` is derived from audit state and identifies the state revision observed by the read model.
+- `init-project.py`: `0` success; `2` invalid input or unsafe path.
+- `update-tasks.py`: `0` success/no change; `2` invalid ledger or update.
+- `verify-result.py`: `0` valid; `1` invalid JSON/contract; `2` expectation mismatch.
+- `spawn-subagent.sh`: `0` draft ready or valid final result; `1` failed/correction needed; `2` invalid invocation or session scope; `3` interrupted by timeout with session retained when possible.
+- `close-loop.sh`: `0` closed/already closed; `1` invalid result/artifact/state; `2` independent verification failure.
 
-## Board Detail Contracts
+## Mutation Rule
 
-Detail schemas use `codexteam.board.detail.<kind>` with version `1.0`.
-
-All detail outputs include:
-
-- `schema_name`
-- `schema_version`
-- `generated_at`
-- `team_id`
-- `detail_kind`
-- `item_id`
-- `source_state_revision`
-- `data`
-
-For backward compatibility, fields inside `data` are also exposed at the top level.
-
-## Controller Command Contracts
-
-Controller command contracts use version `1.0`.
-
-Current public command contracts:
-
-- `create_team`
-- `approve_plan`
-- `create_task`
-- `run_worker`
-- `approve_review`
-- `reject_review`
-
-Adapters must call controller APIs or operator command handlers. They must not mutate state files directly.
-
-## Leader Decision Records
-
-`LeaderDecision` records are public audit evidence for bounded autonomous orchestration.
-
-Required fields include:
-
-- `id`
-- `team_id`
-- `leader_agent_id`
-- `observed_snapshot_id`
-- `decision_type`
-- `input_facts`
-- `chosen_action`
-- `reason`
-- `risk_level`
-- `created_requested_actions`
-- `created_tasks`
-- `affected_attempts`
-- `produced_at`
-
-The leader loop may create tasks, request worker-start approvals, start already-approved attempts, aggregate completed worker evidence, and request approval. It must stop at review and approval gates.
-
-## Read-Only Rule
-
-Board/read-model code may read, project, validate, and format state.
-
-Board/read-model code must not:
-
-- save records
-- append audit records
-- decide approvals
-- decide reviews
-- execute workspace actions
-- apply change proposals
-- cleanup workspaces
-- mutate policy
-
-Mutation must flow through controller-owned commands.
+Workers may write handoff-scoped project files during draft and feedback turns. Their conversation artifacts remain under ignored session storage, and those phases never write `results/<task>-<attempt>.json`. An accepted final turn writes that one deterministic result. Only the leader closure command updates task completion and delivery state.

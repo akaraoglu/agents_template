@@ -1,0 +1,3 @@
+FEEDBACK: ACCEPT
+
+The CLI implementation, tests, README, and development evidence passed the deterministic product gate. Finalize one result-v1 for T002/att-001. File changes may name only the files actually changed from `src/fibonacci_tree_cli.py`, `tests/test_fibonacci_tree_cli.py`, `README.md`, and `results/t002-development.txt`. Include this exact evidence shape: `{"type":"test_output","artifact_ref":"results/t002-development.txt","summary":"The standard-library unit and CLI acceptance checks passed.","metadata":{}}`; commands may be added inside metadata. Use actual UTC `produced_at` ending in `Z` and no requested follow-up.

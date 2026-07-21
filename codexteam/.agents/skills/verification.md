@@ -2,46 +2,62 @@
 
 ## Purpose
 
-Prove that project work satisfies the acceptance criteria.
+Independently determine whether claimed work satisfies approved acceptance criteria and whether its evidence supports closure.
 
 ## When To Use
 
-Use before marking any task done, before delivery, and after debugging fixes.
+Use for draft review, final-result inspection, every task closure, and delivery audit.
 
 ## Inputs Needed
 
-- Acceptance criteria
-- Current task
-- Test files
-- Run commands
-- Recent failure output
+- Acceptance criteria and active handoff
+- Worker draft or final result
+- Current source, tests, and evidence artifacts
+- Runnable verification commands
+- Current temporal state
 
 ## Workflow
 
-1. Identify which acceptance criteria the current work claims to satisfy.
-2. Choose the smallest relevant verification first.
-3. Run tests or smoke checks from the project root.
-4. Capture exact command names and result summaries.
-5. If a check fails, move to debugging instead of claiming partial success.
-6. Run broader checks before delivery when the change affects shared behavior.
-7. Record evidence in task docs and `RESULT.md`.
+1. Identify the exact claims and acceptance criteria under review.
+2. Inspect declared files and artifacts rather than trusting summaries.
+3. Compare each claim with the actual artifact content. Artifact existence, schema validity, and another agent's acceptance are not substitutes for this comparison.
+4. Run the smallest relevant command, then broader checks when shared behavior or delivery is affected. Include at least one exact-output or golden comparison for output-format requirements that the existing suite does not fully assert.
+5. Record exact paths, counts, commands, observations, and whether a check is ready or actually passed.
+6. Accept the draft, request precise revision, or report a genuine showstopper.
+7. On failure, preserve evidence and return feedback to the responsible AI. Do not silently repair source unless assigned a separate implementation task.
+8. Record final evidence only after checks have actually run.
+
+## Communication Example
+
+Good: “The E2E harness exists at `tests/test_cli.py`, but the documented command has not executed. Status: ready, not passed.”
+
+Bad: “Everything looks good,” or converting a planned check into completion evidence.
 
 ## Expected Output
 
-- Commands run
-- Pass/fail result
-- Evidence linked to acceptance criteria
-- Known limitations or blockers
+- An acceptance, revision request, or showstopper classification
+- Reproducible command evidence mapped to acceptance criteria
+- Clear separation between readiness, worker claims, and observed success
 
 ## Validation
 
-- Verification is runnable by another agent or operator.
-- Evidence is not just a prose claim.
-- Failed checks are not hidden.
+- Another agent can rerun the checks.
+- Every completion statement is backed by observed evidence.
+- Failed checks and temporal limitations remain visible.
+- Reviewer independence is preserved.
 
 ## Common Mistakes
 
-- Saying "should work" without running anything.
-- Running an irrelevant check.
-- Ignoring flaky or partial failures.
-- Forgetting to update `RESULT.md`.
+- Saying “should work” without execution
+- Repairing the work while reviewing it
+- Reporting a planned or runnable check as passed
+- Omitting exact paths, counts, or commands
+- Advancing state from a worker claim alone
+- Treating a file's existence as proof of claims that its content does not record
+- Inferring exact rendering, determinism, or error-stream behavior from a broad “tests passed” line
+
+## Related Files
+
+- `.agents/skills/testing.md`
+- `.agents/skills/subagent-orchestration.md`
+- `RESULT.md`

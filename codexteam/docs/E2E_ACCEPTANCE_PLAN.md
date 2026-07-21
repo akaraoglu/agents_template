@@ -1,192 +1,73 @@
-# CodexTeam E2E Acceptance Plan
+# End-to-End Acceptance Plan
 
-This document defines release-grade end-to-end validation for CodexTeam. It is behavior-focused and must be implemented against the core architecture in `CORE_DOMAIN_MODEL.md`.
+## E2E-000: Cold-Start Project Lead Discovery
 
-The implementation sequence remains in `../IMPLEMENTATION_PLAN.md`. This document defines what the final E2E gates must prove.
+Start a fresh Codex session with `/home/alik/workspace/agent_template/codexteam` as its working directory and provide only a short request such as “create a new project.” Prove that the agent:
 
-## 1. Scenario IDs
+- identifies itself as the root Project Lead from `AGENTS.md`;
+- discovers `.agents/LEAD_BOOT.md`, reads it before initialization, and avoids broad guidance discovery;
+- reuses supplied facts and asks only for material missing decisions;
+- proposes the project description and management plan before initialization;
+- previews initialization beneath `./projects` with the repository-root command;
+- treats initialized task files as scaffolding rather than approved execution;
+- waits for separate planning and execution approval; and
+- knows that approved worker work uses persistent draft → feedback → final sessions with independent closure.
 
-| ID | Scenario | Primary gate |
-| --- | --- | --- |
-| E2E-001 | Structured worker result | Worker contract gate |
-| E2E-002 | Workspace-local requested action | Action safety gate |
-| E2E-003 | Review-gated change proposal | Review/apply gate |
-| E2E-004 | Board and operator workflow | Operator UX gate |
-| E2E-005 | Failure, denial, and retry | Reliability gate |
-| E2E-006 | Workspace archive and cleanup | Workspace lifecycle gate |
-| E2E-007 | Multi-agent leader delegation | Orchestration gate |
-| E2E-008 | Combined release rehearsal | Release gate |
+This scenario fails if the operator must explain the CodexTeam role, script locations, project root, approval gates, or worker-session protocol.
 
-## 2. Global Rules
+## E2E-001: Project Initialization
 
-All scenarios must obey these rules:
+Preview and create a disposable project. Prove the complete file set exists, all template tokens are rendered, and the project is contained beneath the configured root.
 
-- Do not use external repositories as fixtures.
-- Do not copy source code, prompts, fixtures, command syntax, or tests from external projects.
-- Do not install dependencies.
-- Do not require network access.
-- Do not run untrusted scripts.
-- Do not execute shell text produced by an agent.
-- Do not read credentials, hidden secrets, browser profiles, tokens, or unrelated user directories.
-- Do not write outside approved roots.
-- Do not bypass policy, review, approval, audit, or workspace isolation for test convenience.
-- Do not delete unreviewed, rejected-unarchived, or active workspace evidence.
+## E2E-002: Structured Worker Result
 
-## 3. Scenario Requirements
+Run a fake Codex executable that returns a valid result. Prove the final matching JSON is selected, process output is recorded, and a schema-valid result is persisted.
 
-### E2E-001: Structured Worker Result
+## E2E-003: Failure Handling
 
-Must prove:
+Exercise malformed output, wrong task/attempt, process failure, and timeout. Each case must persist a valid failure/partial result and return a nonzero exit code.
 
-- Worker start requires explicit approval.
-- A real local `gemma4:12b` worker returns a valid `WorkerResult`.
-- Result IDs and scope fields match known team, task, agent, and attempt records.
-- The worker `completed` claim does not directly complete the task.
-- Evidence is stored as typed, bounded records and becomes review input after validation.
-- Only `submit_evidence` and `request_review` requested actions are accepted in this phase.
-- The assigned workspace becomes review-locked after valid reviewable output.
-- Project files remain unchanged.
-- Malformed output fails closed and is audited.
-- Replayed identical results are idempotent and conflicting replays are rejected.
-- Reloading state from disk preserves task, run, attempt, evidence, review, workspace lock, and audit consistency.
+## E2E-004: Task Closure
 
-### E2E-002: Workspace-Local Requested Action
+Close a completed result with an independent verification command. Prove the task ledger and state documents advance only after the command passes.
 
-Must prove:
+## E2E-005: Delivery
 
-- A worker can request a bounded generated artifact inside its assigned workspace.
-- Path traversal, hidden paths, secret-looking names, symlink escapes, and oversized content are denied.
-- Denied actions leave runtime and project files unchanged.
-- Policy decisions, action state, and audit records agree.
+Complete the final task in a disposable project. Prove `DELIVERY.md`, `DONE_REPORT.md`, `RESULT.md`, and `PROJECT_STATE.md` agree.
 
-### E2E-003: Review-Gated Change Proposal
+## E2E-006: Cold Start Through Team Delivery
 
-Must prove:
+Run this combined acceptance scenario with a fresh Codex session whose working directory is exactly `/home/alik/workspace/agent_template/codexteam`. Give the agent only a small product request; do not inject the CodexTeam protocol into the prompt.
 
-- A worker can submit a structured `ChangeProposal`.
-- Proposal metadata includes task, worker, attempt, workspace, affected paths, summary, risk notes, reversal notes, and validation evidence.
-- Review and approval are separate.
-- Apply is impossible before review and explicit approval.
-- Rejected proposals are preserved.
-- Approved apply is limited to approved target paths.
+1. **Proposal:** the lead identifies its role, proposes the aim, scope, description, acceptance criteria, and management phases, and creates no project files before approval.
+2. **Initialization and planning:** after approval, the lead initializes under `./projects`, preserves the exact project ID and absolute `Created:` path returned by the initializer, replaces generic scaffolding with project-specific milestones, architecture, implementation plan, and responsible-AI handoffs, and waits for a separate execution approval.
+3. **Team execution:** after `GO` or an equivalent end-to-end authorization, the lead delegates implementation, testing, review, and documentation to the named responsible AIs. “Handle it yourself” means autonomous orchestration, not solo implementation; only an explicit “do not spawn agents” instruction selects solo work.
+   Before a local worker launch, the lead checks the Ollama endpoint from the same execution surface. A reachable nested route may use `--trust-parent-sandbox`; if the parent sandbox cannot reach host Ollama, the approved host-level route omits the flag and retains the normal worker sandbox. A successful dry run alone is not connectivity evidence, and MCP is not required.
+4. **Conversation and recovery:** worker changes use persistent draft → feedback → final sessions. Corrections resume the same responsible AI, attempt, and exact stored thread unless ownership intentionally changes or the session is irrecoverable.
+5. **Evidence and closure:** planned files are written with the editing interface, while the launcher and closure commands capture worker and verification evidence. The lead does not manufacture evidence with shell redirection, `tee`, heredocs, or command substitution.
+6. **Delivery:** every planned task has a responsible AI, independent verification succeeds, task and management state agree, and delivery artifacts describe the product that actually passed acceptance.
+7. **Acceptance audit:** compare at least one nontrivial exact output with the approved convention or golden artifact, inspect the final project manifest, and fail the canary for scratch files, incomplete experiments, or reviewer claims not present in their named evidence.
+8. **Proportional performance:** for a Fibonacci-class project, target no more than 30 minutes, 12 worker turns, one correction round per role, one lead update per state change or 60-second wait, one million uncached lead-input tokens, and 50,000 lead-output tokens when usage is reported. Exceeding a target is a performance failure even when canonical delivery eventually closes.
 
-### E2E-004: Board and Operator Workflow
+The run report records the fresh lead thread, exact project path, worker roles and session paths, feedback or retry events, verification commands, final state, elapsed time, and token usage when available. A path typo, manually reconstructed generated ID, unrequested solo implementation, redundant nested sandbox failure, or operator explanation of the orchestration protocol fails this scenario.
 
-Must prove:
+Schema-valid results and `DELIVERED` state do not override an acceptance-audit failure. The report must separate lifecycle success, product success, evidence integrity, and performance so a partial improvement cannot be presented as a clean E2E pass.
 
-- Board output shows team goal, roster, task states, attempts, dependencies, pending approvals, review queue, recent messages, policy denials, risk alerts, and workspace status.
-- Board rendering is read-only.
-- Operator actions are routed through controller commands.
-- Board refresh agrees with source state and audit.
-- No raw state editing is required.
+## Live Canary
 
-### E2E-005: Failure, Denial, and Retry
+After all deterministic scenarios pass, run one explicitly approved local-model sentinel. Verify the requested artifact directly; do not rely on the worker status alone.
 
-Must prove:
+## Release Blockers
 
-- Invalid worker output is rejected without controller crash.
-- Approval denial prevents the requested action.
-- Worker timeout or stale health is visible.
-- Retry creates a new attempt and preserves failed attempt history.
-- Retry does not broaden permissions.
-- Checkpoints remain partial progress and do not become final evidence.
-
-### E2E-006: Workspace Archive and Cleanup
-
-Must prove:
-
-- Workspace lifecycle prevents unsafe cleanup.
-- Active and review-locked workspaces cannot be cleaned.
-- Rejected work is preserved until archived and approved for cleanup.
-- Archive metadata includes team, agent, task, review, approval, policy, retention, and change summary records.
-- Cleanup is scoped to the approved workspace only.
-- Workspace state, filesystem state, board, and audit agree.
-
-### E2E-007: Multi-Agent Leader Delegation
-
-Must prove:
-
-- One leader coordinates at least two workers and at least three tasks.
-- Workers use separate writable workspaces.
-- Dependency-blocked work does not start early.
-- Worker evidence is required before final synthesis.
-- Final synthesis references worker evidence.
-- Audit shows plan approval, assignments, transitions, messages, reviews, and final synthesis.
-
-### E2E-008: Combined Release Rehearsal
-
-Must prove in one integrated local run:
-
-- Multi-agent delegation.
-- Structured worker results.
-- Invalid output rejection and retry.
-- Review-gated proposal.
-- One approval denial.
-- One approved apply.
-- Workspace archive or cleanup decision.
-- Final board, state store, workspace records, and audit agreement.
-
-## 4. Evidence Bundle
-
-Every E2E run must produce a reviewable evidence bundle with:
-
-- scenario ID
-- team ID
-- policy profile
-- fixture summary
-- agent roster
-- task graph
-- workspace map
-- approval decisions
-- review decisions
-- attempts and checkpoints
-- failure or retry history when applicable
-- board snapshots
-- audit export
-- final verdict
-- known limitations
-
-## 5. Board Consistency Checks
-
-At key points, E2E tooling must compare board output with source state:
-
-- task counts by status
-- pending approval count
-- review queue count
-- worker health and attempt status
-- workspace lifecycle status
-- recent messages
-- policy denial count
-- final team state
-
-A mismatch is a blocker unless it is an intentional delayed-refresh behavior with visible timestamp metadata.
-
-## 6. Release Blockers
-
-E2E release validation is blocked if any of these occur:
-
-- Worker output bypasses validation.
-- Worker `completed` directly completes a task.
-- Worker writes outside its assigned workspace.
-- Requested actions bypass policy.
-- Review or approval can be self-granted by a worker.
-- Apply occurs before review and approval.
-- Denied actions still execute.
-- Retry erases failed attempt history.
-- Cleanup deletes active, review-locked, or rejected-unarchived work.
-- Restart or resume loses tasks, messages, approvals, workspaces, attempts, or audit records.
-- Board hides pending approvals, denials, stale workers, or review-required work.
-- Any test disables policy checks to pass.
-
-## 7. Execution Order
-
-Use this order for implementation and validation:
-
-1. Structured worker result.
-2. Workspace-local requested action.
-3. Review-gated change proposal.
-4. Board and operator workflow.
-5. Failure, denial, retry, and health behavior.
-6. Workspace archive and cleanup.
-7. Multi-agent leader delegation.
-8. Combined release rehearsal.
+- Any write outside the project root
+- Any shell evaluation
+- Invalid output accepted as completed
+- Missing evidence accepted for completion
+- Task state advanced after failed verification
+- Documentation referencing nonexistent commands or old system components
+- A fresh root agent cannot discover the Project Lead role and new-project lifecycle from `AGENTS.md`
+- A lead reconstructs a generated project path instead of reusing initializer output
+- An end-to-end authorization is treated as permission to bypass responsible-AI delegation
+- A reviewer attributes exact-output, determinism, range, or error-stream checks to an artifact that does not contain those observations
+- Scratch run outputs or incomplete experimental source remain in a delivered project
+- A small clean-path canary exceeds its proportional time, turn, or token target without being reported as a performance failure

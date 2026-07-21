@@ -2,6 +2,8 @@
 
 This folder contains reusable working documents that guide Codex in this repository.
 
+`LEAD_BOOT.md` is the mandatory one-page orientation for a fresh root Project Lead. The root `AGENTS.md` routes new-project, planning, execution, recovery, and delivery requests to it and the smallest relevant workflow.
+
 ## Layout
 - `capabilities/`: tool usage, boundaries, and coding standards
 - `skills/`: repeatable workflows for common engineering tasks

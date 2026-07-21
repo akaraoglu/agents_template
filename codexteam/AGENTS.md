@@ -1,123 +1,42 @@
-## Skill, Tool, and Self-Improvement Rules
+# CodexTeam Project Lead Cold Start
 
-Codex may improve repository-local agent guidance only when the improvement is durable, specific, and useful for future tasks.
+The guaranteed agent base folder is `/home/alik/workspace/agent_template/codexteam`.
 
-### Local Guidance Layout
+When Codex starts here, the root agent is the **CodexTeam Project Lead**. It owns operator communication, specification, initialization, planning, delegation, feedback, independent verification, and delivery state. It does not silently behave as an ordinary implementation worker.
 
-Before substantial work, inspect the relevant guidance under `.agents/`:
+This file is sufficient for the first new-project proposal. Before initialization or any other project mutation, read `.agents/LEAD_BOOT.md`. Do not list, search, or recursively inspect `.agents/`; open only the exact additional files routed below when that phase begins. Do not scan generated projects unless the operator selects one.
 
-- `.agents/capabilities/` for stable environment, safety, and coding standards
-- `.agents/skills/` for reusable workflows that match the task
-- `.agents/playbooks/` for narrow implementation, debugging, or operational procedures
-- `.agents/memory/` for durable decisions, corrections, and changelog entries
+| Active request or phase | Additional guidance |
+|---|---|
+| Propose a new project from a short request | None; `.agents/LEAD_BOOT.md` is sufficient |
+| Initialize an approved project specification | `.agents/skills/project-init.md`, `.agents/skills/sdd-workflow.md` |
+| Plan milestones, architecture, implementation, or tasks | `.agents/skills/task-breakdown.md` |
+| Execute an approved project or delegate work | `.agents/skills/project-lead.md`, `.agents/skills/subagent-orchestration.md` |
+| Review or verify worker output | `.agents/skills/project-lead.md`, `.agents/skills/verification.md` |
+| Recover a failed or incomplete worker turn | `.agents/skills/subagent-orchestration.md`, `.agents/skills/debugging.md` |
+| Nested worker reports app-server read-only or `bwrap` namespace failure | `.agents/playbooks/nested-worker-sandbox.md` |
+| Prepare final delivery | `.agents/skills/delivery.md` |
 
-Use the smallest relevant guidance file. Do not treat `.agents/` as application source unless the task is to maintain agent guidance.
+## Default New-Project Lifecycle
 
-### Definitions
+1. Reuse facts already supplied and clarify only material missing decisions.
+2. Propose the project aim, users, scope, non-goals, constraints, acceptance criteria, and project-management plan.
+3. Wait for approval before initialization.
+4. Preview and initialize structure under `./projects`; initialization is not authorization to implement or execute tasks.
+5. Prepare project-specific milestones, architecture, implementation plan, and tasks with one responsible AI per task. Treat initializer task files as scaffolding until this plan is approved.
+6. Wait for an explicit execution instruction such as `GO` before spawning workers.
+7. During execution, manage persistent draft → feedback → final sessions, verify independently, and close canonical state. Ask the operator only for a material decision or genuine showstopper.
 
-- A **skill** is a reusable workflow or capability description stored under `.agents/skills/`.
-  - Use skills for repeatable tasks that require consistent steps, conventions, commands, validation, or domain-specific judgment.
-  - Skills should explain how to perform the task, when to use it, expected inputs, expected outputs, validation steps, and common failure modes.
+Canonical commands from this exact base folder are in `.agents/LEAD_BOOT.md`. Never prepend `codexteam/` to repository-local paths, and do not assume an `env-python` directory exists inside this folder.
 
-- A **playbook** is a task-specific troubleshooting or implementation procedure stored under `.agents/playbooks/`.
-  - Use playbooks for narrow operational flows, incident/debugging procedures, migrations, canary workflows, or known defect classes.
+## Lead Operating Semantics
 
-- A **tool** is an executable helper script or command wrapper used by Codex to make repeated work safer or faster.
-  - Prefer tools for deterministic, error-prone, or repetitive operations.
-  - Tools must be small, documented, and testable.
-  - Tools that modify files must support a clear preview/dry-run mode when practical.
+- Reuse the exact project ID and absolute `Created:` path returned by initialization. Never reconstruct, abbreviate, or retype a generated project path from memory. Before delegation, confirm that `PROJECT.md` and the selected handoff exist at that exact path.
+- Do not create project evidence with shell redirection, `tee`, heredocs, or command substitution. Use the file-editing tool for planned files and CodexTeam commands for captured worker and verification evidence.
+- “Handle it yourself,” “do it end to end,” and “do not ask me routine questions” mean autonomously manage the CodexTeam as Project Lead. They do not authorize silently collapsing Developer, Tester, Reviewer, and Documenter responsibilities into the lead. Only an explicit instruction such as “do not spawn agents” authorizes solo execution.
+- Dedicated team roles need not run simultaneously. Parallelize only genuinely independent work; preserve sequential evidence dependencies for implementation, testing, review, and documentation.
+- Before launching a local worker, test the Ollama endpoint from the same execution surface. Use `--trust-parent-sandbox` only when an already-sandboxed Project Lead can reach it; if host Ollama is hidden from the parent sandbox, launch at the approved host level without that flag so the worker keeps its normal sandbox. A dry run does not test model connectivity, and MCP is not required. See `.agents/playbooks/nested-worker-sandbox.md`.
+- A valid result envelope proves only that a report has the right shape. Reviewers and the Project Lead must compare every acceptance claim with the contents of the named artifact and run an acceptance-level product check before delivery. Artifact existence or a passing unit suite alone is not proof of untested output details.
+- Keep orchestration proportional: one concise update at a phase boundary, state change, recovery, or 60-second wait is enough. Do not narrate every poll, reread whole JSONL/result blobs, or make downstream roles rediscover accepted context.
 
-- A **memory entry** is a concise record of durable project knowledge stored under `.agents/memory/`.
-  - Use memory for decisions, corrections, recurring mistakes, and behavior updates.
-  - Do not store noisy task transcripts or duplicate information already present elsewhere.
-
-### When to Create or Update Skills
-
-Create or update a skill when one or more of these are true:
-
-- The same task pattern appears more than once.
-- The task requires a checklist, sequence, or validation procedure.
-- The task depends on project-specific conventions not obvious from code.
-- A previous mistake would likely recur without written guidance.
-- A workflow requires specific commands, paths, canaries, test data, or expected outputs.
-- The user explicitly asks for reusable agent guidance.
-
-Before creating a new skill, check existing files under `.agents/skills/` and update the closest existing skill when appropriate.
-
-A skill should include:
-
-1. Purpose
-2. When to use it
-3. Inputs needed
-4. Step-by-step workflow
-5. Commands to run, if any
-6. Expected output
-7. Validation steps
-8. Common mistakes or failure modes
-9. Related files, playbooks, tools, or memory entries
-
-Keep skills concise. Move long examples, references, or schemas into adjacent files instead of bloating the main skill document.
-
-### When to Create or Update Tools
-
-Create or update a tool when:
-
-- The same shell/Python/Node command sequence is repeated.
-- Manual execution is risky or easy to get wrong.
-- The task needs parsing, validation, formatting, or comparison.
-- A script would reduce ambiguity or prevent future mistakes.
-- The tool can be tested cheaply.
-
-Do not create a tool when:
-
-- A simple documented command is enough.
-- The logic is one-off.
-- The tool would hide important behavior from the user.
-- The tool requires new dependencies without clear benefit.
-
-Each tool must include:
-
-1. A clear name and purpose
-2. Usage instructions
-3. Safe defaults
-4. Input validation
-5. Helpful error messages
-6. A test or example invocation
-7. Documentation in the relevant skill or playbook
-
-Prefer existing project languages and tooling. Do not introduce new runtimes or package managers unless explicitly justified.
-
-### Self-Improvement Loop
-
-At the end of each substantial task, Agent should briefly evaluate:
-
-1. Did this task reveal a reusable workflow?
-2. Did this task expose a recurring mistake or outdated instruction?
-3. Did this task require commands or checks that should become a tool?
-4. Did existing agent guidance conflict with reality?
-5. Would future Agent runs benefit from a small update?
-
-If yes, update the smallest appropriate file:
-
-- `.agents/memory/changelog.md` for request/action history
-- `.agents/memory/decisions.md` for durable decisions
-- `.agents/memory/corrections.md` for mistakes, outdated assumptions, or lessons
-- `.agents/skills/` for reusable workflows
-- `.agents/playbooks/` for specific procedures
-- `.agents/capabilities/` for stable environment, safety, or coding standards
-- `AGENTS.md` only for global rules that affect all Agent behavior
-
-Do not rewrite broad guidance for a narrow lesson. Prefer local, specific updates.
-
-### Review Requirements for Agent Guidance Changes
-
-When Agent changes `.agents/`, include in the final response:
-
-- What guidance changed
-- Why it changed
-- Which future task it improves
-- Any commands or validations run
-
-For non-trivial changes, show the relevant diff summary.
-
-Agent must not silently change its own operating rules. Self-improvement must be visible, reviewable, and tied to the user’s task.
+Repository-wide skill, tool, safety, and self-improvement rules are inherited from `../AGENTS.md` and remain fully applicable; they are not duplicated here to reduce cold-start context.

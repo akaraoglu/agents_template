@@ -1,90 +1,96 @@
 # CodexTeam
 
-CodexTeam is the local-first multi-agent coordination MVP for running a bounded software-delivery team around local Codex and Ollama workers.
+CodexTeam is a local workflow toolkit for coordinating bounded Codex subagents around a specification-driven software project. It provides project guidance, task handoffs, strict result contracts, safe local-model spawning, independent verification, and deterministic project-state closure.
 
-The core owns:
+It is not an application server, controller service, board, HTTP API, or MCP implementation. Historical archives are not source inputs for this system.
 
-- teams, agents, tasks, runs, and attempts
-- approvals, reviews, requested actions, and audit
-- isolated runtime state under `/home/alik/workspace/codexspace`
-- project sandboxes under `/home/alik/workspace/codexspace/projects`
-- read-only board projections and operator-facing scripts
+## Workflow
 
-The current architecture keeps domain behavior in the core. Adapters, CLI surfaces, and future MCP or HTTP layers call the controller; they do not mutate runtime state directly.
+1. Clarify the goal and initialize a complete project workspace.
+2. Approve the project specification before implementation.
+3. Assign each task to one responsible AI and start a persistent draft session.
+4. Review the draft and return consolidated feedback in the same session and attempt.
+5. Accept the draft and persist one final result using result contract v1.
+6. Verify worker output independently.
+7. Close the task and advance project state only after verification passes.
 
-## Current Status
+## Runtime
 
-Implemented and verified:
+The cold-start Project Lead creates projects under:
 
-- core state store, audit, task/run/workspace primitives
-- structured worker-result, requested-action, attempt, review, and workspace models
-- read-only board command with stable public contract guidance
-- project workspace and delivery layer
-- template-backed project initialization
-- local worker E2E with controller-backed file application
-- real project-sandbox leader runtime using local Codex with Ollama
-- front CLI routing that sends project understanding and project edits through the real runtime first, with safe fallback to the older controller-chat path
-
-Current leader defaults:
-
-- provider: `codex`
-- leader model: `gemma4:26b`
-- worker/test model: `gemma4:12b`
-
-Historical acceptance markers retained for compatibility with the post-MVP doc checks:
-
-- `137 passed`
-- `PHASE19_SUMMARY_DONE`
-
-## Layout
-
-- `src/codexteam/`: core package
-- `scripts/`: operator and reusable runtime helpers
-- `tests/smoke/`: smoke and probe runners
-- `tests/e2e/`: E2E runners
-- `docs/`: architecture, contracts, runtime layout, and user guidance
-- `templates/`: project initialization templates
-- `tests/`: phase-scoped test coverage
-
-## Common Commands
-
-Run the full test suite:
-
-```bash
-./env-python/bin/python -m pytest -q codexteam/tests
+```text
+./projects/<project-id>/
 ```
 
-Show the board:
+The guaranteed Project Lead base folder is `/home/alik/workspace/agent_template/codexteam`. Start a fresh Codex session there; root `AGENTS.md` establishes the lead role immediately and routes approved initialization through `.agents/LEAD_BOOT.md`.
+
+## Fresh Codex Startup
+
+When the operator asks for a new project, the root agent acts as Project Lead. It clarifies material requirements, proposes the project description and management plan, waits for initialization approval, creates structure under `./projects`, prepares project-specific milestones and responsible-AI tasks, and waits for `GO` before spawning workers.
+
+The operator should not need to restate the orchestration protocol. See `.agents/LEAD_BOOT.md` for the one-page cold-start contract.
+
+After initialization, the lead carries the exact `Created:` path forward instead of retyping a generated directory name. An instruction such as “handle it yourself end to end” tells the lead to manage the team autonomously; it does not collapse responsible-AI roles into solo lead work. Only an explicit “do not spawn agents” instruction selects solo execution.
+
+For a cloud-enabled cold start, `gpt54-mini` at medium reasoning is the recommended Project Lead. Before it starts a local subprocess worker, it checks whether the same execution surface can reach host Ollama. A reachable nested route may use `--trust-parent-sandbox`; an isolated route launches at the approved host level without that flag and retains the worker's normal sandbox. MCP is not required for either route.
+
+## Model Profiles
+
+- `qwen36-27b`: default for implementation, testing, review, and documentation
+- `gemma4-26b`: optional bounded secondary perspective when its task-specific capability has been confirmed
+- `gpt54-mini`: controlled cloud canary profile; E2E runner examples explicitly override it to medium reasoning
+
+Profiles must exist under `$CODEX_HOME` or `~/.codex` before a subagent is started.
+
+## Commands
+
+Initialize a project without writing:
 
 ```bash
-./env-python/bin/python codexteam/scripts/show_board.py --team <team-id>
+./scripts/init-project.py "Example Project" \
+  --goal "Deliver a verified example." --projects-root ./projects --dry-run
 ```
 
-Talk to the leader:
+Start a developer draft:
 
 ```bash
-./env-python/bin/python codexteam/scripts/talk_to_leader.py --team <team-id>
+./.agents/scripts/spawn-subagent.sh \
+  --phase draft --profile qwen36-27b --team example --task T002 --attempt att-001 \
+  --role developer --workspace ./projects/example \
+  --prompt-file ./projects/example/management/tasks/T002.md
 ```
 
-Operator scripts:
+Review the draft, then continue the exact session with `--phase feedback`. After acceptance, use `--phase final` with the same team, task, attempt, role, profile, and workspace. Draft and feedback may edit handoff-scoped project files, but they never write the deterministic result; finalization writes that one result after acceptance.
 
-- `create_team.py`
-- `approve_plan.py`
-- `create_task.py`
-- `run_worker.py`
-- `show_board.py`
-- `approve_review.py`
-- `reject_review.py`
-
-Run the real leader runtime smoke:
+Validate its result:
 
 ```bash
-./env-python/bin/python codexteam/tests/smoke/run_real_leader_runtime_smoke.py
+./scripts/verify-result.py \
+  ./projects/example/results/T002-att-001.json \
+  --task T002 --team example --attempt att-001 --role developer \
+  --expected-status completed
 ```
 
-For more operational detail, start with:
+Close the task after independent verification:
 
-- `docs/USER_GUIDE.md`
-- `docs/CORE_DOMAIN_MODEL.md`
-- `docs/PUBLIC_CONTRACTS.md`
-- `docs/RUNTIME_LAYOUT.md`
+```bash
+./scripts/close-loop.sh ./projects/example \
+  --task T002 -- python3 -m pytest -q
+```
+
+## Validation
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 ../env-python/bin/python -m pytest -q tests
+```
+
+Preview the controlled end-to-end team canary with:
+
+```bash
+./scripts/run-e2e-fibonacci-test.sh --dry-run \
+  --profile gpt54-mini --reasoning-effort medium
+```
+
+See `scripts/TOOLS-README.md` for live-run budgeting, reports, product-only verification, and same-session failure recovery. The cold-start-through-team acceptance definition, including product-audit and proportional-performance gates, is in `docs/E2E_ACCEPTANCE_PLAN.md`.
+
+Start with `docs/USER_GUIDE.md`, `.agents/skills/project-lead.md`, and `.agents/skills/subagent-orchestration.md`.

@@ -57,5 +57,5 @@ A completed, verified software artifact accompanied by a full suite of SDD artif
 
 ## Related files
 
-- `.agents/capabilities/coding_standards.md`
+- `.agents/capabilities/coding-standards.md`
 - `.agents/memory/decisions.md`

@@ -1,18 +1,26 @@
 # Decisions Memory
 
-## Purpose
-Record durable project decisions, conventions, and tradeoffs that should influence future work.
-
 ## Entries
-- CodexTeam project initialization should be template-backed. The default template lives at `codexteam/templates/project_user/`, follows the V4 test-project process surface with four sequential task envelopes, and can be replaced with a mounted external template through `CODEXTEAM_PROJECT_TEMPLATE`; the leader should use `initialize_project_management_docs` instead of generating long Markdown through model JSON.
-- CodexTeam's MVP acceptance path is the real-life project E2E: leader clarification, approval-gated project initiation, approval-gated implementation start, T001-T004 task execution, generated project tests, board visibility, and delivery artifacts before MCP/HTTP work.
-- Real worker proof should use `run_real_worker_project_e2e.py --worker-provider ollama-files` for now. The local model generates file artifacts and CodexTeam applies them through controller APIs; the `codex-exec` provider is not reliable in this environment due an unsupported tool-call failure.
-- Project editing should use one flexible `propose_project_edit` tool with full-file replacements and stored confirmation, not many detail-specific tools. Runtime still denies unsafe paths and applies through `ProjectManager`.
-- CodexTeam leader capability should move into project-local `AGENTS.md`, reusable `.codexteam/skills/*.md`, and explicit task handoff files instead of adding micro-tools for every project detail. Each task handed to the team must carry context, allowed paths, outputs, verification, evidence, and stop conditions.
-- For bad Markdown/doc edits, prefer instruction-first discipline before adding structured section-editing tools. Agents should use `project-doc-map.md` and `document-editing.md`, read files before editing, preserve existing structure, and make minimal targeted changes.
-- Use split model defaults: `gemma4:26b` for the conversational leader by default, `gemma4:12b` for workers and tests by default. Keep exact model tags explicit and do not rely on untagged `gemma4-26b`.
-- The real leader proof path is now a project-sandbox Codex runtime, not the older JSON-loop conversational wrapper. It runs inside the active project root with `workspace-write`, follows project-local skills, and reports changed files/evidence back to the controller.
-- When `talk_to_leader.py` routes a project request into the real project runtime, it should pass recent conversation turns into the runtime prompt and convert runtime failures into normal operator-facing replies instead of crashing the CLI.
-- `talk_to_leader.py` should own the visible conversation transcript across both routing paths. Recent turn history must remain consistent whether a request is answered by the older controller-chat path or the real project runtime path.
-- The front-CLI runtime classifier must be narrow for controller commands and broad for project understanding. Explicit board/operator commands stay on the controller path, but natural project reads like “show me the brief” should go to the real project runtime.
-- When the real project runtime fails for a project-scoped request, `talk_to_leader.py` should attempt the older controller-chat path as a safe fallback before surfacing a hard failure.
+
+- CodexTeam is a local specification-driven workflow toolkit, not an application server, controller, board, HTTP API, or MCP service.
+- Historical archives are obsolete and are never merged into the current system.
+- Generated cold-start projects default to `./projects` beneath `/home/alik/workspace/agent_template/codexteam`.
+- Task IDs use canonical uppercase form; the standard sequence is `T001` through `T004`.
+- Handoff and result v1 shapes are machine-readable and enforced by Python.
+- `qwen36-27b` is the default tool-using profile for implementation, testing, review, and documentation. `gemma4-26b` is optional for bounded secondary review, not default ownership of evidence-producing or editing tasks.
+- Worker completion is a claim. Only independent verification and leader-owned closure complete a task.
+- Process commands use structured argument arrays; raw shell evaluation is prohibited.
+- Each logical attempt owns a private persistent SQLite/session state and exact thread ID. Local profiles use a private Codex home. Authenticated OpenAI profiles reuse the source Codex home so credentials are not copied into project runtime; resume still replays model, provider, catalog, reasoning effort, and verbosity.
+- Draft, feedback, and final are conversation phases, not separate attempts. Only intentional capability/ownership transfer, irrecoverable session loss, material scope change, or explicit abandonment creates a new attempt.
+- Role defaults are routing hints. Evidence of repeated task-specific capability failure justifies a recorded profile transfer without involving the operator.
+- The shared brief is a one-page orientation layer and must be synchronized by the Project Lead after every closure; canonical close-loop state alone cannot update project-specific milestone prose.
+- `gpt54-mini` is an installed and verified cloud candidate, not yet the repository default. The 2026-07-16 six-task canary completed with one attempt per task and no capability transfer; operator choice still governs any default-routing change.
+- Small coherent projects use a proportional five-role fast lane: Project Lead, one functional Developer, independent Tester, evidence-reusing Reviewer, and evidence-reusing Documenter. The default initialized task set remains T001-T004; T005 is an explicit documenter opt-in for workflows such as the controlled canary.
+- The controlled Fibonacci E2E uses medium reasoning, a 300-second per-turn timeout, a 1,800-second reported budget, no automatic retry or profile transfer, and exact same-session recovery after an observable failure. Qwen remains the repository default; `gpt54-mini` is selected explicitly for this canary.
+- `/home/alik/workspace/agent_template/codexteam` is the guaranteed cold-start base folder. The root Codex session is the Project Lead, projects are initialized beneath `./projects`, and root `AGENTS.md` is the mandatory low-token phase router.
+- A new-project request follows separate approvals for proposal, initialization, planning, and execution. Initializer task files are scaffolding until the Project Lead replaces generic wording with project-specific responsible-AI handoffs and the operator authorizes execution.
+- Cold-start context uses progressive disclosure: the first proposal relies on root `AGENTS.md`; `.agents/LEAD_BOOT.md` is read before initialization; detailed project-init, planning, orchestration, verification, recovery, and delivery guidance loads only for its active phase.
+- Generated cold-start projects use `./projects` beneath `/home/alik/workspace/agent_template/codexteam`; older `/home/alik/workspace/codexspace/projects` defaults are obsolete for this repository's guaranteed boot flow.
+- A clean Fibonacci-class cold-start canary has four independent verdict dimensions: lifecycle, product, evidence integrity, and proportional performance. Canonical delivery alone cannot pass the canary.
+- The cold-start performance target is at most 30 minutes, 12 worker turns, one correction round per role, one million uncached lead-input tokens, and 50,000 lead-output tokens when usage is available. Exceeding a target must be reported rather than hidden by eventual delivery.
+- Stable lead-authored feedback lives at `<project>/.codexteam/lead-prompt-<task>-<attempt>.md`; the Project Lead reuses the exact path across feedback and finalization.
