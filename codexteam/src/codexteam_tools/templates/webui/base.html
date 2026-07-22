@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}CodexTeam{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='webui.css') }}">
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="{{ url_for('projects_view') }}">CodexTeam</a>
+      <nav><a href="{{ url_for('compare_view') }}">Compare runs</a></nav>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+{% extends "webui/base.html" %}
+{% block title %}Compare runs · CodexTeam{% endblock %}
+{% block content %}
+  <h1>Compare runs</h1>
+  <form method="get">
+    <label>Baseline<select name="baseline" required><option value="">Select a run</option>{% for project in projects %}<option value="{{ project.id }}" {% if baseline and baseline.id == project.id %}selected{% endif %}>{{ project.name }} — {{ project.id }}</option>{% endfor %}</select></label>
+    <label>Candidate<select name="candidate" required><option value="">Select a run</option>{% for project in projects %}<option value="{{ project.id }}" {% if candidate and candidate.id == project.id %}selected{% endif %}>{{ project.name }} — {{ project.id }}</option>{% endfor %}</select></label>
+    <button type="submit">Compare</button>
+  </form>
+  {% if comparison %}<div class="table-wrap"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Candidate</th><th>Difference</th></tr></thead><tbody>{% for row in comparison %}<tr><td>{{ row.metric }}</td><td>{{ row.baseline }}</td><td>{{ row.candidate }}</td><td>{{ row.difference }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+{% endblock %}

@@ -15,6 +15,7 @@ INIT_PROJECT="${SCRIPT_DIR}/init-project.py"
 SPAWN="${CODEXTEAM_ROOT}/.agents/scripts/spawn-subagent.sh"
 VERIFY_RESULT="${SCRIPT_DIR}/verify-result.py"
 CLOSE_LOOP="${SCRIPT_DIR}/close-loop.sh"
+PRODUCT_ACCEPTANCE="${FIXTURE_ROOT}/assert_product_acceptance.py"
 
 PROFILE=""
 REASONING_EFFORT=""
@@ -35,6 +36,14 @@ AGENT_TURNS=0
 EXPECTED_AGENT_TURNS=10
 RUN_STATUS="NOT_STARTED"
 BUDGET_STATUS="NOT_RUN"
+LIFECYCLE_VERDICT="NOT_RUN"
+PRODUCT_VERDICT="NOT_RUN"
+EVIDENCE_VERDICT="NOT_RUN"
+MANAGEMENT_VERDICT="NOT_RUN"
+MANIFEST_VERDICT="NOT_RUN"
+PERFORMANCE_VERDICT="NOT_RUN"
+CORRECTION_CEILING_STATUS="NOT_RUN"
+LEAD_TOKEN_CEILING_STATUS="NOT_APPLICABLE"
 CURRENT_STAGE="argument validation"
 CURRENT_TASK="none"
 CURRENT_PHASE="none"
@@ -108,49 +117,25 @@ product_checks() {
     local project="$1"
     local cli="${project}/src/fibonacci_tree_cli.py"
     local tests="${project}/tests/test_fibonacci_tree_cli.py"
-    local expected actual help_output error_output line_count
 
     CURRENT_STAGE="product verification"
+    PRODUCT_VERDICT="FAIL"
     [[ -f "${cli}" ]] || fail "missing product CLI: ${cli}"
     [[ -f "${tests}" ]] || fail "missing product tests: ${tests}"
     [[ -f "${project}/README.md" ]] || fail "missing product README: ${project}/README.md"
 
-    run_command python3 -B -m unittest discover -s tests -v
+    (cd "${project}" && run_command python3 -B -m unittest discover -s tests -v)
+    run_command "${PYTHON}" "${PRODUCT_ACCEPTANCE}" "${project}" --product-only
+    PRODUCT_VERDICT="PASS"
+}
 
-    expected="$(<"${FIXTURE_ROOT}/golden/fib-4.txt")"
-    actual="$(python3 "${cli}" 4)"
-    [[ "${actual}" == "${expected}" ]] || fail "input 4 does not match golden/fib-4.txt"
+manifest_checks() {
+    local project="$1"
 
-    [[ "$(python3 "${cli}" 0)" == "fib(0) = 0" ]] || fail "input 0 output is incorrect"
-    [[ "$(python3 "${cli}" 1)" == "fib(1) = 1" ]] || fail "input 1 output is incorrect"
-
-    help_output="$(python3 "${cli}" --help)"
-    [[ "${help_output}" == *"0..15"* ]] || fail "help does not document 0..15"
-    [[ "${help_output}" == *"F(0)"* && "${help_output}" == *"F(1)"* ]] \
-        || fail "help does not document both Fibonacci base cases"
-
-    if error_output="$(python3 "${cli}" abc 2>&1)"; then
-        fail "non-integer input unexpectedly succeeded"
-    fi
-    [[ "${error_output}" != *"Traceback"* ]] || fail "non-integer input produced a traceback"
-
-    if error_output="$(python3 "${cli}" -1 2>&1)"; then
-        fail "negative input unexpectedly succeeded"
-    fi
-    [[ "${error_output}" != *"Traceback"* ]] || fail "negative input produced a traceback"
-
-    if error_output="$(python3 "${cli}" 16 2>&1)"; then
-        fail "above-limit input unexpectedly succeeded"
-    fi
-    [[ "${error_output}" != *"Traceback"* ]] || fail "above-limit input produced a traceback"
-
-    if error_output="$(python3 "${cli}" 2>&1)"; then
-        fail "missing input unexpectedly succeeded"
-    fi
-    [[ "${error_output}" != *"Traceback"* ]] || fail "missing input produced a traceback"
-
-    line_count="$(python3 "${cli}" 15 | wc -l)"
-    [[ "${line_count}" -eq 1973 ]] || fail "input 15 produced ${line_count} lines; expected 1973"
+    CURRENT_STAGE="delivery-manifest verification"
+    MANIFEST_VERDICT="FAIL"
+    run_command "${PYTHON}" "${PRODUCT_ACCEPTANCE}" "${project}" --manifest-only
+    MANIFEST_VERDICT="PASS"
 }
 
 input_four_check() {
@@ -184,11 +169,11 @@ draft_gate() {
             ;;
         T002)
             assert_file_contains "${PROJECT}/results/t002-development.txt" "unittest"
-            (cd "${PROJECT}" && product_checks "${PROJECT}")
+            product_checks "${PROJECT}"
             ;;
         T003)
             assert_file_contains "${PROJECT}/results/t003-acceptance.txt" "AC"
-            (cd "${PROJECT}" && product_checks "${PROJECT}")
+            product_checks "${PROJECT}"
             ;;
         T004)
             assert_file_contains "${PROJECT}/results/t004-evidence-audit.md" "T003"
@@ -285,10 +270,10 @@ run_task() {
 
 verify_final_management_state() {
     local -a final_results=()
-    local -a unexpected_helpers=()
-    local task session
+    local task session evidence verification
 
     CURRENT_STAGE="final management-state verification"
+    MANAGEMENT_VERDICT="FAIL"
     assert_file_contains "${PROJECT}/PROJECT_STATE.md" "- Status: DELIVERED"
     assert_file_contains "${PROJECT}/PROJECT_STATE.md" "- Active Task: None"
     assert_file_contains "${PROJECT}/CURRENT_TASK.md" "- Task ID: None"
@@ -303,17 +288,30 @@ verify_final_management_state() {
 
     [[ "$(grep -Ec '^\| T00[1-5] \|.*\| Completed \|' "${PROJECT}/TASKS.md")" -eq 5 ]] \
         || fail "TASKS.md does not contain five completed canary tasks"
+    MANAGEMENT_VERDICT="PASS"
 
+    CURRENT_STAGE="final evidence verification"
+    EVIDENCE_VERDICT="FAIL"
     shopt -s nullglob
     final_results=("${PROJECT}"/results/T00[1-5]-att-001.json)
-    unexpected_helpers=(
-        "${PROJECT}"/audit*.py
-        "${PROJECT}"/*audit*.sh
-        "${PROJECT}"/run_verification*.sh
-    )
     shopt -u nullglob
     [[ "${#final_results[@]}" -eq 5 ]] || fail "expected five deterministic final result files; found ${#final_results[@]}"
-    [[ "${#unexpected_helpers[@]}" -eq 0 ]] || fail "project contains prohibited one-off audit or verification helpers"
+    for evidence in \
+        t001-fixture-validation.txt \
+        t002-development.txt \
+        t003-acceptance.txt \
+        t004-evidence-audit.md \
+        t005-delivery-review.md; do
+        [[ -s "${PROJECT}/results/${evidence}" ]] || fail "missing final evidence: results/${evidence}"
+    done
+    for task in T001 T002 T003 T004 T005; do
+        verification="${PROJECT}/results/${task}-verification.txt"
+        [[ -s "${verification}" ]] || fail "missing independent verification: ${verification}"
+    done
+    EVIDENCE_VERDICT="PASS"
+
+    CURRENT_STAGE="final lifecycle verification"
+    LIFECYCLE_VERDICT="FAIL"
     [[ "${AGENT_TURNS}" -eq "${EXPECTED_AGENT_TURNS}" ]] \
         || fail "clean run used ${AGENT_TURNS} agent turns; expected ${EXPECTED_AGENT_TURNS}"
 
@@ -322,8 +320,10 @@ verify_final_management_state() {
         assert_file_contains "${session}" '"turn_count": 2'
         assert_file_contains "${session}" '"last_phase": "final"'
     done
+    LIFECYCLE_VERDICT="PASS"
 
-    (cd "${PROJECT}" && product_checks "${PROJECT}")
+    product_checks "${PROJECT}"
+    manifest_checks "${PROJECT}"
 }
 
 print_dry_run_plan() {
@@ -411,6 +411,14 @@ write_report() {
         printf -- '- Budget seconds: %s\n' "${BUDGET_SECONDS}"
         printf -- '- Budget status: %s\n' "${BUDGET_STATUS}"
         printf -- '- Budget enforced: %s\n' "${ENFORCE_BUDGET}"
+        printf -- '- Lifecycle verdict: %s\n' "${LIFECYCLE_VERDICT}"
+        printf -- '- Product verdict: %s\n' "${PRODUCT_VERDICT}"
+        printf -- '- Evidence verdict: %s\n' "${EVIDENCE_VERDICT}"
+        printf -- '- Management verdict: %s\n' "${MANAGEMENT_VERDICT}"
+        printf -- '- Manifest verdict: %s\n' "${MANIFEST_VERDICT}"
+        printf -- '- Performance verdict: %s\n' "${PERFORMANCE_VERDICT}"
+        printf -- '- Correction ceiling status: %s\n' "${CORRECTION_CEILING_STATUS}"
+        printf -- '- Lead-token ceiling status: %s\n' "${LEAD_TOKEN_CEILING_STATUS}"
         printf -- '- Started: %s\n' "${STARTED_AT}"
         printf -- '- Finished: %s\n' "${FINISHED_AT}"
         printf -- '- Elapsed seconds: %s\n' "${ELAPSED_SECONDS}"
@@ -443,6 +451,14 @@ finish() {
         fi
     else
         BUDGET_STATUS="PASS"
+    fi
+    if [[ "${PERFORMANCE_VERDICT}" != "NOT_APPLICABLE" ]]; then
+        if (( ELAPSED_SECONDS > BUDGET_SECONDS || AGENT_TURNS > 12 )) \
+            || { (( final_code == 3 )) && [[ "${CURRENT_STAGE}" == *"turn" ]]; }; then
+            PERFORMANCE_VERDICT="FAIL"
+        else
+            PERFORMANCE_VERDICT="PASS"
+        fi
     fi
 
     if (( final_code != 0 )) && [[ "${RUN_STATUS}" != "BUDGET_EXCEEDED" ]]; then
@@ -555,8 +571,14 @@ main() {
         trap 'on_error $? ${LINENO} "${BASH_COMMAND}"' ERR
         trap 'finish $?' EXIT
         RUN_STATUS="RUNNING"
+        LIFECYCLE_VERDICT="NOT_APPLICABLE"
+        EVIDENCE_VERDICT="NOT_APPLICABLE"
+        MANAGEMENT_VERDICT="NOT_APPLICABLE"
+        MANIFEST_VERDICT="NOT_APPLICABLE"
+        PERFORMANCE_VERDICT="NOT_APPLICABLE"
+        CORRECTION_CEILING_STATUS="NOT_APPLICABLE"
         CURRENT_STAGE="product-only verification"
-        (cd "${PROJECT}" && product_checks "${PROJECT}")
+        product_checks "${PROJECT}"
         RUN_STATUS="PASS"
         CURRENT_STAGE="complete"
         return 0
@@ -584,6 +606,7 @@ main() {
     fi
 
     RUN_STATUS="RUNNING"
+    CORRECTION_CEILING_STATUS="PASS"
     if (( DRY_RUN == 1 )); then
         CURRENT_STAGE="dry-run plan"
         print_dry_run_plan
@@ -602,6 +625,7 @@ main() {
     [[ -x "${SPAWN}" ]] || fail "spawn wrapper is not executable: ${SPAWN}"
     [[ -x "${VERIFY_RESULT}" ]] || fail "result verifier is not executable: ${VERIFY_RESULT}"
     [[ -x "${CLOSE_LOOP}" ]] || fail "close-loop wrapper is not executable: ${CLOSE_LOOP}"
+    [[ -r "${PRODUCT_ACCEPTANCE}" ]] || fail "product acceptance harness is missing: ${PRODUCT_ACCEPTANCE}"
     source_codex_home="${CODEX_HOME:-${HOME}/.codex}"
     [[ -f "${source_codex_home}/${PROFILE}.config.toml" ]] \
         || fail "Codex profile config is missing: ${source_codex_home}/${PROFILE}.config.toml"

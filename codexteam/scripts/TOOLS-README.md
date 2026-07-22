@@ -83,4 +83,12 @@ To check an existing implementation without initializing a team or calling a mod
   --report-file /tmp/<project-id>-product-check.md
 ```
 
-The product-only gate runs the unittest suite, exact input-4 golden comparison, base cases, help, invalid inputs, and the input-15 node-count check.
+The product-only gate runs the unittest suite and the repository-owned black-box acceptance harness. It checks all Fibonacci values from 0 through 15, exact base cases, raw-byte input-4 golden output, right-subtree indentation, repeated-output determinism, help, invalid-input streams and nonzero statuses, and the input-15 node count. A full live completion also runs the clean delivery-manifest gate. Reports keep lifecycle, product, evidence, management, manifest, and performance verdicts independent.
+
+## Read-only WebUI
+
+```bash
+../env-python/bin/python scripts/run-webui.py
+```
+
+The server binds only to `127.0.0.1:5000`. It reads existing project, session, JSONL, and `results/e2e-report.md` artifacts directly and provides project list, project detail, and two-run comparison views. Missing durations, tokens, or verdicts display as `unknown`. There are no mutation routes or recovery actions.

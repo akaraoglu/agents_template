@@ -1,0 +1,13 @@
+{% extends "webui/base.html" %}
+{% block title %}Projects · CodexTeam{% endblock %}
+{% block content %}
+  <div class="heading"><div><h1>Projects</h1><p>Read-only status from repository artifacts.</p></div><a href="">Refresh</a></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Project</th><th>Status</th><th>Active task</th><th>Tasks</th><th>Elapsed</th><th>Turns</th><th>Corrections</th><th>Last update</th></tr></thead>
+    <tbody>
+    {% for project in projects %}
+      <tr><td><a href="{{ url_for('project_view', project_id=project.id) }}">{{ project.name }}</a><small>{{ project.id }}</small></td><td>{{ project.status }}</td><td>{{ project.active_task }}</td><td>{{ project.task_completed }}/{{ project.task_total }}</td><td>{{ project.elapsed_seconds if project.elapsed_seconds is not none else 'unknown' }}<small>{{ project.elapsed_source }}</small></td><td>{{ project.turns }}</td><td>{{ project.corrections }}</td><td>{{ project.updated_at }}</td></tr>
+    {% else %}<tr><td colspan="8">No projects found.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+{% endblock %}

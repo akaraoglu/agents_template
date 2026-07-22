@@ -84,6 +84,16 @@ Close the task after independent verification:
 PYTHONDONTWRITEBYTECODE=1 ../env-python/bin/python -m pytest -q tests
 ```
 
+## Read-only WebUI
+
+Start the local status UI with:
+
+```bash
+../env-python/bin/python scripts/run-webui.py
+```
+
+Open `http://127.0.0.1:5000`. The Flask/Jinja UI reads `./projects` on every request and provides the project list, project detail, and baseline/candidate comparison. It exposes GET views only and cannot start workers, retry tasks, edit project state, or modify Git.
+
 Preview the controlled end-to-end team canary with:
 
 ```bash

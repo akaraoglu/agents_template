@@ -274,6 +274,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
                 turn,
                 thread_id=thread_id,
                 status=failure_status,
+                process=process,
             )
             _write_session(request.session_path, session)
         return _turn_outcome(
@@ -290,6 +291,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             turn,
             thread_id=thread_id,
             status="correction_needed",
+            process=process,
         )
         _write_session(request.session_path, session)
         return _turn_outcome(
@@ -306,6 +308,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             turn,
             thread_id=thread_id,
             status="draft_ready",
+            process=process,
         )
         _write_session(request.session_path, session)
         return _turn_outcome(
@@ -322,6 +325,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             turn,
             thread_id=thread_id,
             status="correction_needed",
+            process=process,
         )
         _write_session(request.session_path, session)
         return _turn_outcome(
@@ -339,6 +343,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
         turn,
         thread_id=thread_id,
         status="finalized",
+        process=process,
         final_result_path=request.result_path.relative_to(request.workspace).as_posix(),
     )
     _write_session(request.session_path, session)
@@ -788,6 +793,7 @@ def _session_record(
     *,
     thread_id: str | None,
     status: str,
+    process: ProcessResult,
     final_result_path: str | None = None,
 ) -> dict[str, Any]:
     if not thread_id:
@@ -800,6 +806,13 @@ def _session_record(
         if turn.session is not None
         else request.reasoning_effort_override
     )
+    turns = list(turn.session.get("turns", [])) if turn.session else []
+    turns.append({
+        "number": turn.number,
+        "phase": request.phase,
+        "status": status,
+        "duration_seconds": round(process.duration_seconds, 3),
+    })
     record = {
         "schema_version": SESSION_SCHEMA_VERSION,
         "team_id": request.team_id,
@@ -822,6 +835,7 @@ def _session_record(
         "last_turn_path": turn.message_path.relative_to(request.workspace).as_posix(),
         "created_at": created_at,
         "updated_at": now,
+        "turns": turns,
     }
     if final_result_path is not None:
         record["final_result_path"] = final_result_path

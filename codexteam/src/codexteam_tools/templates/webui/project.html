@@ -1,0 +1,18 @@
+{% extends "webui/base.html" %}
+{% block title %}{{ project.name }} · CodexTeam{% endblock %}
+{% block content %}
+  <div class="heading"><div><h1>{{ project.name }}</h1><p>{{ project.id }}</p></div><a href="">Refresh</a></div>
+  <section class="summary">
+    <div><span>Status</span><strong>{{ project.status }}</strong></div><div><span>Active task</span><strong>{{ project.active_task }}</strong></div><div><span>Tasks</span><strong>{{ project.task_completed }}/{{ project.task_total }}</strong></div><div><span>Elapsed seconds</span><strong>{{ project.elapsed_seconds if project.elapsed_seconds is not none else 'unknown' }}</strong><small>{{ project.elapsed_source }}</small></div><div><span>Turns</span><strong>{{ project.turns }}</strong></div><div><span>Corrections</span><strong>{{ project.corrections }}</strong></div>
+  </section>
+  <h2>Tasks</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Task</th><th>Responsible AI</th><th>Model</th><th>Phase</th><th>Status</th><th>Turns</th><th>Corrections</th><th>Time</th><th>Verification</th></tr></thead>
+    <tbody>{% for task in project.tasks %}<tr><td>{{ task.id }}<small>{{ task.objective }}</small></td><td>{{ task.owner }}</td><td>{{ task.profile }}</td><td>{{ task.phase }}</td><td>{{ task.status }}</td><td>{{ task.turns }}</td><td>{{ task.corrections }}</td><td>{{ task.duration_seconds if task.duration_seconds is not none else 'unknown' }}</td><td>{{ task.verification }}</td></tr>{% else %}<tr><td colspan="9">No task ledger available.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <div class="columns">
+    <section><h2>Latest error</h2><dl><dt>Summary</dt><dd>{{ project.error }}</dd><dt>Diagnostic path</dt><dd><code>{{ project.diagnostic_path }}</code></dd></dl></section>
+    <section><h2>Reported tokens</h2><dl><dt>Cloud input</dt><dd>{{ project.cloud_input_tokens if project.cloud_input_tokens is not none else 'unknown' }}</dd><dt>Cloud output</dt><dd>{{ project.cloud_output_tokens if project.cloud_output_tokens is not none else 'unknown' }}</dd><dt>Local input</dt><dd>{{ project.local_input_tokens if project.local_input_tokens is not none else 'unknown' }}</dd><dt>Local output</dt><dd>{{ project.local_output_tokens if project.local_output_tokens is not none else 'unknown' }}</dd><dt>Cached input</dt><dd>{{ project.cached_tokens if project.cached_tokens is not none else 'unknown' }}</dd></dl></section>
+    <section><h2>Quality gates</h2><dl>{% for name, verdict in project.verdicts.items() %}<dt>{{ name|title }}</dt><dd>{{ verdict }}</dd>{% endfor %}</dl></section>
+  </div>
+{% endblock %}
