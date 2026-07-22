@@ -3,13 +3,20 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
     <title>{% block title %}CodexTeam{% endblock %}</title>
+    <script src="{{ url_for('static', filename='theme.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='webui.css') }}">
   </head>
   <body>
-    <header>
-      <a class="brand" href="{{ url_for('projects_view') }}">CodexTeam</a>
-      <nav><a href="{{ url_for('compare_view') }}">Compare runs</a></nav>
+    <header class="app-header">
+      <div class="header-inner">
+        <a class="brand" href="{{ url_for('projects_view') }}"><span>CT</span>CodexTeam</a>
+        <div class="header-tools">
+          <label class="theme-control" for="theme-select"><span>Theme</span><select id="theme-select" aria-label="Theme"><option value="system" selected>System Default</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <div class="environment"><i></i> Local workspace · Read only</div>
+        </div>
+      </div>
     </header>
     <main>{% block content %}{% endblock %}</main>
   </body>

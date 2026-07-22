@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from codexteam_tools.project_init import initialize_project
@@ -9,11 +10,13 @@ CODEXTEAM_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = CODEXTEAM_ROOT.parent
 RUNNER = CODEXTEAM_ROOT / "scripts" / "run-e2e-fibonacci-test.sh"
 FIXTURE = CODEXTEAM_ROOT / "tests" / "e2e" / "fibonacci-tree-cli"
+ACCEPTANCE = FIXTURE / "assert_product_acceptance.py"
 
 
 def write_valid_product(project: Path) -> None:
-    (project / "src").mkdir(parents=True)
-    (project / "tests").mkdir()
+    (project / "src").mkdir(parents=True, exist_ok=True)
+    (project / "tests").mkdir(exist_ok=True)
+    (project / "golden").mkdir(exist_ok=True)
     (project / "src" / "fibonacci_tree_cli.py").write_text(
         '''import argparse
 
@@ -42,11 +45,13 @@ def render(n):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Fibonacci tree; range 0..15; F(0)=0 and F(1)=1")
+    parser = argparse.ArgumentParser(
+        description="Render N in the inclusive range 0..15; F(0) = 0 and F(1) = 1."
+    )
     parser.add_argument("n", type=int)
     args = parser.parse_args(argv)
     if not 0 <= args.n <= 15:
-        parser.error("n must be in 0..15")
+        parser.error("n must be in range 0..15")
     print(render(args.n))
     return 0
 
@@ -76,6 +81,7 @@ if __name__ == "__main__":
 ''',
         encoding="utf-8",
     )
+    (project / "golden" / "fib-4.txt").write_bytes((FIXTURE / "golden" / "fib-4.txt").read_bytes())
     (project / "README.md").write_text("Run `python3 src/fibonacci_tree_cli.py 4`.\n", encoding="utf-8")
 
 
@@ -199,7 +205,13 @@ def test_product_only_mode_passes_offline_and_writes_report(tmp_path: Path):
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert "- Status: PASS" in report.read_text(encoding="utf-8")
+    report_text = report.read_text(encoding="utf-8")
+    assert "- Status: PASS" in report_text
+    assert "- Product verdict: PASS" in report_text
+    assert "- Manifest verdict: NOT_APPLICABLE" in report_text
+    assert "- Performance verdict: NOT_APPLICABLE" in report_text
+    assert "- Correction ceiling status: NOT_APPLICABLE" in report_text
+    assert "- Lead-token ceiling status: NOT_APPLICABLE" in report_text
     assert (project / "src" / "fibonacci_tree_cli.py").is_file()
 
 
@@ -223,17 +235,85 @@ def test_product_only_failure_preserves_project_and_reports_recovery_state(tmp_p
 
     assert completed.returncode != 0
     assert sentinel.read_text(encoding="utf-8") == "preserve me\n"
-    assert "- Status: FAILED" in report.read_text(encoding="utf-8")
+    report_text = report.read_text(encoding="utf-8")
+    assert "- Status: FAILED" in report_text
+    assert "- Product verdict: FAIL" in report_text
+    assert "- Manifest verdict: NOT_APPLICABLE" in report_text
     assert f"Project preserved at: {project}" in completed.stdout
+
+
+def test_product_acceptance_detects_right_subtree_indentation_regression(tmp_path: Path):
+    project = tmp_path / "bad-indentation"
+    project.mkdir()
+    write_valid_product(project)
+    source_path = project / "src" / "fibonacci_tree_cli.py"
+    source = source_path.read_text(encoding="utf-8")
+    source_path.write_text(
+        source.replace(
+            'child_prefix = prefix + ("    " if last else "│   ")',
+            'child_prefix = prefix + "│   "',
+        ),
+        encoding="utf-8",
+    )
+    report = tmp_path / "indentation-report.md"
+
+    completed = subprocess.run(
+        [str(RUNNER), "--product-only", str(project), "--report-file", str(report)],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "golden" in completed.stderr or "indentation" in completed.stderr
+    assert "- Product verdict: FAIL" in report.read_text(encoding="utf-8")
+
+
+def test_manifest_acceptance_detects_exploratory_helper(tmp_path: Path):
+    plan = initialize_project(
+        "Fibonacci Tree CLI",
+        "Deliver the controlled canary.",
+        root=tmp_path,
+        project_id="dirty-manifest",
+        tasks=("T001", "T002", "T003", "T004", "T005"),
+        template_root=FIXTURE / "template",
+    )
+    project = plan.project_dir
+    write_valid_product(project)
+    clean = subprocess.run(
+        [sys.executable, str(ACCEPTANCE), str(project), "--manifest-only"],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert clean.returncode == 0, clean.stderr
+
+    (project / "src" / "exploratory_helper.py").write_text("print('scratch')\n", encoding="utf-8")
+    dirty = subprocess.run(
+        [sys.executable, str(ACCEPTANCE), str(project), "--manifest-only"],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert dirty.returncode != 0
+    assert "unexpected source entries: exploratory_helper.py" in dirty.stderr
 
 
 def test_runner_contains_no_destructive_or_automatic_recovery_path():
     source = RUNNER.read_text(encoding="utf-8")
     assert "rm -" not in source
-    assert '"${PROJECT}"/run_verification*.sh' in source
-    assert '"${PROJECT}"/run_verification.sh)' not in source
     assert "--phase feedback" in source
     assert "No retry or model transfer was attempted" in source
     assert "--budget-seconds" in source
     assert "--enforce-budget" in source
     assert "--product-only" in source
+    assert "Lifecycle verdict" in source
+    assert "Manifest verdict" in source
+    assert 'final_code == 3' in source

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, abort, render_template, request
+from flask import Flask, abort, render_template
 
-from .paths import PathValidationError, contained_path, validate_identifier
-from .tasks import TaskDocumentError, parse_task_document
+from .paths import PathValidationError, contained_path, normalize_task_id, validate_identifier
+from .tasks import TaskDocumentError, TaskRow, parse_task_document
 
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +18,8 @@ UNKNOWN = "unknown"
 VERDICTS = ("Lifecycle", "Product", "Evidence", "Management", "Manifest", "Performance")
 TURN_FILE = re.compile(r"^(\d+)-(draft|feedback|final)\.jsonl$")
 FAILED_TURN_STATUSES = {"turn_failed", "process_failed", "timed_out", "interrupted", "correction_needed"}
+COMPLETED_PROJECT_STATUSES = {"complete", "completed", "delivered", "done"}
+PHASES = ("draft", "feedback", "final", "verify", "closed")
 
 
 def list_projects(projects_dir: str | Path) -> list[dict[str, Any]]:
@@ -33,7 +35,15 @@ def list_projects(projects_dir: str | Path) -> list[dict[str, Any]]:
             projects.append(load_project(root, path.name))
         except (OSError, ValueError):
             continue
-    return sorted(projects, key=lambda item: item["id"])
+    projects.sort(key=lambda item: item["id"])
+    projects.sort(
+        key=lambda item: (
+            _timestamp_value(item["updated_at"]),
+            item["status"].lower() not in COMPLETED_PROJECT_STATUSES,
+        ),
+        reverse=True,
+    )
+    return projects
 
 
 def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
@@ -48,11 +58,7 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
 
     state = _bullets(project / "PROJECT_STATE.md")
     report = _bullets(project / "results" / "e2e-report.md")
-    rows = []
-    try:
-        rows = list(parse_task_document((project / "TASKS.md").read_text(encoding="utf-8")).rows)
-    except (OSError, TaskDocumentError, ValueError):
-        pass
+    rows = _task_rows(project / "TASKS.md")
 
     sessions: dict[str, list[dict[str, Any]]] = {}
     session_root = project / ".codexteam" / "runtime" / "sessions"
@@ -67,7 +73,7 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
     rows_by_id = {row.task_id: row for row in rows}
     for task_id in sorted(known_task_ids):
         row = rows_by_id.get(task_id)
-        attempts = sorted(sessions.get(task_id, []), key=lambda item: item["updated_at"])
+        attempts = sorted(sessions.get(task_id, []), key=lambda item: _timestamp_value(item["updated_at"]))
         latest = attempts[-1] if attempts else {}
         durations = [item["duration_seconds"] for item in attempts if item["duration_seconds"] is not None]
         task = {
@@ -78,8 +84,10 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
             "verification": row.verification if row and row.verification else UNKNOWN,
             "profile": latest.get("profile", UNKNOWN),
             "provider": latest.get("provider", UNKNOWN),
+            "role": latest.get("role", UNKNOWN),
             "phase": latest.get("phase", UNKNOWN),
             "attempt": latest.get("attempt", UNKNOWN),
+            "updated_at": latest.get("updated_at") or UNKNOWN,
             "turns": sum(item["turns"] for item in attempts),
             "corrections": sum(item["corrections"] for item in attempts),
             "failed_turns": sum(item["failed_turns"] for item in attempts),
@@ -93,13 +101,26 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
             "cached_tokens": _total_tokens(attempts, "cached_tokens") if attempts else 0,
             "error": latest.get("error", UNKNOWN),
             "diagnostic_path": latest.get("diagnostic_path", UNKNOWN),
+            "attempts": list(reversed(attempts)),
         }
+        task["needs_attention"] = task["status"] == "Blocked" or (
+            task["status"] != "Completed" and task["failed_turns"] > 0
+        )
+        task["phases"] = _task_phases(task)
         tasks.append(task)
+
+    tasks.sort(key=lambda item: item["id"])
+    tasks.sort(key=lambda item: _timestamp_value(item["updated_at"]), reverse=True)
 
     timestamps = [item[key] for group in sessions.values() for item in group for key in ("created_at", "updated_at")]
     timestamps = [value for value in timestamps if value]
     started = min((item["created_at"] for group in sessions.values() for item in group if item["created_at"]), default=None)
-    updated = state.get("Updated At") or (max(timestamps) if timestamps else None)
+    updated = _latest_timestamp([state.get("Updated At"), *timestamps]) or _latest_file_timestamp(
+        project / "PROJECT.md",
+        project / "PROJECT_STATE.md",
+        project / "TASKS.md",
+        project / "results" / "e2e-report.md",
+    )
     elapsed = None if report.get("Profile") == "product-only" else _number(report.get("Elapsed seconds"))
     elapsed_source = "E2E report" if elapsed is not None else UNKNOWN
     if elapsed is None:
@@ -115,12 +136,48 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
     )
     first_heading = _first_heading(project / "PROJECT.md")
     verdicts = {name.lower(): report.get(f"{name} verdict", UNKNOWN) for name in VERDICTS}
-    errors = [task for task in tasks if task["error"] != UNKNOWN]
+    attention_errors = [task for task in tasks if task["needs_attention"] and task["error"] != UNKNOWN]
+    agents = []
+    seen_agents = set()
+    for task in tasks:
+        agent_key = (task["role"], task["profile"], task["provider"])
+        if task["role"] != UNKNOWN and agent_key not in seen_agents:
+            seen_agents.add(agent_key)
+            agents.append(
+                {
+                    "owner": task["owner"],
+                    "role": task["role"],
+                    "profile": task["profile"],
+                    "provider": task["provider"],
+                    "task_id": task["id"],
+                    "phase": task["phase"],
+                    "status": task["status"],
+                }
+            )
+    agent_total = len(agents)
+    agents = agents[:8]
+    active_task = state.get("Active Task", UNKNOWN)
+    active_task_details = next((task for task in tasks if task["id"] == active_task), None)
+    needs_attention = blocked > 0 or failed > 0 or str(state.get("Status", "")).lower() in {"blocked", "failed"}
+    progress_percent = round(completed / len(tasks) * 100) if tasks else 0
+    reported_error = report.get("Error")
+    if reported_error:
+        error = reported_error
+        diagnostic_path = attention_errors[0]["diagnostic_path"] if attention_errors else UNKNOWN
+    elif attention_errors:
+        error = attention_errors[0]["error"]
+        diagnostic_path = attention_errors[0]["diagnostic_path"]
+    elif blocked:
+        error = f"{blocked} blocked task{'s' if blocked != 1 else ''} require review"
+        diagnostic_path = UNKNOWN
+    else:
+        error = diagnostic_path = UNKNOWN
     return {
         "id": project_id,
         "name": first_heading or project_id,
         "status": state.get("Status", UNKNOWN),
-        "active_task": state.get("Active Task", UNKNOWN),
+        "active_task": active_task,
+        "active_task_details": active_task_details,
         "started_at": started or UNKNOWN,
         "updated_at": updated or UNKNOWN,
         "elapsed_seconds": elapsed,
@@ -130,6 +187,10 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         "task_completed": completed,
         "task_failed": failed,
         "task_blocked": blocked,
+        "progress_percent": progress_percent,
+        "needs_attention": needs_attention,
+        "agents": agents,
+        "agent_total": agent_total,
         "turns": sum(task["turns"] for task in tasks),
         "corrections": sum(task["corrections"] for task in tasks),
         "failed_turns": sum(task["failed_turns"] for task in tasks),
@@ -140,36 +201,10 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         "local_input_tokens": _total_tokens(tasks, "local_input_tokens"),
         "local_output_tokens": _total_tokens(tasks, "local_output_tokens"),
         "cached_tokens": _total_tokens(tasks, "cached_tokens"),
-        "error": report.get("Error", errors[-1]["error"] if errors else UNKNOWN),
-        "diagnostic_path": errors[-1]["diagnostic_path"] if errors else UNKNOWN,
+        "error": error,
+        "diagnostic_path": diagnostic_path,
         "verdicts": verdicts,
     }
-
-
-def compare_projects(baseline: dict[str, Any], candidate: dict[str, Any]) -> list[dict[str, Any]]:
-    numeric = (
-        ("Delivery time", "elapsed_seconds"),
-        ("Worker turns", "turns"),
-        ("Corrections", "corrections"),
-        ("Failed turns", "failed_turns"),
-        ("Cloud tokens", "cloud_tokens"),
-        ("Local tokens", "local_tokens"),
-    )
-    rows = []
-    for label, key in numeric:
-        before, after = baseline[key], candidate[key]
-        difference = after - before if isinstance(before, (int, float)) and isinstance(after, (int, float)) else UNKNOWN
-        before_display = _display(before)
-        after_display = _display(after)
-        if key == "elapsed_seconds":
-            before_display = f"{before_display} ({baseline['elapsed_source']})"
-            after_display = f"{after_display} ({candidate['elapsed_source']})"
-        rows.append({"metric": label, "baseline": before_display, "candidate": after_display, "difference": _display(difference)})
-    for name in ("product", "evidence", "management", "performance"):
-        before, after = baseline["verdicts"][name], candidate["verdicts"][name]
-        difference = "same" if before == after else f"{before} -> {after}"
-        rows.append({"metric": f"{name.title()} verdict", "baseline": before, "candidate": after, "difference": difference})
-    return rows
 
 
 def create_app(projects_dir: str | Path | None = None) -> Flask:
@@ -178,7 +213,23 @@ def create_app(projects_dir: str | Path | None = None) -> Flask:
 
     @app.get("/")
     def projects_view():
-        return render_template("webui/projects.html", projects=list_projects(root))
+        projects = list_projects(root)
+        attention = [project for project in projects if project["needs_attention"]]
+        active = [
+            project
+            for project in projects
+            if not project["needs_attention"] and project["status"].lower() not in COMPLETED_PROJECT_STATUSES
+        ]
+        delivered = [project for project in projects if project["status"].lower() in COMPLETED_PROJECT_STATUSES]
+        active_count = sum(project["status"].lower() not in COMPLETED_PROJECT_STATUSES for project in projects)
+        return render_template(
+            "webui/projects.html",
+            projects=projects,
+            attention_projects=attention,
+            active_projects=active,
+            delivered_projects=delivered,
+            active_count=active_count,
+        )
 
     @app.get("/projects/<project_id>")
     def project_view(project_id: str):
@@ -187,30 +238,6 @@ def create_app(projects_dir: str | Path | None = None) -> Flask:
         except (OSError, ValueError):
             abort(404)
         return render_template("webui/project.html", project=project)
-
-    @app.get("/compare")
-    def compare_view():
-        baseline_id = request.args.get("baseline", "")
-        candidate_id = request.args.get("candidate", "")
-        projects = list_projects(root)
-        comparison = None
-        baseline = candidate = None
-        if baseline_id or candidate_id:
-            if not baseline_id or not candidate_id:
-                abort(400)
-            try:
-                baseline = load_project(root, baseline_id)
-                candidate = load_project(root, candidate_id)
-            except (OSError, ValueError):
-                abort(404)
-            comparison = compare_projects(baseline, candidate)
-        return render_template(
-            "webui/compare.html",
-            projects=projects,
-            baseline=baseline,
-            candidate=candidate,
-            comparison=comparison,
-        )
 
     return app
 
@@ -235,21 +262,72 @@ def _session(project: Path, path: Path) -> dict[str, Any] | None:
     usage = None
     error = None
     diagnostic = None
+    turns = data.get("turns") if isinstance(data.get("turns"), list) else []
+    metadata = {
+        item.get("number"): item
+        for item in turns
+        if isinstance(item, dict) and isinstance(item.get("number"), int)
+    }
+    turn_details = []
     # Codex exports the persistent thread's total_token_usage at each completed
     # turn. The final completed record is the session total; summing records
     # would count the same earlier usage again.
     for turn_file in turn_files:
+        match = TURN_FILE.match(turn_file.name)
+        number = int(match.group(1))
+        phase = match.group(2)
         parsed = _jsonl(turn_file)
         if parsed["usage"] is not None:
             usage = parsed["usage"]
-        if parsed["error"]:
-            error = parsed["error"]
-            diagnostic = turn_file.relative_to(project).as_posix()
+        turn_error = parsed["error"]
+        turn_diagnostic = UNKNOWN
+        if turn_error:
+            turn_diagnostic = turn_file.relative_to(project).as_posix()
             stderr = turn_file.with_suffix(".stderr.txt")
             if stderr.is_file() and stderr.stat().st_size:
-                diagnostic = stderr.relative_to(project).as_posix()
+                turn_diagnostic = stderr.relative_to(project).as_posix()
+        item = metadata.get(number, {})
+        turn_usage = parsed["usage"] or {}
+        turn_details.append(
+            {
+                "number": number,
+                "phase": str(item.get("phase", phase)),
+                "status": str(item.get("status", UNKNOWN)),
+                "duration_seconds": item.get("duration_seconds"),
+                "input_tokens": turn_usage.get("input_tokens"),
+                "output_tokens": turn_usage.get("output_tokens"),
+                "cached_tokens": turn_usage.get("cached_input_tokens"),
+                "error": turn_error or UNKNOWN,
+                "diagnostic_path": turn_diagnostic,
+            }
+        )
+        if parsed["error"]:
+            error = parsed["error"]
+            diagnostic = turn_diagnostic
 
-    turns = data.get("turns") if isinstance(data.get("turns"), list) else []
+    recorded_numbers = {item["number"] for item in turn_details}
+    for number, item in metadata.items():
+        if number not in recorded_numbers:
+            turn_details.append(
+                {
+                    "number": number,
+                    "phase": str(item.get("phase", UNKNOWN)),
+                    "status": str(item.get("status", UNKNOWN)),
+                    "duration_seconds": item.get("duration_seconds"),
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "cached_tokens": None,
+                    "error": UNKNOWN,
+                    "diagnostic_path": UNKNOWN,
+                }
+            )
+    turn_details.sort(key=lambda item: item["number"])
+
+    if turn_details:
+        for turn in turn_details:
+            if turn["status"] == UNKNOWN and turn["number"] == turn_details[-1]["number"]:
+                turn["status"] = str(data.get("last_status", UNKNOWN))
+
     durations = [item.get("duration_seconds") for item in turns if isinstance(item, dict)]
     durations = [float(value) for value in durations if isinstance(value, (int, float))]
     failed_turns = sum(
@@ -265,6 +343,10 @@ def _session(project: Path, path: Path) -> dict[str, Any] | None:
             if isinstance(last, str):
                 diagnostic = last.removesuffix(".txt") + ".jsonl"
         error = error or str(data.get("last_status"))
+        if turn_details:
+            last_turn = turn_details[-1]
+            last_turn["error"] = error
+            last_turn["diagnostic_path"] = diagnostic or UNKNOWN
 
     input_tokens = int((usage or {}).get("input_tokens", 0) or 0)
     output_tokens = int((usage or {}).get("output_tokens", 0) or 0)
@@ -277,6 +359,7 @@ def _session(project: Path, path: Path) -> dict[str, Any] | None:
         "attempt": str(data.get("attempt_id", UNKNOWN)),
         "profile": str(data.get("model_profile", UNKNOWN)),
         "provider": provider,
+        "role": str(data.get("agent_role", UNKNOWN)),
         "phase": str(data.get("last_phase", UNKNOWN)),
         "status": str(data.get("last_status", UNKNOWN)),
         "turns": int(data.get("turn_count", len(turn_files)) or 0),
@@ -292,6 +375,7 @@ def _session(project: Path, path: Path) -> dict[str, Any] | None:
         "cached_tokens": cached_tokens if usage is not None else None,
         "error": error or UNKNOWN,
         "diagnostic_path": diagnostic or UNKNOWN,
+        "turn_details": turn_details,
         "created_at": data.get("created_at"),
         "updated_at": data.get("updated_at") or "",
     }
@@ -323,6 +407,40 @@ def _bullets(path: Path) -> dict[str, str]:
         if match:
             values[match.group(1)] = match.group(2).strip().strip("`") or UNKNOWN
     return values
+
+
+def _task_rows(path: Path) -> list[TaskRow]:
+    try:
+        text = path.read_text(encoding="utf-8")
+        return list(parse_task_document(text).rows)
+    except OSError:
+        return []
+    except (TaskDocumentError, ValueError):
+        rows = []
+        seen = set()
+        for line in text.splitlines():
+            if not re.match(r"^\|\s*T\d{3,6}\s*\|", line):
+                continue
+            cells = tuple(cell.strip().strip("`") for cell in line.strip()[1:-1].split("|"))
+            if len(cells) != 6:
+                continue
+            task_id = normalize_task_id(cells[0])
+            if task_id in seen:
+                continue
+            seen.add(task_id)
+            status = cells[2]
+            for prefix, normalized in (
+                ("completed", "Completed"),
+                ("blocked", "Blocked"),
+                ("planned", "Planned"),
+                ("assigned", "In Progress"),
+                ("drafted", "In Progress"),
+            ):
+                if status.lower().startswith(prefix):
+                    status = normalized
+                    break
+            rows.append(TaskRow(task_id, cells[1], status, cells[3], cells[4], cells[5]))
+        return rows
 
 
 def _first_heading(path: Path) -> str | None:
@@ -360,5 +478,80 @@ def _elapsed_seconds(start: str | None, end: str | None) -> int | None:
         return None
 
 
-def _display(value: Any) -> Any:
-    return UNKNOWN if value is None else value
+def _task_phases(task: dict[str, Any]) -> list[dict[str, Any]]:
+    turns = [
+        turn
+        for attempt in reversed(task["attempts"])
+        for turn in attempt["turn_details"]
+    ]
+    phases = []
+    for name in PHASES[:3]:
+        matching = [turn for turn in turns if turn["phase"] == name]
+        status = matching[-1]["status"] if matching else UNKNOWN
+        state = "pending"
+        if matching:
+            if status == "correction_needed":
+                state = "warning"
+            elif status in FAILED_TURN_STATUSES:
+                state = "failed"
+            elif status in {"running", "in_progress"}:
+                state = "active"
+            else:
+                state = "complete"
+        elif task["phase"] == name and task["status"] != "Completed":
+            state = "active"
+        durations = [turn["duration_seconds"] for turn in matching if isinstance(turn["duration_seconds"], (int, float))]
+        phases.append(
+            {
+                "name": name,
+                "state": state,
+                "status": status,
+                "turns": len(matching),
+                "duration_seconds": round(sum(durations), 3) if durations else None,
+            }
+        )
+
+    verification = str(task["verification"]).lower()
+    if verification in {"pass", "passed", "verified", "complete", "completed"}:
+        verify_state = "complete"
+    elif "fail" in verification:
+        verify_state = "failed"
+    elif task["phase"] == "verify":
+        verify_state = "active"
+    else:
+        verify_state = "pending"
+    phases.append({"name": "verify", "state": verify_state, "status": task["verification"], "turns": 0, "duration_seconds": None})
+
+    task_status = str(task["status"]).lower()
+    if task_status in {"complete", "completed", "closed", "done"}:
+        closed_state = "complete"
+    elif task_status in {"blocked", "failed"}:
+        closed_state = "failed"
+    else:
+        closed_state = "pending"
+    phases.append({"name": "closed", "state": closed_state, "status": task["status"], "turns": 0, "duration_seconds": None})
+    return phases
+
+
+def _latest_timestamp(values: list[Any]) -> str | None:
+    available = [str(value) for value in values if value and _timestamp_value(value) != float("-inf")]
+    return max(available, key=_timestamp_value) if available else None
+
+
+def _timestamp_value(value: Any) -> float:
+    if not value or value == UNKNOWN:
+        return float("-inf")
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except (TypeError, ValueError):
+        return float("-inf")
+
+
+def _latest_file_timestamp(*paths: Path) -> str | None:
+    existing = [path.stat().st_mtime for path in paths if path.is_file()]
+    if not existing:
+        return None
+    return datetime.fromtimestamp(max(existing), timezone.utc).isoformat().replace("+00:00", "Z")

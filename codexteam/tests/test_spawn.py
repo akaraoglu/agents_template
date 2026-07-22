@@ -319,6 +319,14 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
     assert session["thread_id"] == THREAD_ID
     assert session["turn_count"] == 1
     assert session["last_phase"] == "draft"
+    assert session["turns"] == [
+        {
+            "number": 1,
+            "phase": "draft",
+            "status": "draft_ready",
+            "duration_seconds": 0.2,
+        }
+    ]
     assert not request.result_path.exists()
     assert stat.S_IMODE(request.session_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(request.codex_home.stat().st_mode) == 0o700
@@ -332,7 +340,12 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
         observed["command"] = command
         observed["codex_home"] = kwargs["env"]["CODEX_HOME"]
         observed["sqlite_home"] = kwargs["env"]["CODEX_SQLITE_HOME"]
-        return successful_process("DRAFT T002/att-001\n\nOutcome: feedback addressed")
+        return spawn.ProcessResult(
+            0,
+            event_stream("DRAFT T002/att-001\n\nOutcome: feedback addressed"),
+            "",
+            0.75,
+        )
 
     monkeypatch.setattr(spawn, "run_process", fake_process)
     request = spawn.prepare_request(
@@ -348,6 +361,12 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
     assert session["model_provider"] == "ollama_local"
     assert session["model_reasoning_effort"] == "high"
     assert session["turn_count"] == 2
+    assert session["turns"][1] == {
+        "number": 2,
+        "phase": "feedback",
+        "status": "draft_ready",
+        "duration_seconds": 0.75,
+    }
     assert observed["command"][-2:] == [THREAD_ID, "-"]
     assert observed["codex_home"] == str(initial.codex_home)
     assert observed["sqlite_home"] == str(initial.codex_home)

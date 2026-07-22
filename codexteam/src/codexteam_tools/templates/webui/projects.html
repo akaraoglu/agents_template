@@ -1,13 +1,78 @@
 {% extends "webui/base.html" %}
 {% block title %}Projects · CodexTeam{% endblock %}
 {% block content %}
-  <div class="heading"><div><h1>Projects</h1><p>Read-only status from repository artifacts.</p></div><a href="">Refresh</a></div>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Project</th><th>Status</th><th>Active task</th><th>Tasks</th><th>Elapsed</th><th>Turns</th><th>Corrections</th><th>Last update</th></tr></thead>
-    <tbody>
-    {% for project in projects %}
-      <tr><td><a href="{{ url_for('project_view', project_id=project.id) }}">{{ project.name }}</a><small>{{ project.id }}</small></td><td>{{ project.status }}</td><td>{{ project.active_task }}</td><td>{{ project.task_completed }}/{{ project.task_total }}</td><td>{{ project.elapsed_seconds if project.elapsed_seconds is not none else 'unknown' }}<small>{{ project.elapsed_source }}</small></td><td>{{ project.turns }}</td><td>{{ project.corrections }}</td><td>{{ project.updated_at }}</td></tr>
-    {% else %}<tr><td colspan="8">No projects found.</td></tr>{% endfor %}
-    </tbody>
-  </table></div>
+  {% macro project_card(project, attention=false) %}
+    <a class="project-card{% if attention %} attention{% endif %}" href="{{ url_for('project_view', project_id=project.id) }}">
+      <div class="card-heading">
+        <div><h3>{{ project.name }}</h3><code>{{ project.id }}</code></div>
+        <span class="status-badge status-{{ project.status|lower|replace(' ', '-') }}">{{ project.status }}</span>
+      </div>
+      {% if project.active_task_details %}
+        <div class="current-work">
+          <span>{{ project.active_task }} · {{ project.active_task_details.owner }}</span>
+          <strong>{{ project.active_task_details.phase|title }}</strong>
+          <small>{{ project.active_task_details.profile }} · {{ project.active_task_details.provider }}</small>
+        </div>
+      {% else %}
+        <div class="current-work"><span>Current task</span><strong>{{ project.active_task }}</strong></div>
+      {% endif %}
+      <div class="progress-label"><span>{{ project.task_completed }} of {{ project.task_total }} tasks</span><span>{{ project.progress_percent }}%</span></div>
+      <div class="progress"><i style="width: {{ project.progress_percent }}%"></i></div>
+      <div class="card-metrics">
+        <span><strong>{{ project.elapsed_seconds if project.elapsed_seconds is not none else '—' }}</strong> seconds</span>
+        <span><strong>{{ project.turns }}</strong> turns</span>
+        <span><strong>{{ project.local_tokens if project.local_tokens is not none else '—' }}</strong> local tokens</span>
+      </div>
+      {% if attention and project.error != 'unknown' %}<p class="card-error">{{ project.error }}</p>{% endif %}
+      <time>Updated {{ project.updated_at }}</time>
+    </a>
+  {% endmacro %}
+
+  <div class="page-heading">
+    <div><span class="eyebrow">Workspace overview</span><h1>Projects</h1><p>Current work, responsible agents, and execution health.</p></div>
+    <a class="refresh" href="">Refresh</a>
+  </div>
+
+  <section class="overview" aria-label="Workspace summary">
+    <div><strong>{{ projects|length }}</strong><span>Projects</span></div>
+    <div><strong>{{ active_count }}</strong><span>Active</span></div>
+    <div><strong>{{ attention_projects|length }}</strong><span>Need attention</span></div>
+    <div><strong>{{ delivered_projects|length }}</strong><span>Delivered</span></div>
+  </section>
+
+  {% if attention_projects %}
+    <section class="dashboard-section">
+      <div class="section-heading"><div><span class="eyebrow danger">Action required</span><h2>Needs attention</h2></div><span>{{ attention_projects|length }} project{% if attention_projects|length != 1 %}s{% endif %}</span></div>
+      <div class="project-grid">{% for project in attention_projects %}{{ project_card(project, true) }}{% endfor %}</div>
+    </section>
+  {% endif %}
+
+  {% if active_projects %}
+    <section class="dashboard-section">
+      <div class="section-heading"><div><span class="eyebrow">In progress</span><h2>Active projects</h2></div><span>Latest activity first</span></div>
+      <div class="project-grid">{% for project in active_projects %}{{ project_card(project) }}{% endfor %}</div>
+    </section>
+  {% endif %}
+
+  {% if delivered_projects %}
+    <section class="dashboard-section">
+      <div class="section-heading"><div><span class="eyebrow">Completed work</span><h2>Recently delivered</h2></div><span>Latest activity first</span></div>
+      <div class="project-grid compact">{% for project in delivered_projects %}{{ project_card(project) }}{% endfor %}</div>
+    </section>
+  {% endif %}
+
+  <section class="dashboard-section all-projects">
+    <div class="section-heading"><div><span class="eyebrow">Repository</span><h2>All projects</h2></div><span>Latest activity first</span></div>
+    <div class="project-list">
+      {% for project in projects %}
+        <a href="{{ url_for('project_view', project_id=project.id) }}">
+          <span class="project-name"><strong>{{ project.name }}</strong><code>{{ project.id }}</code></span>
+          <span class="status-badge status-{{ project.status|lower|replace(' ', '-') }}">{{ project.status }}</span>
+          <span><strong>{{ project.active_task }}</strong><small>Current task</small></span>
+          <span><strong>{{ project.task_completed }}/{{ project.task_total }}</strong><small>Tasks</small></span>
+          <time>{{ project.updated_at }}</time>
+        </a>
+      {% else %}<div class="empty-state">No projects found.</div>{% endfor %}
+    </div>
+  </section>
 {% endblock %}

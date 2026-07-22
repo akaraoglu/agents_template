@@ -91,4 +91,4 @@ The product-only gate runs the unittest suite and the repository-owned black-box
 ../env-python/bin/python scripts/run-webui.py
 ```
 
-The server binds only to `127.0.0.1:5000`. It reads existing project, session, JSONL, and `results/e2e-report.md` artifacts directly and provides project list, project detail, and two-run comparison views. Missing durations, tokens, or verdicts display as `unknown`. There are no mutation routes or recovery actions.
+The server binds only to `127.0.0.1:5000`. It reads existing project, session, JSONL, and `results/e2e-report.md` artifacts directly. Projects and tasks are ordered by latest activity, and the project view expands from task phases into attempts, turns, tokens, errors, and diagnostics. The theme menu defaults to System Default and stores an explicit Light or Dark preference in browser-local storage. Missing durations, tokens, or verdicts display as `unknown`. There are no mutation routes or recovery actions.
