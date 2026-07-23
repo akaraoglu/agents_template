@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from codexteam_tools.paths import (
+    DEFAULT_PROJECTS_ROOT,
     PathValidationError,
     contained_path,
     normalize_task_id,
@@ -10,6 +11,12 @@ from codexteam_tools.paths import (
     slugify_project_name,
     validate_profile,
 )
+
+
+def test_default_projects_root_is_the_current_codexteam_workspace():
+    assert DEFAULT_PROJECTS_ROOT == Path(
+        "/home/alik/workspace/agent_template/codexteam/projects"
+    )
 
 
 def test_canonical_identifiers():

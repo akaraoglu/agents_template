@@ -25,7 +25,7 @@ Use after `PROJECT.md` has a concrete MVP scope and acceptance criteria, or when
 2. Decide whether the work is one small coherent thin slice or needs the full multi-slice workflow.
 3. For a small thin slice, assign the complete functional implementation to one Developer instead of splitting parser, renderer, CLI wiring, tests, or similar parts into generic developer tasks.
 4. Give each role only `BRIEF.md`, its task handoff, and the exact requirement sections, files, or upstream evidence named in that handoff. Do not use "read the repository" or "read all project documents" as context.
-5. Plan an evidence chain: Developer output to Tester, Tester commands and artifacts to Reviewer, then accepted evidence and review disposition to Documenter.
+5. Plan an evidence chain: accepted Architect design, Developer implementation plus Development Gate, Test Engineer integration/regression changes plus Integration Gate, Reviewer audit, then accepted evidence and review disposition to an optional Documenter and boundary-only Git Steward.
 6. Split larger or materially independent work into project-specific tasks with one named responsible AI role and clear evidence.
 7. Keep task IDs stable when possible.
 8. Make each task independently reviewable.
@@ -34,19 +34,21 @@ Use after `PROJECT.md` has a concrete MVP scope and acceptance criteria, or when
 11. Update `TASKS.md`, `management/BACKLOG.md`, and `management/tasks/T*.md`.
 12. Treat each `management/tasks/T*.md` file as the contract passed to the team.
 
-## Small-Project Fast Lane
+## Small-Project Role Flow
 
-Use this proportional five-role sequence for one coherent, low-risk slice:
+Use this proportional sequence for one coherent, low-risk slice. Architect through Reviewer are default initialized tasks; Documenter is optional and Git Steward runs only at a named verified boundary.
 
 | Sequence | Responsible AI | Bounded outcome | Reused input |
 |----------|----------------|-----------------|--------------|
 | 1 | Project Lead | Approved brief, thin-slice handoffs, and evidence expectations | Approved project goal |
-| 2 | Developer | Functional slice and focused developer checks | Brief, implementation handoff, named source files |
-| 3 | Tester | Independent acceptance evidence and failure classification | Developer result and its named files/artifacts |
-| 4 | Reviewer | Accept/revise decision against approved criteria | Tester result, commands, and evidence artifacts |
-| 5 | Documenter | Delivery material that states verified truth | Accepted Tester evidence and Reviewer disposition |
+| 2 | Architect | Requirement-traceable code, dependency, repository, data-flow, and test architecture | Approved requirements and existing constraints |
+| 3 | Developer | Functional slice, algorithm/unit tests, smoke test, and Development Gate | Accepted architecture, implementation handoff, named source files, configured gates |
+| 4 | Test Engineer (`tester`) | Integration/regression tests, CI-equivalent Integration Gate, and classified evidence | Developer draft, changed files, and Development Gate evidence |
+| 5 | Reviewer | Accept/revise decision against criteria, architecture, source/test diffs, and both gates | Architect, Developer, and Test Engineer results plus named artifacts |
+| 6 | Documenter, when needed | Delivery material that states verified truth | Accepted gate evidence and Reviewer disposition |
+| 7 | Local Git Steward, at a boundary | One explicit local commit plan and deterministic authorized commit | Current review, gate evidence, approved paths, branch, and HEAD |
 
-This is one evidence pipeline, not five fresh investigations. Recommend medium reasoning effort for routine fast-lane assignments. Use the full workflow when the project has multiple independent slices, parallel implementation ownership, migrations, security-sensitive behavior, broad architecture changes, or evidence that the slice is not actually small.
+This is one evidence pipeline, not seven fresh investigations. The Git Steward does not run after every turn and does not perform remote actions. Recommend medium reasoning effort for routine assignments. Use the full workflow when the project has multiple independent slices, parallel implementation ownership, migrations, security-sensitive behavior, broad architecture changes, or evidence that the slice is not actually small.
 
 ## Task Handoff Contract
 
@@ -70,7 +72,7 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 - Ordered task list
 - Per-task goal, scope, files, verification, and done criteria
 - One explicit responsible AI for every task
-- One functional Developer owns a small coherent slice; Tester, Reviewer, and Documenter receive separate bounded evidence responsibilities.
+- Architect owns design without implementation or self-approval; one functional Developer owns a small coherent slice and Development Gate; a Test Engineer owns scoped integration/regression tests and the Integration Gate; Reviewer and optional Documenter receive separate bounded evidence responsibilities; Git Steward is boundary-only.
 - Explicit blockers and dependencies
 - Worker-ready task files that can be executed without chat history
 
@@ -81,7 +83,8 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 - No task is so broad that verification is unclear.
 - Each task file has enough information for a different agent to run it safely.
 - Context names the necessary files and upstream evidence instead of assigning repository-wide rediscovery.
-- Tester evidence can flow to the Reviewer and Documenter without being translated or recreated.
+- Both gate artifacts and Test Engineer failure classifications can flow to the Reviewer and Documenter without being translated or recreated.
+- Every commit boundary names exact tasks and paths and requires current review plus Integration Gate or architecture-review evidence.
 - Ordinary corrections can return to the same responsible AI without reconstructing ownership from chat.
 
 ## Common Mistakes

@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path, PurePosixPath
 
-DEFAULT_PROJECTS_ROOT = Path("/home/alik/workspace/codexspace/projects")
+DEFAULT_PROJECTS_ROOT = Path("/home/alik/workspace/agent_template/codexteam/projects")
 PROJECTS_ROOT_ENV = "CODEXTEAM_PROJECTS_ROOT"
 
 TASK_ID_PATTERN = re.compile(r"T[0-9]{3,6}")

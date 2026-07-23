@@ -131,7 +131,7 @@ def test_initial_command_persists_json_session_without_ephemeral(tmp_path: Path,
     assert "-o" in command
     assert "--ephemeral" not in command
     assert "--last" not in command
-    assert not any("model_reasoning_effort=" in argument for argument in command)
+    assert 'model_reasoning_effort="medium"' in command
 
 
 def test_parent_sandbox_mode_skips_redundant_worker_namespace_and_persists(
@@ -271,7 +271,7 @@ def test_resume_command_uses_exact_thread_and_no_initial_only_flags(tmp_path: Pa
     assert command[command.index("-m") + 1] == "qwen"
     assert 'model_provider="ollama_local"' in command
     assert 'model_catalog_json="/tmp/local-models.json"' in command
-    assert 'model_reasoning_effort="high"' in command
+    assert 'model_reasoning_effort="medium"' in command
     assert 'model_verbosity="medium"' in command
 
 
@@ -359,7 +359,7 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
     assert session["attempt_id"] == "att-001"
     assert session["model"] == "qwen"
     assert session["model_provider"] == "ollama_local"
-    assert session["model_reasoning_effort"] == "high"
+    assert session["model_reasoning_effort"] == "medium"
     assert session["turn_count"] == 2
     assert session["turns"][1] == {
         "number": 2,
@@ -647,3 +647,147 @@ def test_prepare_request_rejects_missing_profile(tmp_path: Path, monkeypatch):
     args = request_args(tmp_path, monkeypatch, profile="missing-profile")
     with pytest.raises(FileNotFoundError, match="Codex profile not found"):
         spawn.prepare_request(args)
+
+
+def test_role_policy_supplies_default_profile_guidance_and_handoff_identity(
+    tmp_path: Path, monkeypatch
+):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, profile=None, role="tester")
+    )
+    handoff = spawn.build_handoff(request)
+
+    assert request.profile == "qwen36-27b"
+    assert [path.name for path in request.skill_files] == [
+        "integration-testing.md",
+        "verification.md",
+    ]
+    assert handoff["role_policy"] == {
+        "name": "codexteam_tester",
+        "schema_version": "1.0",
+        "digest": request.role_policy.digest,
+    }
+    command = spawn.build_command(request, spawn.prepare_turn(request))
+    assert any(
+        argument.startswith("developer_instructions=") for argument in command
+    )
+
+
+def test_skill_contents_are_pinned_for_attempt_continuations(tmp_path: Path, monkeypatch):
+    custom = tmp_path / "custom-skill.md"
+    custom.write_text("original guidance\n")
+    draft = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, skill_file=[str(custom)])
+    )
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+    _, code = spawn.run_spawn(draft)
+    assert code == 0
+    custom.write_text("changed guidance\n")
+
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="FEEDBACK: REVISE")
+    )
+    assert feedback.skill_files[0].read_text() == "original guidance\n"
+    assert feedback.guidance_digest == draft.guidance_digest
+    assert feedback.skill_files[0].is_relative_to(feedback.session_dir)
+
+
+def test_pinned_skill_tampering_is_rejected(tmp_path: Path, monkeypatch):
+    draft, _ = run_draft(tmp_path, monkeypatch)
+    pinned = next((draft.session_dir / "guidance").rglob("*.md"))
+    pinned.write_text("tampered\n")
+    with pytest.raises(ValueError, match="snapshot digest mismatch"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="FEEDBACK: REVISE")
+        )
+
+
+def test_draft_pins_role_policy_snapshot_for_continuations(tmp_path: Path, monkeypatch):
+    request, _ = run_draft(tmp_path, monkeypatch)
+    snapshot = json.loads(request.role_policy_path.read_text())
+    assert snapshot["name"] == "codexteam_developer"
+    assert snapshot["digest"] == request.role_policy.digest
+
+    monkeypatch.setattr(
+        spawn,
+        "load_role_policy",
+        lambda *args, **kwargs: pytest.fail("resume must use the pinned snapshot"),
+    )
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="FEEDBACK: REVISE")
+    )
+    assert feedback.role_policy.source_path == request.role_policy_path
+    assert feedback.role_policy.digest == request.role_policy.digest
+
+
+def test_resume_without_profile_reuses_the_recorded_override(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch, profile="alternate")
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    (source_home / "alternate.config.toml").write_text(
+        'model = "qwen"\nmodel_provider = "ollama_local"\n'
+    )
+    request = spawn.prepare_request(args)
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+    _, code = spawn.run_spawn(request)
+    assert code == 0
+
+    feedback = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            phase="feedback",
+            profile=None,
+            prompt="FEEDBACK: REVISE",
+        )
+    )
+    assert feedback.profile == "alternate"
+
+
+def test_forbidden_tester_write_requires_correction(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="tester", task="T003")
+    )
+
+    def fake_process(*args, **kwargs):
+        source = request.workspace / "src" / "production.py"
+        source.parent.mkdir()
+        source.write_text("CHANGED = True\n")
+        return successful_process("DRAFT T003/att-001\n\nOutcome: checked")
+
+    monkeypatch.setattr(spawn, "run_process", fake_process)
+    outcome, code = spawn.run_spawn(request)
+    state = json.loads((request.session_dir / "turn-state.json").read_text())
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert any("src/production.py" in error for error in outcome["errors"])
+    assert state["changed_paths"] == ["src/production.py"]
+    assert state["role_policy_name"] == "codexteam_tester"
+
+
+def test_running_turn_state_is_written_before_worker_execution(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    observed = {}
+
+    def fake_process(*args, **kwargs):
+        observed.update(json.loads((request.session_dir / "turn-state.json").read_text()))
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", fake_process)
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 0
+    assert observed["status"] == "running"
+    assert observed["phase"] == "draft"
+    assert observed["model_profile"] == "qwen36-27b"
+    terminal = json.loads((request.session_dir / "turn-state.json").read_text())
+    assert terminal["status"] == "draft_ready"
+    assert outcome["role_policy_name"] == "codexteam_developer"

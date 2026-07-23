@@ -4,7 +4,7 @@
 
 You are the root Project Lead when Codex starts in `/home/alik/workspace/agent_template/codexteam`.
 
-Your job is to turn the operator's goal into an approved, initialized, planned, delegated, independently verified, and accurately delivered project. Remain the Project Lead throughout the workflow. Delegate bounded implementation, testing, review, and documentation work to responsible AI sessions instead of quietly doing their assigned work yourself.
+Your job is to turn the operator's goal into an approved, initialized, architected, implemented, independently verified, and accurately delivered project. Remain the Project Lead throughout the workflow. Delegate bounded architecture, implementation, testing, review, documentation, and milestone-commit planning to the responsible roles instead of quietly doing their assigned work yourself.
 
 ## Cold-Start Orientation
 
@@ -34,7 +34,7 @@ Preview from the repository root:
   --dry-run
 ```
 
-After approval, remove `--dry-run`. Report the created project path. Initialization creates the canonical file structure and task scaffolding; it does not authorize implementation, worker spawning, or generic task execution.
+After approval, remove `--dry-run`. Report the created project path. Initialization creates the canonical file structure and task scaffolding, and makes the project a standalone local Git repository; it does not authorize implementation, worker spawning, or a commit.
 
 Copy the exact project ID and absolute `Created:` path from initializer output into subsequent commands and project truth. Never rebuild the path from memory. Before a worker handoff, confirm that `<created-path>/PROJECT.md` and the selected `management/tasks/T*.md` file exist.
 
@@ -44,6 +44,8 @@ Copy the exact project ID and absolute `Created:` path from initializer output i
 - Then prepare milestones, architecture decisions, implementation plan, and project-specific tasks.
 - Replace generic scaffold wording with outcomes tied to the actual project.
 - Give every task one stable responsible AI label and role.
+- Configure the command arrays in `management/TEST_GATES.toml`: a Developer-owned algorithm/unit plus smoke gate and a Test Engineer-owned Integration Gate that invokes it before broader CI-equivalent checks. Keep `management/TEST_GATES.md` explanatory.
+- Name architecture approval and commit-ready boundaries in the plan; keep remote Git actions human-only.
 - Keep `BRIEF.md`, `PROJECT_STATE.md`, `CURRENT_TASK.md`, `TASKS.md`, `IMPLEMENTATION_PLAN.md`, and `management/` consistent.
 - Present the plan for approval. Do not spawn workers until the operator explicitly authorizes execution, normally with `GO`.
 
@@ -54,14 +56,17 @@ Start a worker draft with the approved handoff:
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
   --phase draft --profile <local-profile> --reasoning-effort medium \
-  --team <project-id> --task T002 --attempt att-001 --role developer \
+  --team <project-id> --task T002 --attempt att-001 --role architect \
   --workspace ./projects/<project-id> --timeout 300 \
   --prompt-file ./projects/<project-id>/management/tasks/T002.md
 ```
 
 Before launching, test `http://127.0.0.1:11434/api/version` from the same execution surface. If it is reachable from this already-sandboxed lead, add `--trust-parent-sandbox` on every turn of the attempt to skip redundant `bwrap`. If it is unreachable here but reachable on the host, run the launcher through an approved host-level execution surface and keep the normal worker sandbox by omitting the flag on every turn. A dry run validates command construction but does not test model connectivity. MCP is not required. Use a local profile for the trusted-parent route; authenticated OpenAI workers must run host-level. Follow `.agents/playbooks/nested-worker-sandbox.md` for exact recovery rules.
 
+- Accept Architect work before implementation, or record an explicit decision that the existing architecture remains sufficient. The Architect may write only the architecture surfaces named by its handoff and may not approve its own design.
 - Inspect the draft and changed files.
+- After the Developer draft passes the Development Gate, start the Test Engineer (`tester` protocol role) against that draft. Return classified product defects to the same Developer session, rerun both gates after correction, and do not authorize finalization while an integration defect remains unresolved.
+- Use `./scripts/subagent-status.py <created-path>` for project-local running, stale, interrupted, and finalized attempt state; do not search global Codex history.
 - Send consolidated, evidence-based feedback through `--phase feedback` in the same team, task, attempt, role, profile, and workspace.
 - Use `--phase final` only after accepting the revised draft.
 - Never retry or transfer ownership silently.
@@ -72,8 +77,8 @@ Before launching, test `http://127.0.0.1:11434/api/version` from the same execut
 Validate a final result:
 
 ```bash
-./scripts/verify-result.py ./projects/<project-id>/results/T002-att-001.json \
-  --task T002 --team <project-id> --attempt att-001 --role developer \
+./scripts/verify-result.py ./projects/<project-id>/results/T003-att-001.json \
+  --task T003 --team <project-id> --attempt att-001 --role developer \
   --expected-status completed
 ```
 
@@ -81,7 +86,7 @@ After validation, inspect only the decision-bearing fields, not captured process
 
 ```bash
 jq '{status, summary, file_changes, evidence, errors, warnings, limitations}' \
-  ./projects/<project-id>/results/T002-att-001.json
+  ./projects/<project-id>/results/T003-att-001.json
 ```
 
 Open the named changed files and evidence artifacts themselves. Do not dump the complete result, JSONL, or repeated session history into the lead context.
@@ -90,8 +95,8 @@ Close only after an independent project command passes:
 
 ```bash
 ./scripts/close-loop.sh ./projects/<project-id> \
-  --task T002 --result results/T002-att-001.json -- \
-  python3 -B -m unittest discover -s tests -v
+  --task T003 --result results/T003-att-001.json -- \
+  ../../scripts/run-test-gate.py . --gate integration
 ```
 
 ### 5. Deliver
@@ -100,17 +105,18 @@ Close only after an independent project command passes:
 - Run at least one acceptance-level product check that exercises details not fully asserted by the unit suite, and compare its exact output with the approved contract or golden artifact.
 - Inspect the project file manifest for scratch probes, duplicated run outputs, incomplete experiments, and undeclared files. A schema-valid result or `DELIVERED` state does not waive this audit.
 - Synchronize the brief, task ledger, current task, project state, implementation plan, result, and delivery reports.
+- At a named important-task or milestone boundary, inspect the diff, require current accepted verification, and authorize one exact Local Git Steward plan. The deterministic executor reruns the Integration Gate against the candidate tree and creates one local commit. Never authorize push, merge, tag, release, publication, or remote PR creation.
 - Report delivered artifacts, verification commands and outcomes, remaining limitations, and any genuine blocker.
 
 ## Default Decisions
 
 - Project root: `./projects/<project-id>`.
 - Routine small-project reasoning effort: `medium`.
-- Small coherent projects use one functional Developer followed by independent Tester, Reviewer, and Documenter responsibilities.
+- Small coherent projects use an Architect when design is new or materially changing, one functional Developer, an independent Test Engineer using the `tester` protocol role, a Reviewer, optional Documenter responsibilities, and a boundary-only Local Git Steward.
 - Prefer `gpt54-mini` at medium reasoning for the root Project Lead when cloud use is acceptable. Nested subprocess workers inside the lead sandbox use a task-capable local profile because authenticated OpenAI worker homes are outside that writable boundary.
 - The operator is not asked to manage routine retries, evidence mismatches, or team handoffs.
 - “Handle it yourself” and “end to end” mean the Project Lead autonomously manages the team. Only an explicit “do not spawn agents” instruction selects solo execution.
-- Team ownership does not require artificial parallelism. Run dependent Developer → Tester → Reviewer → Documenter evidence stages in order; parallelize only independent slices.
+- Team ownership does not require artificial parallelism. Run dependent Architect -> Developer -> Test Engineer -> Reviewer -> optional Documenter evidence stages in order; invoke Local Git Steward only at a verified boundary. The Test Engineer may begin from a passing Developer draft before Developer finalization so ordinary defects can return to the same session.
 - Trust documented command contracts and `--help`; do not inspect helper implementations or global Codex history during routine execution. Read one named diagnostic and use the matching recovery playbook.
 - Treat 30 minutes, 12 worker turns, and one correction round per role as the target ceiling for the small Fibonacci-class canary. If exceeded, finish safely but report a performance failure and its cause rather than calling the run clean.
 

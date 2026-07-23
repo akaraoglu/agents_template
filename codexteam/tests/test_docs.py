@@ -15,6 +15,20 @@ def test_machine_schemas_are_valid_json():
     result_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "result-v1.json").read_text(encoding="utf-8"))
     assert result_schema["properties"]["file_changes"]["items"]["required"] == ["path", "action"]
     assert result_schema["properties"]["evidence"]["items"]["required"] == ["type", "artifact_ref", "summary"]
+    expected_roles = {
+        "architect",
+        "developer",
+        "documenter",
+        "git_steward",
+        "leader",
+        "reviewer",
+        "tester",
+    }
+    handoff_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "handoff-v1.json").read_text(encoding="utf-8"))
+    assert set(handoff_schema["properties"]["agent_role"]["enum"]) == expected_roles
+    assert set(result_schema["properties"]["agent_role"]["enum"]) == expected_roles
+    gate_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "gate-record-v1.json").read_text(encoding="utf-8"))
+    assert "configuration_digest" in gate_schema["required"]
 
 
 def test_documentation_has_no_obsolete_runtime_references():
@@ -40,6 +54,12 @@ def test_public_command_wrappers_are_executable_and_have_help():
         CODEXTEAM_ROOT / "scripts" / "init-project.py",
         CODEXTEAM_ROOT / "scripts" / "update-tasks.py",
         CODEXTEAM_ROOT / "scripts" / "verify-result.py",
+        CODEXTEAM_ROOT / "scripts" / "inspect-role-policies.py",
+        CODEXTEAM_ROOT / "scripts" / "manage-native-agents.py",
+        CODEXTEAM_ROOT / "scripts" / "subagent-status.py",
+        CODEXTEAM_ROOT / "scripts" / "sync-project-guidance.py",
+        CODEXTEAM_ROOT / "scripts" / "run-test-gate.py",
+        CODEXTEAM_ROOT / "scripts" / "git-steward.py",
         CODEXTEAM_ROOT / "scripts" / "close-loop.sh",
         CODEXTEAM_ROOT / ".agents" / "scripts" / "spawn-subagent.sh",
     )
@@ -179,3 +199,46 @@ def test_combined_cold_start_team_delivery_acceptance_is_documented():
     )
     for marker in required_markers:
         assert marker in plan
+
+
+def test_specialist_role_skills_have_complete_reusable_workflow_sections():
+    required_headings = (
+        "## Purpose",
+        "## When To Use",
+        "## Inputs Needed",
+        "## Workflow",
+        "## Commands To Run",
+        "## Expected Output",
+        "## Validation",
+        "## Common Mistakes Or Failure Modes",
+        "## Related Files",
+    )
+    for name in (
+        "architecture-design.md",
+        "development-testing.md",
+        "integration-testing.md",
+        "git-steward.md",
+    ):
+        content = (CODEXTEAM_ROOT / ".agents" / "skills" / name).read_text(
+            encoding="utf-8"
+        )
+        for heading in required_headings:
+            assert heading in content, f"missing {heading!r} in {name}"
+
+
+def test_project_test_gate_template_defines_distinct_owners_and_ci_parity():
+    content = (
+        CODEXTEAM_ROOT / "templates" / "project" / "management" / "TEST_GATES.md"
+    ).read_text(encoding="utf-8")
+    required_markers = (
+        "## Development Gate",
+        "Owner: Developer",
+        "## Integration Gate",
+        "Owner: Test Engineer (`tester` protocol role)",
+        "runs the Development Gate first",
+        "External CI must invoke this command or an exact wrapper around it",
+        "Every modified assertion, fixture expectation, or golden value",
+        "same Developer session",
+    )
+    for marker in required_markers:
+        assert marker in content

@@ -1,0 +1,36 @@
+schema_version = "1.0"
+role = "documenter"
+name = "codexteam_documenter"
+description = "Updates scoped documentation using accepted evidence without changing implementation or lifecycle state."
+developer_instructions = """
+Act as the CodexTeam Documenter for the assigned task and attempt. Edit only documentation authorized by the handoff, preserve existing structure, and make every status or delivery statement match accepted evidence and current tense. Do not change implementation behavior, tests, ownership, or leader-managed lifecycle state. Report missing or contradictory evidence instead of inventing a conclusion.
+"""
+default_profile = "qwen36-27b"
+default_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
+skill_files = ["document-editing.md"]
+allowed_change_patterns = ["*.md", "docs/**", "results/**"]
+denied_change_patterns = [
+  "ARCHITECTURE.md",
+  "DECISIONS.md",
+  "TASKS.md",
+  "PROJECT_STATE.md",
+  "CURRENT_TASK.md",
+  "RESULT.md",
+  "DONE_REPORT.md",
+  "BLOCKED_REPORT.md",
+  "DELIVERY.md",
+  "management/**",
+  "docs/architecture/**",
+  "docs/decisions/**",
+  ".codexteam/**",
+  "src/**",
+  "app/**",
+  "lib/**",
+  "tests/**",
+  ".git/**",
+  "**/__pycache__/**",
+  "**/*.pyc",
+  ".pytest_cache/**"
+]
+allowed_evidence_types = ["artifact", "file_manifest", "cli_invocation", "spec_compliance"]

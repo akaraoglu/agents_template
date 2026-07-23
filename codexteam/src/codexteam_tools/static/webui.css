@@ -194,6 +194,13 @@ main { max-width: 1320px; margin: 0 auto; padding: 2.4rem 2rem 5rem; }
 .agent-card { padding: .8rem; border-radius: .7rem; }
 .agent-card span { color: var(--accent); }
 
+.commit-list { overflow: hidden; border: 1px solid var(--line); border-radius: .8rem; background: var(--surface); }
+.commit-list > div { display: grid; grid-template-columns: 110px minmax(220px, 1fr) 90px minmax(160px, auto); align-items: center; gap: 1rem; padding: .8rem 1rem; border-bottom: 1px solid var(--line); }
+.commit-list > div:last-child { border: 0; }
+.commit-list span, .commit-list small { display: block; }
+.commit-list > div > span:nth-child(3), .commit-list time { color: var(--muted); font-size: .7rem; }
+.commit-list time { text-align: right; }
+
 .task-list { display: grid; gap: .7rem; }
 .task-panel { overflow: hidden; border-radius: .8rem; }
 .task-panel.current { border-color: var(--accent-line); box-shadow: inset 3px 0 var(--accent); }
@@ -232,7 +239,7 @@ summary::-webkit-details-marker { display: none; }
 .task-facts strong { margin-top: .2rem; }
 .inline-error { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; padding: .65rem .75rem; border-radius: .55rem; color: var(--bad); background: var(--bad-soft); font-size: .75rem; }
 .attempt-list { display: grid; gap: .5rem; }
-.attempt { overflow: hidden; border: 1px solid var(--line); border-radius: .55rem; background: white; }
+.attempt { overflow: hidden; border: 1px solid var(--line); border-radius: .55rem; background: var(--surface); }
 .attempt > summary { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem .75rem; color: var(--muted); font-size: .7rem; }
 .attempt > summary strong { color: var(--strong); }
 .turn-list { border-top: 1px solid var(--line); }
@@ -260,6 +267,8 @@ summary::-webkit-details-marker { display: none; }
   .quality-strip div:nth-child(3) { border-right: 0; }
   .project-list > a { grid-template-columns: 2fr .7fr .7fr; }
   .project-list > a > span:nth-child(4), .project-list time { display: none; }
+  .commit-list > div { grid-template-columns: 110px 1fr; }
+  .commit-list > div > span:nth-child(3), .commit-list time { display: none; }
 }
 
 @media (max-width: 620px) {
@@ -285,4 +294,5 @@ summary::-webkit-details-marker { display: none; }
   .disclosure { grid-column: 2; }
   .task-facts { grid-template-columns: repeat(2, 1fr); }
   .turn-row { grid-template-columns: 1fr 1fr; }
+  .commit-list > div { grid-template-columns: 1fr; gap: .35rem; }
 }

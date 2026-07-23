@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .files import atomic_write_text
 from .paths import contained_path, normalize_task_id, projects_root, slugify_project_name, validate_identifier
+from .project_guidance import expected_project_guidance
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TEMPLATE_ROOT = CODEXTEAM_ROOT / "templates" / "project"
@@ -15,8 +18,12 @@ SKILLS_ROOT = CODEXTEAM_ROOT / ".agents" / "skills"
 PROJECT_SKILLS = (
     "debugging.md",
     "delivery.md",
+    "development-testing.md",
     "document-editing.md",
+    "architecture-design.md",
+    "git-steward.md",
     "implementation.md",
+    "integration-testing.md",
     "project-doc-map.md",
     "project-lead.md",
     "sdd-workflow.md",
@@ -27,14 +34,15 @@ PROJECT_SKILLS = (
 )
 TASK_DEFINITIONS = {
     "T001": ("Finalize requirements and project skeleton", "project-lead-01"),
-    "T002": ("Implement the approved thin slice", "developer-01"),
-    "T003": ("Verify acceptance criteria independently", "tester-01"),
-    "T004": ("Review evidence and prepare delivery", "reviewer-01"),
-    "T005": ("Reconcile documentation with verified delivery evidence", "documenter-01"),
+    "T002": ("Design the code and project architecture", "architect-01"),
+    "T003": ("Implement the approved thin slice", "developer-01"),
+    "T004": ("Engineer and run the integration/CI gate", "test-engineer-01"),
+    "T005": ("Review evidence and architecture conformance", "reviewer-01"),
+    "T006": ("Reconcile documentation with verified delivery evidence", "documenter-01"),
 }
-DEFAULT_TASKS = ("T001", "T002", "T003", "T004")
+DEFAULT_TASKS = ("T001", "T002", "T003", "T004", "T005")
 OPTIONAL_TASK_HANDOFFS = {
-    "T005": """# Task T005: Reconcile documentation with verified delivery evidence
+    "T006": """# Task T006: Reconcile documentation with verified delivery evidence
 
 ## Objective
 
@@ -85,6 +93,7 @@ class InitializationPlan:
     project_dir: Path
     files: tuple[str, ...]
     tasks: tuple[str, ...]
+    initialize_git: bool
 
 
 def initialize_project(
@@ -96,6 +105,7 @@ def initialize_project(
     tasks: tuple[str, ...] = DEFAULT_TASKS,
     template_root: str | Path = DEFAULT_TEMPLATE_ROOT,
     dry_run: bool = False,
+    initialize_git: bool = True,
     now: datetime | None = None,
 ) -> InitializationPlan:
     clean_goal = goal.strip()
@@ -146,6 +156,8 @@ def initialize_project(
             raise FileNotFoundError(f"required project skill is missing: {source}")
         rendered[f".codexteam/skills/{skill_name}"] = source.read_text(encoding="utf-8")
 
+    rendered.update(expected_project_guidance())
+
     for task_id in normalized_tasks:
         optional_handoff = OPTIONAL_TASK_HANDOFFS.get(task_id)
         if optional_handoff is not None:
@@ -171,7 +183,14 @@ def initialize_project(
         },
     )
 
-    for directory in ("src", "tests", "results"):
+    for directory in (
+        "src",
+        "docs/architecture",
+        "tests/unit",
+        "tests/smoke",
+        "tests/integration",
+        "results",
+    ):
         rendered[f"{directory}/.gitkeep"] = ""
 
     plan = InitializationPlan(
@@ -179,6 +198,7 @@ def initialize_project(
         project_dir=destination,
         files=tuple(sorted(rendered)),
         tasks=normalized_tasks,
+        initialize_git=initialize_git,
     )
     if dry_run:
         return plan
@@ -186,6 +206,8 @@ def initialize_project(
     destination.mkdir(parents=True, exist_ok=False)
     for relative, content in rendered.items():
         atomic_write_text(contained_path(destination, relative, label="template output"), content)
+    if initialize_git:
+        _initialize_git_repository(destination)
     return plan
 
 
@@ -198,6 +220,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tasks", default=",".join(DEFAULT_TASKS), help="Comma-separated canonical task IDs")
     parser.add_argument("--template-root", default=str(DEFAULT_TEMPLATE_ROOT), help="Project template directory")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print the file plan without writing")
+    parser.add_argument(
+        "--no-git",
+        action="store_true",
+        help="Do not initialize the new project as a standalone local Git repository",
+    )
     parser.add_argument("--json", action="store_true", help="Print the initialization plan as JSON")
     return parser
 
@@ -213,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
             tasks=tuple(item.strip() for item in args.tasks.split(",") if item.strip()),
             template_root=args.template_root,
             dry_run=args.dry_run,
+            initialize_git=not args.no_git,
         )
     except (FileExistsError, FileNotFoundError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}")
@@ -224,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
         "project_dir": str(plan.project_dir),
         "tasks": list(plan.tasks),
         "files": list(plan.files),
+        "initialize_git": plan.initialize_git,
     }
     if args.json:
         print(json.dumps(payload, indent=2))
@@ -232,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{action}: {plan.project_dir}")
         print(f"Tasks: {', '.join(plan.tasks)}")
         print(f"Files: {len(plan.files)}")
+        print(f"Standalone Git repository: {'yes' if plan.initialize_git else 'no'}")
     return 0
 
 
@@ -271,6 +301,31 @@ def _update_bullets(text: str, values: dict[str, str]) -> str:
             "project template is missing required state fields: " + ", ".join(missing)
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _initialize_git_repository(project: Path) -> None:
+    executable = shutil.which("git")
+    if executable is None:
+        raise FileNotFoundError("git executable is required unless --no-git is used")
+    completed = subprocess.run(
+        [executable, "init", "--initial-branch", "main", str(project)],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise OSError(f"failed to initialize standalone Git repository: {detail}")
+    top = subprocess.run(
+        [executable, "-C", str(project), "rev-parse", "--show-toplevel"],
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    if top.returncode != 0 or Path(top.stdout.strip()).resolve(strict=True) != project.resolve(strict=True):
+        raise OSError("initialized Git repository root does not match the project root")
 
 
 if __name__ == "__main__":

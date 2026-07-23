@@ -17,10 +17,22 @@ commands before inventing new ones.
   Target `tests/` explicitly so pytest does not collect independent generated projects beneath `./projects`.
 - Project initialization preview:
   `./scripts/init-project.py "Name" --goal "Goal" --projects-root ./projects --dry-run`
+- Test gates:
+  `./scripts/run-test-gate.py <project> --gate development` or `--gate integration`; configured commands are argument arrays in `management/TEST_GATES.toml` and integration always includes development.
+- Local milestone Git:
+  `./scripts/git-steward.py inspect <project> --boundary <id> --tasks <ids>`; authorization and commit preview by default and require `--apply` to write. The tool requires the project to be the exact Git root and implements no remote action.
 - Subagent preview:
   `./.agents/scripts/spawn-subagent.sh --phase draft ... --dry-run`
 - Subagent continuation:
   use `--phase feedback` for revision and `--phase final` only after Project Lead acceptance; keep team, task, attempt, role, and profile unchanged.
+- Role-policy inspection:
+  `./scripts/inspect-role-policies.py`; each draft selects one validated role manifest and pins the full role plus skill instruction bundle and digest for the attempt.
+- Subagent status:
+  `./scripts/subagent-status.py <project>`; use `--active-only` for running and stale turns instead of searching global Codex sessions.
+- Native-agent projection:
+  `./scripts/manage-native-agents.py --check`; installation previews with `--install` and writes only with `--install --apply`.
+- Existing-project guidance:
+  `./scripts/sync-project-guidance.py <project>` previews managed role references; add `--apply` only after reviewing the paths.
 - Prompt safety:
   prefer `--prompt-file` for Markdown or text containing backticks, dollar signs, or other shell metacharacters.
 - Evidence-file safety:

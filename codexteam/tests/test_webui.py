@@ -223,6 +223,23 @@ def test_product_only_report_does_not_replace_session_elapsed_time(tmp_path: Pat
 def test_routes_render_escape_reload_and_never_write(tmp_path: Path):
     project = write_project(tmp_path, "render-run")
     (project / "PROJECT.md").write_text("# <script>alert(1)</script>\n", encoding="utf-8")
+    commit_record = project / ".codexteam/runtime/git-steward/milestone-001/commit-record.json"
+    commit_record.parent.mkdir(parents=True)
+    commit_record.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "status": "committed",
+                "boundary_id": "milestone-001",
+                "branch": "main",
+                "head_after": "1234567890abcdef1234567890abcdef12345678",
+                "commit_subject": "feat: complete verified slice",
+                "committed_at": "2026-07-22T09:01:00Z",
+                "committed_paths": ["src/main.py", "tests/test_main.py"],
+            }
+        ),
+        encoding="utf-8",
+    )
     client = webui.create_app(tmp_path).test_client()
     before = snapshot(tmp_path)
 
@@ -233,6 +250,9 @@ def test_routes_render_escape_reload_and_never_write(tmp_path: Path):
     assert b"<script>alert(1)</script>" not in detail.data
     assert b"developer-01" in detail.data and b"qwen36-27b" in detail.data
     assert b"Task execution" in detail.data
+    assert b"Milestone commits" in detail.data
+    assert b"1234567890ab" in detail.data
+    assert b"feat: complete verified slice" in detail.data
     assert b"Draft" in detail.data and b"Feedback" in detail.data and b"Verify" in detail.data
     assert b"Compare runs" not in listing.data
     assert snapshot(tmp_path) == before
@@ -265,6 +285,7 @@ def test_theme_menu_defaults_to_system_and_serves_three_modes(tmp_path: Path):
     assert b"codexteam-theme" in script.data and b"localStorage" in script.data
     assert b':root[data-theme="dark"]' in stylesheet.data
     assert b"prefers-color-scheme: dark" in stylesheet.data
+    assert b".attempt" in stylesheet.data and b"background: white" not in stylesheet.data
 
 
 def test_projects_are_ordered_by_latest_activity(tmp_path: Path):

@@ -25,11 +25,17 @@ EXPECTED_ROOT_FILES = {
     "RESULT.md",
     "TASKS.md",
 }
-EXPECTED_ROOT_DIRECTORIES = {".codexteam", "golden", "management", "results", "src", "tests"}
+EXPECTED_ROOT_DIRECTORIES = {".codexteam", ".git", "docs", "golden", "management", "results", "src", "tests"}
 EXPECTED_SOURCE_FILES = {".gitkeep", "fibonacci_tree_cli.py"}
-EXPECTED_TEST_FILES = {".gitkeep", "test_fibonacci_tree_cli.py"}
+EXPECTED_TEST_FILES = {
+    ".gitkeep",
+    "integration",
+    "smoke",
+    "test_fibonacci_tree_cli.py",
+    "unit",
+}
 EXPECTED_GOLDEN_FILES = {"fib-4.txt"}
-EXPECTED_MANAGEMENT_FILES = {"BACKLOG.md", "PLAN.md"}
+EXPECTED_MANAGEMENT_FILES = {"BACKLOG.md", "PLAN.md", "TEST_GATES.md", "TEST_GATES.toml"}
 EXPECTED_TASK_FILES = {f"T{number:03d}.md" for number in range(1, 6)}
 EXPECTED_RESULT_FILES = {
     ".gitkeep",
@@ -208,6 +214,8 @@ def check_manifest(project: Path) -> None:
     assert_exact_names(project / "src", EXPECTED_SOURCE_FILES, label="source")
     assert_exact_names(project / "tests", EXPECTED_TEST_FILES, label="test")
     assert_exact_names(project / "golden", EXPECTED_GOLDEN_FILES, label="golden")
+    assert_exact_names(project / "docs", {"architecture"}, label="documentation")
+    assert_exact_names(project / "docs" / "architecture", {".gitkeep"}, label="architecture documentation")
     assert_exact_names(project / "management", EXPECTED_MANAGEMENT_FILES | {"tasks"}, label="management")
     assert_exact_names(project / "management" / "tasks", EXPECTED_TASK_FILES, label="task")
     assert_exact_names(project / "results", EXPECTED_RESULT_FILES, label="result")

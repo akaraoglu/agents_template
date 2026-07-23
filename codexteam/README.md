@@ -4,15 +4,35 @@ CodexTeam is a local workflow toolkit for coordinating bounded Codex subagents a
 
 It is not an application server, controller service, board, HTTP API, or MCP implementation. Historical archives are not source inputs for this system.
 
+## Subagent Instructions
+
+Every worker receives three instruction layers:
+
+1. Project `AGENTS.md` and the selected handoff provide common project rules and task scope.
+2. One validated manifest under `roles/` provides the selected Architect, Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader identity, defaults, guidance bundle, change boundary, and allowed evidence types.
+3. The launcher pins the complete role policy and every selected skill under `.codexteam/runtime/` when the draft starts, so feedback and finalization cannot drift when repository defaults change.
+
+The seven roles do not share one role prompt. They share common project rules, then receive distinct role instructions. Generated native Codex custom-agent projections under `generated/native-agents/` are optional; the existing `spawn-subagent.sh` process remains the authoritative CodexTeam execution path.
+
+## Test Gates
+
+Every initialized project contains authoritative `management/TEST_GATES.toml`, its explanatory `management/TEST_GATES.md`, Developer-owned `tests/unit/` plus `tests/smoke/`, and Test Engineer-owned `tests/integration/`. T001 replaces both empty command arrays before implementation approval.
+
+- The **Development Gate** proves changed algorithms/components and one basic smoke path. A pass is not integration acceptance.
+- The **Integration Gate** is the local CI-equivalent command. It invokes the Development Gate first, then applicable integration, regression, system, security, browser, environment, and manifest checks.
+
+The Test Engineer may add or modify handoff-scoped integration/regression tests, fixtures, test data, and golden expectations. Every changed expectation requires approved requirement, decision, or confirmed test-defect justification. Product defects return to the same Developer session before finalization; external CI and leader closure run the same Integration Gate.
+
 ## Workflow
 
-1. Clarify the goal and initialize a complete project workspace.
-2. Approve the project specification before implementation.
-3. Assign each task to one responsible AI and start a persistent draft session.
+1. Clarify the goal and initialize an exact standalone Git project workspace.
+2. Approve the project specification and Architect-owned design before implementation.
+3. Assign each task attempt or evidence stage to one responsible AI and start a persistent draft session.
 4. Review the draft and return consolidated feedback in the same session and attempt.
 5. Accept the draft and persist one final result using result contract v1.
-6. Verify worker output independently.
-7. Close the task and advance project state only after verification passes.
+6. Run the Development Gate, independent Integration Gate, and Reviewer audit as applicable.
+7. Close canonical task state only after verification passes.
+8. At a named milestone, explicitly authorize the Local Git Steward to create one verified local commit; remote actions remain human-only.
 
 ## Runtime
 
@@ -55,19 +75,41 @@ Start a developer draft:
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase draft --profile qwen36-27b --team example --task T002 --attempt att-001 \
+  --phase draft --profile qwen36-27b --team example --task T003 --attempt att-001 \
   --role developer --workspace ./projects/example \
-  --prompt-file ./projects/example/management/tasks/T002.md
+  --prompt-file ./projects/example/management/tasks/T003.md
 ```
 
 Review the draft, then continue the exact session with `--phase feedback`. After acceptance, use `--phase final` with the same team, task, attempt, role, profile, and workspace. Draft and feedback may edit handoff-scoped project files, but they never write the deterministic result; finalization writes that one result after acceptance.
+
+Inspect current and stale project-local workers:
+
+```bash
+./scripts/subagent-status.py ./projects/example
+```
+
+Validate role manifests and generated native projections:
+
+```bash
+./scripts/inspect-role-policies.py
+./scripts/manage-native-agents.py --check
+```
+
+Preview installation into `$CODEX_HOME/agents`, then explicitly apply it:
+
+```bash
+./scripts/manage-native-agents.py --install
+./scripts/manage-native-agents.py --install --apply
+```
+
+Refresh managed role references in an existing initialized project with `./scripts/sync-project-guidance.py <project> --apply`. The command previews by default and refuses unmanaged collisions.
 
 Validate its result:
 
 ```bash
 ./scripts/verify-result.py \
-  ./projects/example/results/T002-att-001.json \
-  --task T002 --team example --attempt att-001 --role developer \
+  ./projects/example/results/T003-att-001.json \
+  --task T003 --team example --attempt att-001 --role developer \
   --expected-status completed
 ```
 
@@ -75,8 +117,19 @@ Close the task after independent verification:
 
 ```bash
 ./scripts/close-loop.sh ./projects/example \
-  --task T002 -- python3 -m pytest -q
+  --task T003 -- ../../scripts/run-test-gate.py . --gate integration
 ```
+
+Run the configured gates and preview a milestone boundary:
+
+```bash
+./scripts/run-test-gate.py ./projects/example --gate development
+./scripts/run-test-gate.py ./projects/example --gate integration
+./scripts/git-steward.py inspect ./projects/example \
+  --boundary milestone-001 --tasks T003,T004,T005 --json
+```
+
+Git authorization and commit commands preview by default and mutate only with `--apply`. See `.agents/playbooks/milestone-commit.md`; no Git Steward command performs a remote action.
 
 ## Validation
 
@@ -92,7 +145,7 @@ Start the local status UI with:
 ../env-python/bin/python scripts/run-webui.py
 ```
 
-Open `http://127.0.0.1:5000`. The Flask/Jinja UI reads `./projects` on every request and provides an activity-sorted project dashboard plus expandable project, agent, task, attempt, and turn details. Its theme menu defaults to the operating-system theme and remembers an explicit Light or Dark choice in the browser. It exposes GET views only and cannot start workers, retry tasks, edit project state, or modify Git.
+Open `http://127.0.0.1:5000`. The Flask/Jinja UI reads `./projects` on every request and provides an activity-sorted project dashboard plus expandable project, agent, task, attempt, turn, and verified milestone-commit details. Its theme menu defaults to the operating-system theme and remembers an explicit Light or Dark choice in the browser. It exposes GET views only and cannot start workers, retry tasks, edit project state, or modify Git.
 
 Preview the controlled end-to-end team canary with:
 

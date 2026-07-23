@@ -5,7 +5,7 @@ All generated project source, tests, documentation, results, and delivery artifa
 The default root is:
 
 ```text
-/home/alik/workspace/codexspace/projects
+/home/alik/workspace/agent_template/codexteam/projects
 ```
 
 Rules:

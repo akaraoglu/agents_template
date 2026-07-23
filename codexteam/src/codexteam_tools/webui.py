@@ -59,6 +59,7 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
     state = _bullets(project / "PROJECT_STATE.md")
     report = _bullets(project / "results" / "e2e-report.md")
     rows = _task_rows(project / "TASKS.md")
+    milestone_commits = _milestone_commits(project)
 
     sessions: dict[str, list[dict[str, Any]]] = {}
     session_root = project / ".codexteam" / "runtime" / "sessions"
@@ -204,6 +205,7 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         "error": error,
         "diagnostic_path": diagnostic_path,
         "verdicts": verdicts,
+        "milestone_commits": milestone_commits,
     }
 
 
@@ -240,6 +242,42 @@ def create_app(projects_dir: str | Path | None = None) -> Flask:
         return render_template("webui/project.html", project=project)
 
     return app
+
+
+def _milestone_commits(project: Path) -> list[dict[str, Any]]:
+    root = project / ".codexteam" / "runtime" / "git-steward"
+    if not root.is_dir() or root.is_symlink():
+        return []
+    records = []
+    for path in root.glob("*/commit-record.json"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        required = ("boundary_id", "branch", "head_after", "commit_subject", "committed_at", "committed_paths")
+        if (
+            not isinstance(value, dict)
+            or value.get("schema_version") != "1.0"
+            or value.get("status") != "committed"
+            or any(key not in value for key in required)
+            or not isinstance(value["committed_paths"], list)
+        ):
+            continue
+        records.append(
+            {
+                "boundary_id": str(value["boundary_id"]),
+                "branch": str(value["branch"]),
+                "commit": str(value["head_after"]),
+                "short_commit": str(value["head_after"])[:12],
+                "subject": str(value["commit_subject"]),
+                "committed_at": str(value["committed_at"]),
+                "path_count": len(value["committed_paths"]),
+            }
+        )
+    records.sort(key=lambda item: _timestamp_value(item["committed_at"]), reverse=True)
+    return records
 
 
 def main() -> int:

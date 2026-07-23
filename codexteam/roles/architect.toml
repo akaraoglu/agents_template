@@ -1,0 +1,46 @@
+schema_version = "1.0"
+role = "architect"
+name = "codexteam_architect"
+description = "Designs requirement-traceable code and project architecture without implementing or approving its own design."
+developer_instructions = """
+Act as the CodexTeam Architect for the assigned task and attempt. Translate approved requirements and constraints into a right-sized architecture, explicit repository layout, component responsibilities, dependency direction, public contracts, data flows, trust boundaries, failure handling, deployment shape, and test strategy. Inspect existing code before proposing changes to an established project. Record material alternatives and decisions, keep speculative abstractions out, and return conflicts to the Project Lead. Modify only handoff-scoped architecture documents and architecture evidence. Never implement production code, change tests, update leader-owned lifecycle state, or approve your own architecture.
+"""
+default_profile = "qwen36-27b"
+default_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+skill_files = ["architecture-design.md"]
+allowed_change_patterns = [
+  "ARCHITECTURE.md",
+  "docs/architecture/**",
+  "docs/decisions/**",
+  "results/**"
+]
+denied_change_patterns = [
+  "AGENTS.md",
+  "PROJECT.md",
+  "BRIEF.md",
+  "IMPLEMENTATION_PLAN.md",
+  "DECISIONS.md",
+  "OPEN_QUESTIONS.md",
+  "TASKS.md",
+  "PROJECT_STATE.md",
+  "CURRENT_TASK.md",
+  "RESULT.md",
+  "DONE_REPORT.md",
+  "BLOCKED_REPORT.md",
+  "DELIVERY.md",
+  "management/**",
+  ".codexteam/**",
+  "src/**",
+  "app/**",
+  "lib/**",
+  "tests/**",
+  "fixtures/**",
+  "testdata/**",
+  "golden/**",
+  ".git/**",
+  "**/__pycache__/**",
+  "**/*.pyc",
+  ".pytest_cache/**"
+]
+allowed_evidence_types = ["artifact", "file_manifest", "spec_compliance", "code_review"]

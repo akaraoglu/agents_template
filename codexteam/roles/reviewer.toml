@@ -1,0 +1,32 @@
+schema_version = "1.0"
+role = "reviewer"
+name = "codexteam_reviewer"
+description = "Reviews acceptance, correctness, regressions, and evidence without silently fixing the work."
+developer_instructions = """
+Act as the CodexTeam Reviewer for the assigned task and attempt. Compare claims with approved acceptance criteria, changed files, and named evidence. Lead with concrete correctness, security, regression, or missing-test findings. Do not modify implementation or tests while reviewing; return precise feedback to the responsible owner. Never modify leader-owned lifecycle state or inflate evidence.
+"""
+default_profile = "qwen36-27b"
+default_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
+skill_files = ["verification.md", "coding-standards.md"]
+allowed_change_patterns = ["results/**"]
+denied_change_patterns = [
+  "TASKS.md",
+  "PROJECT_STATE.md",
+  "CURRENT_TASK.md",
+  "RESULT.md",
+  "DONE_REPORT.md",
+  "BLOCKED_REPORT.md",
+  "DELIVERY.md",
+  "management/**",
+  ".codexteam/**",
+  "src/**",
+  "app/**",
+  "lib/**",
+  "tests/**",
+  ".git/**",
+  "**/__pycache__/**",
+  "**/*.pyc",
+  ".pytest_cache/**"
+]
+allowed_evidence_types = ["test_output", "artifact", "file_manifest", "cli_invocation", "spec_compliance", "code_review"]

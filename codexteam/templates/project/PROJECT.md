@@ -11,9 +11,10 @@ The operator who initialized this project and the assigned CodexTeam workers.
 ## MVP Scope
 
 - Finalize observable acceptance criteria in `T001`.
-- Implement only the approved thin slice in `T002`.
-- Verify the implementation independently in `T003`.
-- Review evidence and prepare delivery in `T004`.
+- Design and approve the project architecture in `T002`.
+- Implement only the approved thin slice in `T003`.
+- Engineer and run the independent CI-equivalent Integration Gate in `T004`.
+- Review evidence and architecture conformance in `T005`.
 
 ## Non-Goals
 
@@ -26,10 +27,11 @@ The operator who initialized this project and the assigned CodexTeam workers.
 - The implementation must satisfy the approved acceptance criteria.
 - Every completed task must link to persisted evidence under `results/`.
 - Verification must be runnable from the project root.
+- The project must define a fast Development Gate and a CI-equivalent Integration Gate in `management/TEST_GATES.toml`; the Integration Gate runs the Development Gate first.
 
 ## Acceptance Criteria
 
-- `T001` through `T004` are completed in dependency order.
+- `T001` through `T005` are completed in dependency order.
 - Every completed task has independently checked evidence.
 - The delivered artifact and run instructions exist inside the project root.
 
@@ -42,11 +44,11 @@ The operator who initialized this project and the assigned CodexTeam workers.
 
 ## Architecture Notes
 
-Architecture decisions are recorded in `DECISIONS.md` as they are approved.
+The accepted system structure is recorded in `ARCHITECTURE.md`; material architecture decisions use ADRs under `docs/decisions/` and accepted cross-project decisions remain in `DECISIONS.md`.
 
 ## Verification Plan
 
-`T003` defines and runs the project-specific verification commands. `T004` checks the evidence against this document before delivery.
+`T001` configures both project-specific gate command arrays. The Architect defines the structure in `T002`; the Developer runs the Development Gate in `T003`; the Test Engineer runs the Integration Gate in `T004`; `T005` checks architecture conformance, source, test changes, gate composition, and evidence against this document before delivery.
 
 ## Delivery Criteria
 

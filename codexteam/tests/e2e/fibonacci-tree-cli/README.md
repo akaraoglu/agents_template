@@ -6,7 +6,7 @@ The canary has five sequential, project-specific tasks:
 
 1. a leader validates the initialized specification and handoffs;
 2. one developer implements the complete CLI and its tests;
-3. a tester records independent acceptance evidence;
+3. a Test Engineer using the `tester` protocol role runs the integration gate and records independent acceptance evidence;
 4. a reviewer audits the evidence and spot-checks the product;
 5. a documenter prepares delivery material.
 

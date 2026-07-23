@@ -16,6 +16,8 @@ Use whenever the operator mentions a document indirectly, such as "project descr
 - `TASKS.md`: task table, owner, handoff file, verification, and evidence.
 - `IMPLEMENTATION_PLAN.md`: implementation phases, gates, and sequence.
 - `DECISIONS.md`: durable project decisions and accepted tradeoffs.
+- `ARCHITECTURE.md`: accepted system, code, dependency, repository, data-flow, security, and test architecture.
+- `docs/decisions/`: material architecture decision records.
 - `OPEN_QUESTIONS.md`: unresolved questions that need operator input.
 - `PROJECT_STATE.md`: current project status, phase, active task, and readiness.
 - `CURRENT_TASK.md`: immediate working focus and next action.
@@ -24,10 +26,15 @@ Use whenever the operator mentions a document indirectly, such as "project descr
 - `BLOCKED_REPORT.md`: blockers, failed checks, and missing decisions.
 - `management/PLAN.md`: execution plan and team workflow.
 - `management/BACKLOG.md`: ready queue, blocked queue, and handoff queue.
+- `management/TEST_GATES.toml`: authoritative Development and Integration Gate command arrays, verification paths, and timing.
+- `management/TEST_GATES.md`: gate ownership and evidence explanation.
+- `management/GIT_POLICY.md`: local-only milestone boundary, staging, and commit rules.
 - `management/tasks/T001.md`: requirements and project skeleton handoff.
-- `management/tasks/T002.md`: implementation handoff.
-- `management/tasks/T003.md`: verification handoff.
-- `management/tasks/T004.md`: final verification and delivery handoff.
+- `management/tasks/T002.md`: Architect design handoff.
+- `management/tasks/T003.md`: Developer implementation and Development Gate handoff.
+- `management/tasks/T004.md`: Test Engineer integration/CI handoff.
+- `management/tasks/T005.md`: Reviewer acceptance and architecture-conformance handoff.
+- `management/tasks/T006.md`: optional Documenter reconciliation handoff.
 
 ## Language Mapping
 
@@ -35,9 +42,13 @@ Use whenever the operator mentions a document indirectly, such as "project descr
 - "short summary", "brief" means `BRIEF.md`.
 - "tasks", "task table", "team tasks" means `TASKS.md`.
 - "task one", "T001", "requirements task" means `management/tasks/T001.md`.
-- "task two", "T002", "implementation task" means `management/tasks/T002.md`.
-- "task three", "T003", "test task" means `management/tasks/T003.md`.
-- "task four", "T004", "delivery task" means `management/tasks/T004.md`.
+- "task two", "T002", or "architecture task" means `management/tasks/T002.md`.
+- "task three", "T003", or "implementation task" means `management/tasks/T003.md`.
+- "task four", "T004", or "test task" means `management/tasks/T004.md`.
+- "development tests", "smoke gate", "integration tests", or "CI gate" means `management/TEST_GATES.toml` plus the active Developer or Test Engineer handoff.
+- "task five", "T005", or "review task" means `management/tasks/T005.md`.
+- "architecture" or "system design" means `ARCHITECTURE.md` plus material ADRs under `docs/decisions/`.
+- "commit boundary" or "milestone commit" means `management/GIT_POLICY.md` and the Local Git Steward playbook.
 - "plan" usually means `IMPLEMENTATION_PLAN.md`; if the request is about team execution order, use `management/PLAN.md`.
 - "status" or "state" means `PROJECT_STATE.md`.
 - "current task" means `CURRENT_TASK.md`.

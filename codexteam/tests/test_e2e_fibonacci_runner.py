@@ -98,6 +98,12 @@ def test_fibonacci_e2e_runner_is_executable_and_valid_bash():
     assert completed.returncode == 0, completed.stderr
 
 
+def test_fibonacci_e2e_runner_uses_current_codexteam_projects_root():
+    content = RUNNER.read_text(encoding="utf-8")
+    assert 'PROJECTS_ROOT="${CODEXTEAM_PROJECTS_ROOT:-${CODEXTEAM_ROOT}/projects}"' in content
+    assert "/home/alik/workspace/codexspace" not in content
+
+
 def test_controlled_fixture_initializes_five_specific_tasks(tmp_path: Path):
     plan = initialize_project(
         "Fibonacci Tree CLI",
@@ -112,8 +118,13 @@ def test_controlled_fixture_initializes_five_specific_tasks(tmp_path: Path):
     tasks = (project / "TASKS.md").read_text(encoding="utf-8")
     assert "T001 | Validate the controlled project fixture" in tasks
     assert "| T001 |" in tasks and "| In Progress | fixture-lead-01" in tasks
+    assert "T003 | Engineer and run the independent integration gate" in tasks
+    assert "integration-test-engineer-01 (tester)" in tasks
     assert "T005 | Review operator documentation" in tasks
     assert (project / "management" / "tasks" / "T005.md").is_file()
+    gates = (project / "management" / "TEST_GATES.md").read_text(encoding="utf-8")
+    assert "Status: Configured" in gates
+    assert "Owner: Test Engineer (`tester` protocol role)" in gates
     assert (project / "golden" / "fib-4.txt").read_text(encoding="utf-8").startswith("fib(4) = 3\n")
     assert "Next handoff:" in (project / "BRIEF.md").read_text(encoding="utf-8")
     for path in project.rglob("*.md"):

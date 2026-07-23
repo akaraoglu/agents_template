@@ -51,12 +51,12 @@ def test_close_loop_updates_task_and_project_state(tmp_path: Path, result_factor
     assert "Status: In Progress" in current_task
     brief = (project / "BRIEF.md").read_text()
     assert "- Phase: implementation" in brief
-    assert "- Active task: `T002` — Implement the approved thin slice" in brief
-    assert "- Responsible AI: `developer-01`" in brief
+    assert "- Active task: `T002` — Design the code and project architecture" in brief
+    assert "- Responsible AI: `architect-01`" in brief
     assert "`T001` independently verified" in brief
     assert "`results/T001-20260715T000000Z.json`" in brief
     assert "`results/T001-verification.txt`" in brief
-    assert "execute `management/tasks/T002.md` as `developer-01`" in brief
+    assert "execute `management/tasks/T002.md` as `architect-01`" in brief
     assert "## Authority Order" in brief
     assert original_brief.split("## Authority Order", 1)[1].split("## Team Responsibilities", 1)[0] in brief
     assert (project / "results" / "T001-verification.txt").is_file()
@@ -157,7 +157,7 @@ def test_last_task_generates_delivery(tmp_path: Path, result_factory):
     ) in brief
 
 
-def test_optional_t005_is_activated_instead_of_delivering_after_t004(
+def test_default_t005_reviewer_is_activated_instead_of_delivering_after_t004(
     tmp_path: Path, result_factory
 ):
     project = project_with_result(
@@ -186,7 +186,7 @@ def test_optional_t005_is_activated_instead_of_delivering_after_t004(
 
     document = parse_task_document((project / "TASKS.md").read_text())
     assert document.row("T005").status == "In Progress"
-    assert document.row("T005").owner == "documenter-01"
+    assert document.row("T005").owner == "reviewer-01"
     current_task = (project / "CURRENT_TASK.md").read_text()
     assert "Task ID: T005" in current_task
     assert "Status: In Progress" in current_task

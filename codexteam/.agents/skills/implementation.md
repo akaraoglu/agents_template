@@ -22,8 +22,8 @@ Use when assigned responsibility for source, related tests, scoped technical doc
 2. Keep changes inside the project root and within the handoff's allowed paths.
 3. Make the smallest coherent implementation that satisfies the task.
 4. Prefer the standard library and established project patterns.
-5. Add or update behavioral tests when needed.
-6. Run focused verification and self-review the diff.
+5. Add or update Developer-owned algorithm/unit, changed-area regression, and smoke tests when needed.
+6. Run the configured Development Gate and self-review the diff. Do not claim integration acceptance.
 7. Return a draft describing the outcome, exact evidence, uncertainties, and proposed disposition.
 8. On feedback, preserve accepted work and change only the rejected part.
 9. Update only scoped technical documentation. Propose status to the Project Lead; do not close canonical task state.
@@ -37,7 +37,7 @@ Bad: mark `TASKS.md` complete or claim delivery after running only local unit te
 ## Expected Output
 
 - Source changes scoped to the current task
-- Focused tests or smoke checks
+- Focused algorithm/unit and smoke checks plus Development Gate evidence
 - A reviewable draft and, after acceptance, one accurate final result
 
 ## Validation
@@ -58,6 +58,6 @@ Bad: mark `TASKS.md` complete or claim delivery after running only local unit te
 
 ## Related Files
 
-- `.agents/skills/testing.md`
+- `.agents/skills/development-testing.md`
 - `.agents/skills/subagent-orchestration.md`
 - Active file under `management/tasks/`

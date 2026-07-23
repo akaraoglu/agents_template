@@ -8,7 +8,7 @@ Deliver and independently verify the complete Fibonacci Tree CLI through five pr
 
 1. `T001`: validate specification, task ownership, and bounded handoffs.
 2. `T002`: implement the full product, tests, and user documentation.
-3. `T003`: run independent behavioral acceptance checks and preserve evidence.
+3. `T003`: run the CI-equivalent integration gate and preserve independent acceptance evidence.
 4. `T004`: audit result/evidence integrity and perform product spot checks.
 5. `T005`: align delivery documentation with verified behavior.
 

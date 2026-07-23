@@ -21,15 +21,17 @@ For a cold start in `/home/alik/workspace/agent_template/codexteam`, the root Co
 
 Do not make every role rediscover the repository. For an active assignment, start with the brief, the handoff, and the files or artifacts that the handoff names. Expand context only when an observable gap requires it.
 
-## Proportional Five-Role Flow
+## Proportional Role Flow
 
-For a small project or one approved thin slice, use all five responsibilities without turning them into five full-project investigations:
+For a small project or one approved thin slice, keep all responsibilities bounded without turning them into full-project investigations:
 
 1. The Project Lead defines the slice, assignments, and evidence chain.
-2. One functional Developer owns the coherent implementation slice, including its focused developer tests.
-3. The Tester independently exercises the slice and records reusable commands, observations, and artifact paths.
-4. The Reviewer compares the approved criteria with the Tester's evidence and inspects only the named files needed to resolve a concrete concern.
-5. The Documenter reuses the accepted evidence and review disposition to prepare accurate delivery material; it does not rerun discovery or tests merely to restate them.
+2. The Architect defines requirement-traceable code, project, dependency, data-flow, and test architecture without implementation or self-approval.
+3. One functional Developer owns the coherent implementation slice, algorithm/unit and smoke tests, and the Development Gate.
+4. The Test Engineer uses the wire-compatible tester role to engineer scoped integration/regression tests, run the CI-equivalent Integration Gate, and record commands, observations, changed-expectation rationale, and artifacts without repairing source.
+5. Product defects return through the Project Lead to the same Developer session before finalization. The Test Engineer reruns both gates after correction.
+6. The Reviewer compares the approved criteria and architecture with both gate results, audits source and test changes, and inspects only the named files needed to resolve a concrete concern.
+7. The optional Documenter reuses accepted evidence and review disposition to prepare accurate delivery material; the Local Git Steward runs only at a verified boundary to propose and create one authorized local commit.
 
 Prefer medium reasoning effort for routine fast-lane turns. Increase reasoning only when the task's observed complexity, risk, or failed evidence warrants it.
 
@@ -39,16 +41,17 @@ Use the fuller planning and orchestration workflow for larger projects, multiple
 
 1. On cold start, route the request through `AGENTS.md` and `.agents/LEAD_BOOT.md`. For an existing project, inspect the brief, active handoff, and its named files or evidence. Do not begin with repo-wide rediscovery.
 2. Resolve missing requirements internally when the approved specification provides enough evidence; ask the operator only when a material choice or showstopper truly requires them.
-3. Assign each active task to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff.
+3. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff.
 4. Review the worker's draft and changed files independently before accepting it.
 5. Return one consolidated feedback message only for an observable defect: a failed criterion, contradictory file or command output, missing required artifact, invalid result field, or unsupported completion claim. State what is accepted, what must change, why, and what must remain unchanged. Do not block acceptance for preference-only rewrites or speculative improvements. Store the prompt at one stable project-runtime path and pass that exact path to the launcher.
 6. Resume the same responsible AI for ordinary corrections. Reassign only for irrecoverable session loss, material scope change, or intentional capability transfer.
 7. Authorize finalization only after the draft is acceptable.
-8. Validate the final result and run independent verification before advancing canonical task state.
+8. Validate the final result and run the appropriate independent gate before advancing canonical task state.
 9. Keep the one-page brief and management documents synchronized with verified truth.
 10. Keep feedback and handoffs in literal prompt files when they contain shell metacharacters.
 11. Report evidence, remaining risks, and any real showstopper to the operator.
 12. Before delivery, run an acceptance-level product check and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
+13. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
 
 ## Feedback Example
 
@@ -67,13 +70,16 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Actionable draft feedback that preserves worker agency
 - Accepted final results backed by independent evidence
 - Accurate brief and management state
+- Accepted architecture and, where authorized, one coherent local milestone commit
 
 ## Validation
 
 - Tasks map to acceptance criteria and name responsible AIs.
 - Feedback cites observable defects or ground truth.
 - Small-slice roles receive the brief, their handoff, and named artifacts instead of a generic repository-wide reading assignment.
-- Tester evidence is reused by the Reviewer and Documenter unless a concrete gap requires another check.
+- Development and Integration Gate evidence is reused by the Reviewer and Documenter unless a concrete gap requires another check.
+- Architect output is approved by the Project Lead and audited for conformance by the Reviewer.
+- Git Steward is invoked only at a verified boundary, stages explicit approved paths, and never performs a remote action.
 - Normal corrections retain the same thread and attempt.
 - Only the Project Lead authorizes finalization and state transitions.
 - No completion claim precedes independent verification.

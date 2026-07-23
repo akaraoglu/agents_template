@@ -9,7 +9,15 @@ from .paths import PathValidationError, normalize_task_id, safe_relative_path, v
 RESULT_SCHEMA_VERSION = "1.0"
 HANDOFF_SCHEMA_VERSION = "1.0"
 RESULT_STATUSES = {"completed", "failed", "partial", "blocked", "needs_review"}
-AGENT_ROLES = {"developer", "tester", "reviewer", "documenter", "leader"}
+AGENT_ROLES = {
+    "architect",
+    "developer",
+    "documenter",
+    "git_steward",
+    "leader",
+    "reviewer",
+    "tester",
+}
 FILE_ACTIONS = {"created", "modified", "deleted"}
 EVIDENCE_TYPES = {"test_output", "artifact", "file_manifest", "cli_invocation", "spec_compliance", "code_review"}
 FOLLOWUP_ACTIONS = {"request_review", "delegate_task", "request_approval"}
@@ -149,6 +157,48 @@ def validate_handoff(data: Any) -> dict[str, Any]:
             validate_profile(model_profile)
         except PathValidationError as exc:
             errors.append(str(exc))
+    role_policy = data.get("role_policy")
+    if role_policy is not None:
+        if not isinstance(role_policy, dict):
+            errors.append("role_policy must be an object")
+        else:
+            policy_name = role_policy.get("name")
+            if (
+                not isinstance(policy_name, str)
+                or not policy_name.startswith("codexteam_")
+            ):
+                errors.append("role_policy.name must use the codexteam_<role> form")
+            if role_policy.get("schema_version") != "1.0":
+                errors.append("role_policy.schema_version must be '1.0'")
+            digest = role_policy.get("digest")
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                errors.append("role_policy.digest must be a lowercase SHA-256 digest")
+
+    instruction_bundle = data.get("instruction_bundle")
+    if instruction_bundle is not None:
+        if not isinstance(instruction_bundle, dict):
+            errors.append("instruction_bundle must be an object")
+        else:
+            if set(instruction_bundle) != {"digest", "files"}:
+                errors.append("instruction_bundle must contain only digest and files")
+            digest = instruction_bundle.get("digest")
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                errors.append("instruction_bundle.digest must be a lowercase SHA-256 digest")
+            files = instruction_bundle.get("files")
+            if (
+                not isinstance(files, list)
+                or not files
+                or any(not isinstance(item, str) or not item.strip() for item in files)
+            ):
+                errors.append("instruction_bundle.files must be a non-empty string list")
 
     workspace_root = data.get("workspace_root")
     if not isinstance(workspace_root, str) or not PurePosixPath(workspace_root).is_absolute():

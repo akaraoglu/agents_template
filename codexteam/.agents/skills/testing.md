@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Produce deterministic behavioral evidence and diagnose failures without silently changing requirements or production code.
+Provide shared test-design principles. Developer assignments use `development-testing.md`; independent Test Engineer assignments use `integration-testing.md` for ownership and gate rules.
 
 ## When To Use
 
-Use for test design, test execution, bug reproduction, integration checks, and independent acceptance testing.
+Use only when a handoff needs generic testing guidance that is not already covered by the role-specific Development or Integration Testing skill.
 
 ## Inputs Needed
 
@@ -57,5 +57,7 @@ Bad: silently change the expected value or production code until the test passes
 ## Related Files
 
 - `.agents/skills/verification.md`
+- `.agents/skills/development-testing.md`
+- `.agents/skills/integration-testing.md`
 - `.agents/skills/subagent-orchestration.md`
 - Approved acceptance criteria in `PROJECT.md`

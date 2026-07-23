@@ -11,8 +11,18 @@
     "team_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
     "task_id": {"type": "string", "pattern": "^T[0-9]{3,6}$"},
     "attempt_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
-    "agent_role": {"enum": ["developer", "tester", "reviewer", "documenter", "leader"]},
+    "agent_role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "git_steward", "leader"]},
     "model_profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
+    "role_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "schema_version", "digest"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^codexteam_[a-z][a-z0-9_]{1,63}$"},
+        "schema_version": {"const": "1.0"},
+        "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
     "workspace_root": {"type": "string", "pattern": "^/"},
     "task_context": {
       "type": "object",
@@ -20,6 +30,15 @@
       "properties": {
         "prompt": {"type": "string", "minLength": 1},
         "guidance_files": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "instruction_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "files"],
+      "properties": {
+        "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "files": {"type": "array", "items": {"type": "string", "minLength": 1}}
       }
     },
     "constraints": {"type": "object"},

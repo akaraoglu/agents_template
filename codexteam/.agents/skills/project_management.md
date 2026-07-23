@@ -29,20 +29,26 @@ Use this skill whenever an agent is assigned the **Leader** role or is tasked wi
     - For each upcoming task, create a "Handoff Contract" including: **Context**, **Allowed Paths**, **Stop Conditions**, and **Required Outputs**.
     - Update the `TASKS.md` ledger to reflect the new 'planned' tasks.
 
-3.  **Phase 3: Monitoring & State Management**
+3.  **Phase 3: Architecture**
+    - Assign `T002` to the Architect for requirement-traceable structure in `ARCHITECTURE.md` and material ADRs under `docs/decisions/`.
+    - Accept the design before implementation, or record why existing architecture remains sufficient. The Architect does not implement or self-approve.
+
+4.  **Phase 4: Monitoring & State Management**
     - Continuously update `PROJECT_STATE.md` (e.g., changing status from `PLANNING` to `IMPLEMENTATION`).
     - Update `CURRENT_TASK.md` to reflect the active task being worked on or reviewed.
     - Ensure `DECISIONS.md` and `OPEN_QUESTIONS.md` are updated with every significant project change.
 
-4.  **Phase 4: Verification & Gatekeeping (Critical)**
+5.  **Phase 5: Verification & Gatekeeping (Critical)**
     - **Do not accept work blindly.** When a worker completes a task, manually verify the implementation against the acceptance criteria defined in `PROJECT.md`.
-    - Run any necessary smoke checks or tests if provided in the task contract.
+    - Require the Developer-owned Development Gate followed by the Test Engineer-owned Integration Gate from `management/TEST_GATES.toml`.
     - If verification passes: Update `TASKS.md` to 'completed' and move to the next task.
     - If verification fails: Reject the work, document the reason in `CORRECTIONS.md`, and instruct the worker on how to remediate.
 
-5.  **Phase 5: Delivery & Closure (T004)**
+6.  **Phase 6: Review, Delivery, and Local History (T005/T006)**
+    - Require Reviewer acceptance and architecture-conformance evidence.
     - Compile all evidence into a final delivery manifest.
     - Finalize `DONE_REPORT.md` summarizing the project outcome.
+    - At a named verified boundary only, authorize a Local Git Steward plan for one exact local commit. Never delegate remote Git actions.
 
 ## Expected output
 

@@ -1,0 +1,21 @@
+schema_version = "1.0"
+verification_paths = [
+  "src/**",
+  "app/**",
+  "lib/**",
+  "tests/**",
+  "fixtures/**",
+  "testdata/**",
+  "golden/**"
+]
+
+[development]
+configured = false
+expected_max_seconds = 300
+commands = []
+
+[integration]
+configured = false
+expected_max_seconds = 900
+includes = ["development"]
+commands = []

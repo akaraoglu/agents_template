@@ -27,7 +27,7 @@ This brief is orientation. Report any conflict to the Project Lead.
 
 - Project Lead: reviews drafts, authorizes finalization, verifies results, and closes state.
 - Developer: implements the complete CLI and focused tests.
-- Tester: gathers independent acceptance evidence without repairing source.
+- Test Engineer (`tester` protocol role): runs the integration gate and gathers independent acceptance evidence without repairing source.
 - Reviewer: audits evidence and spot-checks behavior without rewriting it.
 - Documenter: aligns operator-facing documentation with verified truth.
 

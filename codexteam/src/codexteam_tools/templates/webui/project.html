@@ -58,6 +58,22 @@
     </section>
   {% endif %}
 
+  {% if project.milestone_commits %}
+    <section class="dashboard-section commit-section">
+      <div class="section-heading"><div><span class="eyebrow">Verified local history</span><h2>Milestone commits</h2></div><span>Read-only records</span></div>
+      <div class="commit-list">
+        {% for commit in project.milestone_commits %}
+          <div>
+            <code title="{{ commit.commit }}">{{ commit.short_commit }}</code>
+            <span><strong>{{ commit.subject }}</strong><small>{{ commit.boundary_id }} · {{ commit.branch }}</small></span>
+            <span>{{ commit.path_count }} path{% if commit.path_count != 1 %}s{% endif %}</span>
+            <time>{{ commit.committed_at }}</time>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
   <section class="dashboard-section execution-section">
     <div class="section-heading"><div><span class="eyebrow">Latest activity first</span><h2>Task execution</h2></div><span>Draft → Feedback → Final → Verify → Closed</span></div>
     <div class="task-list">

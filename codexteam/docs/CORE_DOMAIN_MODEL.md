@@ -16,13 +16,15 @@ Planned -> Ready -> In Progress -> Needs Review -> Completed
 The standard workflow uses:
 
 - `T001`: specification and project skeleton
-- `T002`: implementation
-- `T003`: independent verification
-- `T004`: review and delivery
+- `T002`: Architect-owned code and project architecture
+- `T003`: Developer implementation and Development Gate
+- `T004`: Test Engineer integration/CI gate and independent regression evidence
+- `T005`: Reviewer acceptance and architecture conformance
+- `T006`: optional documentation reconciliation
 
 ## Handoff
 
-A handoff binds a team, task, attempt, role, model profile, workspace, constraints, task context, and completion criteria. Its machine-readable shape is `schemas/handoff-v1.json`.
+A handoff binds a team, task, attempt, role, model profile, workspace, constraints, task context, completion criteria, role-policy digest, and complete instruction-bundle digest. Its machine-readable shape is `schemas/handoff-v1.json`.
 
 ## Result
 
@@ -54,3 +56,11 @@ A task becomes `Completed` only when:
 4. `TASKS.md`, `PROJECT_STATE.md`, `CURRENT_TASK.md`, and `RESULT.md` are synchronized.
 
 Delivery is generated only when every planned task is completed.
+
+## Verification Gates
+
+`management/TEST_GATES.toml` is the machine-readable source for Development and Integration Gate argument arrays. Integration includes Development. Each passing record under `results/gates/` contains a manifest and digest of configured verification paths; stale records cannot authorize a milestone.
+
+## Local Commit Boundary
+
+The Local Git Steward is a boundary service, not a normal task-closure authority. Its model inspects and proposes an explicit path set. The Project Lead authorizes the exact plan digest, branch, HEAD, evidence, and paths. The deterministic executor reconstructs and re-verifies the candidate tree before creating one local commit. Remote Git actions are outside CodexTeam authority.

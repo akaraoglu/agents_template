@@ -20,12 +20,13 @@ Use for project initiation, scope changes, feature work, bug fixes, and delivery
 
 1. Clarify: find missing details, ambiguous terms, and risky assumptions.
 2. Specify: update `PROJECT.md`, `BRIEF.md`, and acceptance criteria.
-3. Design: record architecture and implementation decisions in `DECISIONS.md`.
+3. Design: have the Architect update `ARCHITECTURE.md` and material ADRs under `docs/decisions/`; retain broader accepted tradeoffs in `DECISIONS.md`.
 4. Plan: update `IMPLEMENTATION_PLAN.md`, `TASKS.md`, and `management/PLAN.md`.
 5. Implement: make the smallest useful change inside the project root.
-6. Test: run focused checks first, then broader checks when risk requires it.
-7. Verify: compare results against acceptance criteria.
+6. Test: run the configured Development Gate, then the Integration Gate that includes it.
+7. Verify: compare results and architecture conformance against acceptance criteria.
 8. Report: update `PROJECT_STATE.md`, `DONE_REPORT.md`, `BLOCKED_REPORT.md`, or `RESULT.md`.
+9. Preserve: at an approved milestone boundary, use Local Git Steward to plan and create one verified local commit; all remote actions remain human-only.
 
 ## Expected Output
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.commit-authorization.v1",
+  "title": "CodexTeam Commit Authorization v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "boundary_id", "project_root", "branch", "expected_head", "plan_digest", "approved_paths", "verification", "authorized_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "boundary_id": {"type": "string"},
+    "project_root": {"type": "string", "pattern": "^/"},
+    "branch": {"type": "string"},
+    "expected_head": {"type": ["string", "null"]},
+    "plan_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "approved_paths": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+    "verification": {"type": "object"},
+    "authorized_at": {"type": "string", "format": "date-time"}
+  }
+}

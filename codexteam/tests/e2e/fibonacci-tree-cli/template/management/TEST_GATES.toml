@@ -1,0 +1,13 @@
+schema_version = "1.0"
+verification_paths = ["src/**", "tests/**", "golden/**"]
+
+[development]
+configured = true
+expected_max_seconds = 30
+commands = [["python3", "-B", "-m", "unittest", "discover", "-s", "tests", "-v"]]
+
+[integration]
+configured = true
+expected_max_seconds = 60
+includes = ["development"]
+commands = [["python3", "-B", "-m", "unittest", "discover", "-s", "tests", "-v"]]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -23,18 +24,21 @@ from .paths import (
     validate_identifier,
     validate_profile,
 )
+from .roles import (
+    RolePolicy,
+    RolePolicyError,
+    load_role_policy,
+    load_role_policy_snapshot,
+)
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 PHASES = ("draft", "feedback", "final")
 REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 SESSION_SCHEMA_VERSION = "1.0"
-DEFAULT_SKILLS = {
-    "developer": ("implementation.md", "testing.md"),
-    "tester": ("testing.md", "verification.md"),
-    "reviewer": ("verification.md", "coding-standards.md"),
-    "documenter": ("document-editing.md",),
-    "leader": ("project-lead.md", "subagent-orchestration.md", "task-breakdown.md"),
-}
+ROLE_POLICY_FILENAME = "role-policy.json"
+GUIDANCE_MANIFEST_FILENAME = "guidance-manifest.json"
+TURN_STATE_FILENAME = "turn-state.json"
+WORKSPACE_SCAN_EXCLUDES = (".git", ".codexteam/runtime")
 
 
 @dataclass(frozen=True)
@@ -63,7 +67,10 @@ class SpawnRequest:
     add_dirs: tuple[Path, ...]
     trust_parent_sandbox: bool
     skill_files: tuple[Path, ...]
+    guidance_digest: str
     profile_file: Path
+    role_policy: RolePolicy
+    role_policy_path: Path
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,7 @@ class TurnContext:
     message_path: Path
     events_path: Path
     stderr_path: Path
+    state_path: Path
     session: dict[str, Any] | None
 
     @property
@@ -101,7 +109,6 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     phase = args.phase
     if phase not in PHASES:
         raise ValueError(f"unsupported conversation phase: {phase}")
-    profile = validate_profile(args.profile)
     team_id = validate_identifier(args.team, label="team ID")
     task_id = normalize_task_id(args.task)
     attempt_id = validate_identifier(args.attempt, label="attempt ID")
@@ -126,10 +133,27 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         f".codexteam/runtime/sessions/{team_id}/{task_id}/{attempt_id}",
         label="session directory",
     )
+    session_path = session_dir / "session.json"
+    role_policy_path = session_dir / ROLE_POLICY_FILENAME
+    if phase != "draft" and role_policy_path.is_file():
+        role_policy = load_role_policy_snapshot(role_policy_path, expected_role=args.role)
+    else:
+        role_policy = load_role_policy(args.role)
+    profile_value = args.profile
+    if profile_value is None and phase != "draft" and session_path.is_file():
+        profile_value = _load_session(session_path).get("model_profile")
+    profile = validate_profile(profile_value or role_policy.default_profile)
 
     prompt = _read_prompt(args.prompt_file, args.prompt)
     add_dirs = tuple(ensure_existing_workspace(path) for path in args.add_dir)
-    skill_files = _skill_files(args.role, args.skill_file)
+    if phase != "draft" and args.skill_file:
+        raise ValueError("skill guidance cannot be overridden after the draft turn")
+    guidance_manifest_path = session_dir / GUIDANCE_MANIFEST_FILENAME
+    if phase != "draft" and guidance_manifest_path.is_file():
+        skill_files = _load_pinned_skill_files(session_dir)
+    else:
+        skill_files = _skill_files(role_policy, args.skill_file)
+    guidance_digest = _guidance_bundle_digest(skill_files)
     source_codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve(
         strict=False
     )
@@ -178,13 +202,16 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         result_dir=result_dir,
         result_path=result_path,
         session_dir=session_dir,
-        session_path=session_dir / "session.json",
+        session_path=session_path,
         codex_home=session_dir / "codex-home",
         source_codex_home=source_codex_home,
         add_dirs=add_dirs,
         trust_parent_sandbox=trust_parent_sandbox,
         skill_files=skill_files,
+        guidance_digest=guidance_digest,
         profile_file=profile_file,
+        role_policy=role_policy,
+        role_policy_path=role_policy_path,
     )
 
 
@@ -224,6 +251,7 @@ def prepare_turn(request: SpawnRequest) -> TurnContext:
         message_path=turns_dir / f"{stem}.txt",
         events_path=turns_dir / f"{stem}.jsonl",
         stderr_path=turns_dir / f"{stem}.stderr.txt",
+        state_path=request.session_dir / TURN_STATE_FILENAME,
         session=session,
     )
 
@@ -233,6 +261,8 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
     _prepare_session_storage(request, initial=turn.is_initial)
     turn.message_path.parent.mkdir(parents=True, exist_ok=True)
     turn.message_path.parent.chmod(0o700)
+    before_workspace = snapshot_workspace(request.workspace)
+    _write_turn_state(request, turn, status="running")
 
     command = build_command(request, turn, executable=executable)
     environment = os.environ.copy()
@@ -247,6 +277,11 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
     )
     atomic_write_text(turn.events_path, process.stdout)
     atomic_write_text(turn.stderr_path, process.stderr)
+    changed_paths = changed_workspace_paths(
+        before_workspace,
+        snapshot_workspace(request.workspace),
+    )
+    boundary_errors = role_boundary_errors(request.role_policy, changed_paths)
 
     events = parse_codex_events(process.stdout)
     stored_thread_id = turn.session.get("thread_id") if turn.session is not None else None
@@ -277,13 +312,46 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
                 process=process,
             )
             _write_session(request.session_path, session)
+        _write_turn_state(
+            request,
+            turn,
+            status=failure_status,
+            process=process,
+            changed_paths=changed_paths,
+            errors=failure_errors + boundary_errors,
+        )
         return _turn_outcome(
             request,
             turn,
             status=failure_status,
             thread_id=thread_id,
-            errors=failure_errors,
+            errors=failure_errors + boundary_errors,
         ), failure_code
+
+    if boundary_errors:
+        session = _session_record(
+            request,
+            turn,
+            thread_id=thread_id,
+            status="correction_needed",
+            process=process,
+        )
+        _write_session(request.session_path, session)
+        _write_turn_state(
+            request,
+            turn,
+            status="correction_needed",
+            process=process,
+            changed_paths=changed_paths,
+            errors=boundary_errors,
+        )
+        return _turn_outcome(
+            request,
+            turn,
+            status="correction_needed",
+            thread_id=thread_id,
+            errors=boundary_errors,
+        ), 1
 
     if not message:
         session = _session_record(
@@ -294,6 +362,14 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             process=process,
         )
         _write_session(request.session_path, session)
+        _write_turn_state(
+            request,
+            turn,
+            status="correction_needed",
+            process=process,
+            changed_paths=changed_paths,
+            errors=["Codex returned no final agent message for this turn"],
+        )
         return _turn_outcome(
             request,
             turn,
@@ -311,6 +387,13 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             process=process,
         )
         _write_session(request.session_path, session)
+        _write_turn_state(
+            request,
+            turn,
+            status="draft_ready",
+            process=process,
+            changed_paths=changed_paths,
+        )
         return _turn_outcome(
             request,
             turn,
@@ -328,6 +411,14 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             process=process,
         )
         _write_session(request.session_path, session)
+        _write_turn_state(
+            request,
+            turn,
+            status="correction_needed",
+            process=process,
+            changed_paths=changed_paths,
+            errors=validation_errors,
+        )
         return _turn_outcome(
             request,
             turn,
@@ -347,6 +438,13 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
         final_result_path=request.result_path.relative_to(request.workspace).as_posix(),
     )
     _write_session(request.session_path, session)
+    _write_turn_state(
+        request,
+        turn,
+        status="finalized",
+        process=process,
+        changed_paths=changed_paths,
+    )
     return result, 0 if result["status"] in {"completed", "needs_review"} else 1
 
 
@@ -364,6 +462,9 @@ def build_command(
             "exec",
             "--profile",
             request.profile,
+            "-c",
+            "developer_instructions="
+            f"{json.dumps(request.role_policy.developer_instructions)}",
             "-C",
             str(request.workspace),
             "--skip-git-repo-check",
@@ -372,13 +473,14 @@ def build_command(
             str(turn.message_path),
         ]
         if not request.trust_parent_sandbox:
-            command.extend(("-s", "workspace-write"))
-        if request.reasoning_effort_override is not None:
+            command.extend(("-s", request.role_policy.sandbox_mode))
+        reasoning_effort = _session_reasoning_effort(request, None)
+        if reasoning_effort is not None:
             command.extend(
                 (
                     "-c",
                     "model_reasoning_effort="
-                    f"{json.dumps(request.reasoning_effort_override)}",
+                    f"{json.dumps(reasoning_effort)}",
                 )
             )
         for directory in request.add_dirs:
@@ -395,6 +497,9 @@ def build_command(
         request.model,
         "-c",
         f"model_provider={json.dumps(request.model_provider)}",
+        "-c",
+        "developer_instructions="
+        f"{json.dumps(request.role_policy.developer_instructions)}",
         *(
             ["-c", f"model_catalog_json={json.dumps(request.model_catalog_json)}"]
             if request.model_catalog_json
@@ -452,6 +557,8 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
     return (
         "[CODEXTEAM HANDOFF V1]\n"
         f"{json.dumps(handoff, indent=2)}\n"
+        f"Role policy: {request.role_policy.name} v{request.role_policy.schema_version} "
+        f"({request.role_policy.digest[:12]}).\n"
         "You are the responsible AI for this task and logical attempt. Work only inside the assigned workspace "
         "and additional explicitly writable directories.\n"
         "Read relevant files before editing. Run task-relevant verification. Do not invent evidence.\n"
@@ -472,10 +579,19 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
         "attempt_id": request.attempt_id,
         "agent_role": request.role,
         "model_profile": request.profile,
+        "role_policy": {
+            "name": request.role_policy.name,
+            "schema_version": request.role_policy.schema_version,
+            "digest": request.role_policy.digest,
+        },
         "workspace_root": str(request.workspace),
         "task_context": {
             "prompt": request.prompt,
-            "guidance_files": [str(path) for path in request.skill_files],
+            "guidance_files": [path.name for path in request.skill_files],
+        },
+        "instruction_bundle": {
+            "digest": request.guidance_digest,
+            "files": [path.name for path in request.skill_files],
         },
         "constraints": {
             "workspace_write": str(request.workspace),
@@ -491,6 +607,66 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
     }
     validate_handoff(handoff)
     return handoff
+
+
+def snapshot_workspace(workspace: Path) -> dict[str, str]:
+    snapshot: dict[str, str] = {}
+    for current_root, directory_names, file_names in os.walk(workspace, topdown=True):
+        root = Path(current_root)
+        relative_root = root.relative_to(workspace).as_posix()
+        directory_names[:] = [
+            name
+            for name in directory_names
+            if not _workspace_scan_excluded(
+                name if relative_root == "." else f"{relative_root}/{name}"
+            )
+        ]
+        for name in file_names:
+            path = root / name
+            relative = path.relative_to(workspace).as_posix()
+            if _workspace_scan_excluded(relative):
+                continue
+            if path.is_symlink():
+                snapshot[relative] = "symlink:" + os.readlink(path)
+                continue
+            digest = hashlib.sha256()
+            try:
+                with path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+            except FileNotFoundError:
+                continue
+            snapshot[relative] = digest.hexdigest()
+    return snapshot
+
+
+def changed_workspace_paths(
+    before: dict[str, str],
+    after: dict[str, str],
+) -> tuple[str, ...]:
+    return tuple(
+        path
+        for path in sorted(set(before) | set(after))
+        if before.get(path) != after.get(path)
+    )
+
+
+def role_boundary_errors(
+    policy: RolePolicy,
+    changed_paths: tuple[str, ...],
+) -> list[str]:
+    return [
+        f"role policy {policy.name} does not allow changing {path}"
+        for path in changed_paths
+        if not policy.allows_change(path)
+    ]
+
+
+def _workspace_scan_excluded(relative: str) -> bool:
+    return any(
+        relative == prefix or relative.startswith(prefix + "/")
+        for prefix in WORKSPACE_SCAN_EXCLUDES
+    )
 
 
 def run_process(
@@ -589,7 +765,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run one turn of a persistent CodexTeam worker conversation."
     )
     parser.add_argument("--phase", required=True, choices=PHASES)
-    parser.add_argument("--profile", required=True)
+    parser.add_argument("--profile", help="Override the selected role policy's default profile")
     parser.add_argument(
         "--reasoning-effort",
         choices=REASONING_EFFORTS,
@@ -631,6 +807,12 @@ def main(argv: list[str] | None = None) -> int:
                         "phase": request.phase,
                         "command": build_command(request, turn),
                         "profile_file": str(request.profile_file),
+                        "role_policy": request.role_policy.name,
+                        "role_policy_version": request.role_policy.schema_version,
+                        "role_policy_digest": request.role_policy.digest,
+                        "role_policy_source": str(request.role_policy.source_path),
+                        "default_profile": request.role_policy.default_profile,
+                        "sandbox_mode": request.role_policy.sandbox_mode,
                         "reasoning_effort": _session_reasoning_effort(request, turn.session),
                         "reasoning_effort_override": request.reasoning_effort_override,
                         "workspace": str(request.workspace),
@@ -646,7 +828,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         outcome, code = run_spawn(request)
-    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError) as exc:
+    except (
+        FileNotFoundError,
+        json.JSONDecodeError,
+        OSError,
+        RolePolicyError,
+        ValueError,
+    ) as exc:
         print(f"ERROR: {exc}")
         return 2
 
@@ -675,11 +863,11 @@ def _read_prompt(prompt_file: str | None, prompt: str | None) -> str:
     return content
 
 
-def _skill_files(role: str, overrides: list[str]) -> tuple[Path, ...]:
+def _skill_files(policy: RolePolicy, overrides: list[str]) -> tuple[Path, ...]:
     if overrides:
         paths = tuple(Path(value).expanduser().resolve(strict=True) for value in overrides)
     else:
-        names = DEFAULT_SKILLS[role]
+        names = policy.skill_files
         paths = tuple(
             (
                 CODEXTEAM_ROOT
@@ -695,12 +883,94 @@ def _skill_files(role: str, overrides: list[str]) -> tuple[Path, ...]:
     return paths
 
 
+def _guidance_bundle_digest(paths: tuple[Path, ...]) -> str:
+    entries = []
+    for index, path in enumerate(paths, start=1):
+        content = path.read_bytes()
+        entries.append(
+            {
+                "index": index,
+                "name": path.name,
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    return hashlib.sha256(
+        json.dumps(entries, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _snapshot_skill_files(request: SpawnRequest) -> None:
+    guidance_root = request.session_dir / "guidance"
+    entries = []
+    for index, source in enumerate(request.skill_files, start=1):
+        relative = f"guidance/{index:03d}/{source.name}"
+        target = contained_path(request.session_dir, relative, label="guidance snapshot")
+        content = source.read_bytes()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            raise FileExistsError(f"guidance snapshot already exists: {target}")
+        target.write_bytes(content)
+        target.chmod(0o600)
+        entries.append(
+            {
+                "name": source.name,
+                "path": relative,
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    manifest = {
+        "schema_version": "1.0",
+        "digest": request.guidance_digest,
+        "files": entries,
+    }
+    atomic_write_json(request.session_dir / GUIDANCE_MANIFEST_FILENAME, manifest)
+    (request.session_dir / GUIDANCE_MANIFEST_FILENAME).chmod(0o600)
+
+
+def _load_pinned_skill_files(session_dir: Path) -> tuple[Path, ...]:
+    manifest_path = session_dir / GUIDANCE_MANIFEST_FILENAME
+    if manifest_path.is_symlink():
+        raise ValueError(f"guidance manifest must not be a symlink: {manifest_path}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid guidance manifest: {manifest_path}: {exc}") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != "1.0":
+        raise ValueError("guidance manifest schema_version must be '1.0'")
+    entries = manifest.get("files")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("guidance manifest files must be a non-empty list")
+    paths: list[Path] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"guidance manifest files[{index}] must be an object")
+        relative = entry.get("path")
+        expected_hash = entry.get("sha256")
+        if not isinstance(relative, str) or not isinstance(expected_hash, str):
+            raise ValueError(f"guidance manifest files[{index}] is incomplete")
+        path = contained_path(session_dir, relative, label="guidance snapshot")
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"guidance snapshot is missing or unsafe: {path}")
+        actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual_hash != expected_hash:
+            raise ValueError(f"guidance snapshot digest mismatch: {path}")
+        paths.append(path)
+    pinned = tuple(paths)
+    actual_digest = _guidance_bundle_digest(pinned)
+    if actual_digest != manifest.get("digest"):
+        raise ValueError("guidance bundle digest mismatch")
+    return pinned
+
+
 def _prepare_session_storage(request: SpawnRequest, *, initial: bool) -> None:
     if initial:
         request.session_dir.mkdir(parents=True, exist_ok=False)
         request.session_dir.chmod(0o700)
         request.codex_home.mkdir()
         request.codex_home.chmod(0o700)
+        atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
+        request.role_policy_path.chmod(0o600)
+        _snapshot_skill_files(request)
         source = request.profile_file.parent
         base_config = source / "config.toml"
         if base_config.is_file():
@@ -713,6 +983,11 @@ def _prepare_session_storage(request: SpawnRequest, *, initial: bool) -> None:
         return
     if not request.codex_home.is_dir():
         raise FileNotFoundError(f"persistent Codex home is missing: {request.codex_home}")
+    if not request.role_policy_path.is_file():
+        atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
+        request.role_policy_path.chmod(0o600)
+    if not (request.session_dir / GUIDANCE_MANIFEST_FILENAME).is_file():
+        _snapshot_skill_files(request)
 
 
 def _execution_codex_home(request: SpawnRequest) -> Path:
@@ -776,6 +1051,26 @@ def _validate_session_scope(request: SpawnRequest, session: dict[str, Any]) -> N
     ]
     if optional_mismatches:
         raise ValueError("session model mismatch: " + "; ".join(optional_mismatches))
+    policy_expected = {
+        "role_policy_name": request.role_policy.name,
+        "role_policy_version": request.role_policy.schema_version,
+        "role_policy_digest": request.role_policy.digest,
+    }
+    policy_mismatches = [
+        f"{field}: expected {value!r}, found {session.get(field)!r}"
+        for field, value in policy_expected.items()
+        if field in session and session.get(field) != value
+    ]
+    if policy_mismatches:
+        raise ValueError("session role policy mismatch: " + "; ".join(policy_mismatches))
+    if (
+        "instruction_bundle_digest" in session
+        and session.get("instruction_bundle_digest") != request.guidance_digest
+    ):
+        raise ValueError(
+            "session instruction bundle mismatch: expected "
+            f"{request.guidance_digest!r}, found {session.get('instruction_bundle_digest')!r}"
+        )
     if (
         request.reasoning_effort_override is not None
         and session.get("model_reasoning_effort") != request.reasoning_effort_override
@@ -820,6 +1115,10 @@ def _session_record(
         "attempt_id": request.attempt_id,
         "agent_role": request.role,
         "model_profile": request.profile,
+        "role_policy_name": request.role_policy.name,
+        "role_policy_version": request.role_policy.schema_version,
+        "role_policy_digest": request.role_policy.digest,
+        "instruction_bundle_digest": request.guidance_digest,
         "model": request.model,
         "model_provider": request.model_provider,
         "model_catalog_json": request.model_catalog_json,
@@ -863,12 +1162,66 @@ def _session_reasoning_effort(
     if session is not None and "model_reasoning_effort" in session:
         value = session.get("model_reasoning_effort")
         return value if isinstance(value, str) and value else None
-    return request.reasoning_effort_override or request.model_reasoning_effort
+    return (
+        request.reasoning_effort_override
+        or request.role_policy.default_reasoning_effort
+        or request.model_reasoning_effort
+    )
 
 
 def _write_session(path: Path, session: dict[str, Any]) -> None:
     atomic_write_json(path, session)
     path.chmod(0o600)
+
+
+def _write_turn_state(
+    request: SpawnRequest,
+    turn: TurnContext,
+    *,
+    status: str,
+    process: ProcessResult | None = None,
+    changed_paths: tuple[str, ...] = (),
+    errors: list[str] | None = None,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    existing: dict[str, Any] = {}
+    if turn.state_path.is_file():
+        try:
+            loaded = json.loads(turn.state_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            loaded = {}
+        if isinstance(loaded, dict):
+            existing = loaded
+    same_turn = (
+        existing.get("turn_number") == turn.number
+        and existing.get("phase") == request.phase
+    )
+    state = {
+        "schema_version": SESSION_SCHEMA_VERSION,
+        "team_id": request.team_id,
+        "task_id": request.task_id,
+        "attempt_id": request.attempt_id,
+        "agent_role": request.role,
+        "model_profile": request.profile,
+        "role_policy_name": request.role_policy.name,
+        "role_policy_version": request.role_policy.schema_version,
+        "role_policy_digest": request.role_policy.digest,
+        "instruction_bundle_digest": request.guidance_digest,
+        "phase": request.phase,
+        "turn_number": turn.number,
+        "status": status,
+        "started_at": existing.get("started_at", now) if same_turn else now,
+        "updated_at": now,
+        "timeout_seconds": request.timeout_seconds,
+        "changed_paths": list(changed_paths),
+        "errors": errors or [],
+    }
+    if process is not None:
+        state["duration_seconds"] = round(process.duration_seconds, 3)
+        state["exit_code"] = process.exit_code
+        state["timed_out"] = process.timed_out
+    atomic_write_json(turn.state_path, state)
+    turn.state_path.chmod(0o600)
 
 
 def _single_thread_id(thread_ids: tuple[str, ...]) -> str | None:
@@ -920,6 +1273,10 @@ def _turn_outcome(
         "task_id": request.task_id,
         "attempt_id": request.attempt_id,
         "agent_role": request.role,
+        "role_policy_name": request.role_policy.name,
+        "role_policy_version": request.role_policy.schema_version,
+        "role_policy_digest": request.role_policy.digest,
+        "instruction_bundle_digest": request.guidance_digest,
         "thread_id": thread_id,
         "turn_count": turn.number,
         "session_path": str(request.session_path),
@@ -961,6 +1318,10 @@ def _result_from_message(
         if artifact_errors:
             validation_errors.extend(artifact_errors)
             continue
+        policy_errors = _result_policy_errors(request, candidate)
+        if policy_errors:
+            validation_errors.extend(policy_errors)
+            continue
         return candidate, []
     errors = ["final result-v1 validation failed"]
     errors.extend(list(dict.fromkeys(validation_errors))[:10])
@@ -996,6 +1357,20 @@ def _result_artifact_errors(request: SpawnRequest, result: dict[str, Any]) -> li
                 "evidence["
                 f"{index}].artifact_ref does not exist: {evidence['artifact_ref']}"
             )
+    return errors
+
+
+def _result_policy_errors(request: SpawnRequest, result: dict[str, Any]) -> list[str]:
+    errors = [
+        f"role policy {request.role_policy.name} does not allow declared change: {item['path']}"
+        for item in result["file_changes"]
+        if not request.role_policy.allows_change(item["path"])
+    ]
+    errors.extend(
+        f"role policy {request.role_policy.name} does not allow evidence type: {item['type']}"
+        for item in result["evidence"]
+        if item["type"] not in request.role_policy.allowed_evidence_types
+    )
     return errors
 
 

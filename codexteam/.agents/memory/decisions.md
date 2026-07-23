@@ -5,7 +5,7 @@
 - CodexTeam is a local specification-driven workflow toolkit, not an application server, controller, board, HTTP API, or MCP service.
 - Historical archives are obsolete and are never merged into the current system.
 - Generated cold-start projects default to `./projects` beneath `/home/alik/workspace/agent_template/codexteam`.
-- Task IDs use canonical uppercase form; the standard sequence is `T001` through `T004`.
+- Task IDs use canonical uppercase form; the default initialized sequence is `T001` requirements, `T002` architecture, `T003` development, `T004` integration testing, and `T005` review. `T006` documentation reconciliation is optional.
 - Handoff and result v1 shapes are machine-readable and enforced by Python.
 - `qwen36-27b` is the default tool-using profile for implementation, testing, review, and documentation. `gemma4-26b` is optional for bounded secondary review, not default ownership of evidence-producing or editing tasks.
 - Worker completion is a claim. Only independent verification and leader-owned closure complete a task.
@@ -15,7 +15,7 @@
 - Role defaults are routing hints. Evidence of repeated task-specific capability failure justifies a recorded profile transfer without involving the operator.
 - The shared brief is a one-page orientation layer and must be synchronized by the Project Lead after every closure; canonical close-loop state alone cannot update project-specific milestone prose.
 - `gpt54-mini` is an installed and verified cloud candidate, not yet the repository default. The 2026-07-16 six-task canary completed with one attempt per task and no capability transfer; operator choice still governs any default-routing change.
-- Small coherent projects use a proportional five-role fast lane: Project Lead, one functional Developer, independent Tester, evidence-reusing Reviewer, and evidence-reusing Documenter. The default initialized task set remains T001-T004; T005 is an explicit documenter opt-in for workflows such as the controlled canary.
+- Small coherent projects use a proportional seven-identity flow: Project Lead, Architect, one functional Developer owning the Development Gate, an independent Test Engineer using the wire-compatible tester role and owning the Integration Gate, Reviewer, optional Documenter, and boundary-only Local Git Steward. The controlled Fibonacci canary remains a historical five-role compatibility workflow.
 - The controlled Fibonacci E2E uses medium reasoning, a 300-second per-turn timeout, a 1,800-second reported budget, no automatic retry or profile transfer, and exact same-session recovery after an observable failure. Qwen remains the repository default; `gpt54-mini` is selected explicitly for this canary.
 - `/home/alik/workspace/agent_template/codexteam` is the guaranteed cold-start base folder. The root Codex session is the Project Lead, projects are initialized beneath `./projects`, and root `AGENTS.md` is the mandatory low-token phase router.
 - A new-project request follows separate approvals for proposal, initialization, planning, and execution. Initializer task files are scaffolding until the Project Lead replaces generic wording with project-specific responsible-AI handoffs and the operator authorizes execution.
@@ -24,3 +24,13 @@
 - A clean Fibonacci-class cold-start canary has four independent verdict dimensions: lifecycle, product, evidence integrity, and proportional performance. Canonical delivery alone cannot pass the canary.
 - The cold-start performance target is at most 30 minutes, 12 worker turns, one correction round per role, one million uncached lead-input tokens, and 50,000 lead-output tokens when usage is available. Exceeding a target must be reported rather than hidden by eventual delivery.
 - Stable lead-authored feedback lives at `<project>/.codexteam/lead-prompt-<task>-<attempt>.md`; the Project Lead reuses the exact path across feedback and finalization.
+- CodexTeam role-policy v1 is the single source for seven identities: Architect, Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), and Leader. Project `AGENTS.md` is common guidance; the launcher injects one role policy and pins the complete role and skill instruction bundle for the logical attempt.
+- The persistent external `spawn-subagent.sh` launcher remains authoritative. Namespaced native Codex agent files are deterministic optional projections installed only by explicit operator action.
+- Role change patterns and evidence types are mechanically checked after each turn and at final result validation. Task handoff paths may be narrower and remain the review authority.
+- Developers own algorithm/unit and smoke tests plus a fast Development Gate. Test Engineers may engineer and modify scoped integration/regression tests and controlled expectations but never production source; every changed expectation cites approved truth or a confirmed test defect. The CI-equivalent Integration Gate invokes the Development Gate first and is reused by external CI and leader closure.
+- Test Engineer product defects found against a Developer draft return to the same Developer session before finalization. After correction, both gates rerun against the final source revision.
+- Architects own requirement-traceable code, component, dependency, data-flow, repository, security, and test architecture in `ARCHITECTURE.md` plus material ADRs. They do not implement source or approve their own proposal.
+- `management/TEST_GATES.toml` is the machine-readable gate authority. Commands are argument arrays; Integration always includes Development; passing records pin the configured verification-path manifest and digest.
+- New projects are exact standalone Git repositories by default. Initialization creates no commit and invents no Git identity.
+- Local Git Steward runs only at a Project Lead-authorized important-task or milestone boundary. The model is read-only; a deterministic executor validates an exact plan and authorization, re-verifies the candidate tree, stages literal approved paths, and creates one local commit.
+- Local Git Steward has no remote authority. Push, fetch, merge, rebase, tag, release, publication, and remote PR creation remain human actions.

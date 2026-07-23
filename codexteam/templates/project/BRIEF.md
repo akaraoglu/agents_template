@@ -26,10 +26,12 @@ This brief is orientation. If it conflicts with an authoritative source, report 
 ## Team Responsibilities
 
 - Project Lead: owns assignments, feedback, finalization permission, verification, and state transitions.
-- Developer: owns scoped source, related tests, self-review, and revisions.
-- Tester: owns independent behavioral evidence and failure classification.
+- Architect: owns requirement-traceable architecture and repository design without implementation or self-approval.
+- Developer: owns scoped source, unit/algorithm and smoke tests, the Development Gate, self-review, and source revisions.
+- Test Engineer (`tester` protocol role): owns integration/regression test engineering, the CI-equivalent Integration Gate, expectation integrity, and failure classification without production repairs.
 - Reviewer: owns acceptance analysis and evidence-quality review without silently repairing work.
 - Documenter: records verified truth and prepares operator-facing delivery material.
+- Local Git Steward: prepares one verified local milestone commit only after Project Lead authorization; remote Git remains human-only.
 
 ## Working Agreement
 
@@ -37,6 +39,8 @@ This brief is orientation. If it conflicts with an authoritative source, report 
 - The worker returns a draft; a draft is not a `result-v1` record and does not close state.
 - The Project Lead returns one consolidated feedback message per review round.
 - Ordinary corrections resume the same session and attempt.
+- Test Engineer product defects return through the Project Lead to the same Developer session before finalization; after correction, both gates rerun against the final revision.
+- Architecture is approved before implementation and architecture conformance is reviewed before a milestone commit.
 - The worker emits one final result only after the Project Lead accepts the draft.
 - Independent verification is required before canonical project state advances.
 - Routine uncertainty stays inside the team; only a genuine showstopper reaches the operator.
@@ -45,5 +49,5 @@ This brief is orientation. If it conflicts with an authoritative source, report 
 
 - All writes stay inside the project root: `{{PROJECT_ROOT}}`.
 - Dependencies require operator approval before introduction.
-- Detailed decisions belong in `DECISIONS.md`; detailed history belongs in task and result records.
+- Accepted system structure belongs in `ARCHITECTURE.md`, material architecture decisions in `docs/decisions/`, and broader project decisions in `DECISIONS.md`; detailed history belongs in task and result records.
 - Next handoff: complete `management/tasks/T001.md`, obtain specification approval, then replace the generic implementation slice with project-specific, AI-owned tasks.
