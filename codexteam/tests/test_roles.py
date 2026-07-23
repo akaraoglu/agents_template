@@ -24,9 +24,10 @@ def test_all_canonical_role_policies_are_unique_and_complete():
         "leader",
         "reviewer",
         "tester",
+        "ux_designer",
     }
-    assert len({policy.name for policy in policies}) == 7
-    assert len({policy.digest for policy in policies}) == 7
+    assert len({policy.name for policy in policies}) == 8
+    assert len({policy.digest for policy in policies}) == 8
     assert all(policy.default_profile == "qwen36-27b" for policy in policies)
 
 

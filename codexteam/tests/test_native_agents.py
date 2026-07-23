@@ -13,7 +13,7 @@ from codexteam_tools.roles import RolePolicyError
 
 def test_native_agent_projection_is_valid_and_namespaced():
     generated = expected_native_agents()
-    assert len(generated) == 7
+    assert len(generated) == 8
     for name, content in generated.items():
         assert name.startswith("codexteam_")
         assert content.startswith(GENERATED_MARKER)
@@ -25,10 +25,10 @@ def test_native_agent_projection_is_valid_and_namespaced():
 
 def test_native_agent_sync_previews_applies_and_becomes_current(tmp_path: Path):
     changes = sync_native_agents(tmp_path)
-    assert len(changes) == 7
+    assert len(changes) == 8
     assert list(tmp_path.iterdir()) == []
 
-    assert len(sync_native_agents(tmp_path, apply=True)) == 7
+    assert len(sync_native_agents(tmp_path, apply=True)) == 8
     assert sync_native_agents(tmp_path) == ()
 
 

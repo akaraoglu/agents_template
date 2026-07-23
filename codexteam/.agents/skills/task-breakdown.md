@@ -26,6 +26,7 @@ Use after `PROJECT.md` has a concrete MVP scope and acceptance criteria, or when
 3. For a small thin slice, assign the complete functional implementation to one Developer instead of splitting parser, renderer, CLI wiring, tests, or similar parts into generic developer tasks.
 4. Give each role only `BRIEF.md`, its task handoff, and the exact requirement sections, files, or upstream evidence named in that handoff. Do not use "read the repository" or "read all project documents" as context.
 5. Plan an evidence chain: accepted Architect design, Developer implementation plus Development Gate, Test Engineer integration/regression changes plus Integration Gate, Reviewer audit, then accepted evidence and review disposition to an optional Documenter and boundary-only Git Steward.
+   For a new or materially redesigned interface, insert one `ux_designer` handoff after requirements and architecture constraints are known. It produces the implementation-ready interface design and may return for focused design QA; it is not a mandatory task for non-UI work or routine changes with an approved design.
 6. Split larger or materially independent work into project-specific tasks with one named responsible AI role and clear evidence.
 7. Keep task IDs stable when possible.
 8. Make each task independently reviewable.
@@ -73,6 +74,7 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 - Per-task goal, scope, files, verification, and done criteria
 - One explicit responsible AI for every task
 - Architect owns design without implementation or self-approval; one functional Developer owns a small coherent slice and Development Gate; a Test Engineer owns scoped integration/regression tests and the Integration Gate; Reviewer and optional Documenter receive separate bounded evidence responsibilities; Git Steward is boundary-only.
+- When applicable, UX Designer owns interface design and design QA without production implementation or product acceptance.
 - Explicit blockers and dependencies
 - Worker-ready task files that can be executed without chat history
 

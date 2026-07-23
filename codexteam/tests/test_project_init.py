@@ -27,10 +27,13 @@ def test_project_dry_run_is_complete_and_does_not_write(tmp_path: Path):
     assert ".codexteam/skills/integration-testing.md" in plan.files
     assert ".codexteam/skills/verification.md" in plan.files
     assert ".codexteam/skills/subagent-orchestration.md" in plan.files
+    assert ".codexteam/skills/ux-ui-design.md" in plan.files
     assert ".codexteam/roles/developer.toml" in plan.files
     assert ".codexteam/roles/architect.toml" in plan.files
     assert ".codexteam/roles/git_steward.toml" in plan.files
+    assert ".codexteam/roles/ux_designer.toml" in plan.files
     assert ".codexteam/native-agents/codexteam_tester.toml" in plan.files
+    assert ".codexteam/native-agents/codexteam_ux_designer.toml" in plan.files
     assert "tests/unit/.gitkeep" in plan.files
     assert "tests/smoke/.gitkeep" in plan.files
     assert "tests/integration/.gitkeep" in plan.files

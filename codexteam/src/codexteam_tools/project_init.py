@@ -30,6 +30,7 @@ PROJECT_SKILLS = (
     "subagent-orchestration.md",
     "task-breakdown.md",
     "testing.md",
+    "ux-ui-design.md",
     "verification.md",
 )
 TASK_DEFINITIONS = {

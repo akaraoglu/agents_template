@@ -21,7 +21,7 @@ Required scope includes handoff ID, team ID, task ID, attempt ID, role, profile,
 
 Machine-readable schema: `schemas/role-policy-v1.json`. Canonical TOML manifests live under `roles/` and reject unknown fields. The launcher pins the normalized policy plus digest per attempt. Policy defaults may change for a future draft but cannot change an existing continuation.
 
-Canonical wire roles are `architect`, `developer`, `documenter`, `git_steward`, `leader`, `reviewer`, and `tester`. The user-facing Test Engineer retains `tester` for result compatibility, and Local Git Steward uses `git_steward`.
+Canonical wire roles are `architect`, `developer`, `documenter`, `git_steward`, `leader`, `reviewer`, `tester`, and `ux_designer`. The user-facing Test Engineer retains `tester` for result compatibility, Local Git Steward uses `git_steward`, and UX Designer uses `ux_designer`.
 
 ## Gate Record V1
 

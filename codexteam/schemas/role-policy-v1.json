@@ -20,7 +20,7 @@
   ],
   "properties": {
     "schema_version": {"const": "1.0"},
-    "role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "git_steward", "leader"]},
+    "role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "git_steward", "leader", "ux_designer"]},
     "name": {"type": "string", "pattern": "^codexteam_[a-z][a-z0-9_]{1,63}$"},
     "description": {"type": "string", "minLength": 1, "maxLength": 500},
     "developer_instructions": {"type": "string", "minLength": 1, "maxLength": 8000},

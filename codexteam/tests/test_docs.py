@@ -23,6 +23,7 @@ def test_machine_schemas_are_valid_json():
         "leader",
         "reviewer",
         "tester",
+        "ux_designer",
     }
     handoff_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "handoff-v1.json").read_text(encoding="utf-8"))
     assert set(handoff_schema["properties"]["agent_role"]["enum"]) == expected_roles
@@ -218,6 +219,7 @@ def test_specialist_role_skills_have_complete_reusable_workflow_sections():
         "development-testing.md",
         "integration-testing.md",
         "git-steward.md",
+        "ux-ui-design.md",
     ):
         content = (CODEXTEAM_ROOT / ".agents" / "skills" / name).read_text(
             encoding="utf-8"

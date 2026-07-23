@@ -9,10 +9,10 @@ It is not an application server, controller service, board, HTTP API, or MCP imp
 Every worker receives three instruction layers:
 
 1. Project `AGENTS.md` and the selected handoff provide common project rules and task scope.
-2. One validated manifest under `roles/` provides the selected Architect, Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader identity, defaults, guidance bundle, change boundary, and allowed evidence types.
+2. One validated manifest under `roles/` provides the selected Architect, optional UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader identity, defaults, guidance bundle, change boundary, and allowed evidence types.
 3. The launcher pins the complete role policy and every selected skill under `.codexteam/runtime/` when the draft starts, so feedback and finalization cannot drift when repository defaults change.
 
-The seven roles do not share one role prompt. They share common project rules, then receive distinct role instructions. Generated native Codex custom-agent projections under `generated/native-agents/` are optional; the existing `spawn-subagent.sh` process remains the authoritative CodexTeam execution path.
+The eight roles do not share one role prompt. They share common project rules, then receive distinct role instructions. UX Designer is optional and is used only for new or materially redesigned interfaces; the default project task scaffold is unchanged. Generated native Codex custom-agent projections under `generated/native-agents/` are optional; the existing `spawn-subagent.sh` process remains the authoritative CodexTeam execution path.
 
 ## Test Gates
 

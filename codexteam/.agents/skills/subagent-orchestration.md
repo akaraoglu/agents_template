@@ -23,6 +23,7 @@ For one coherent thin slice, keep the seven identities proportional:
 
 - Project Lead: scope, handoffs, feedback, acceptance, and state closure.
 - Architect: requirement-traceable code and project structure without implementation or self-approval.
+- UX Designer (`ux_designer`): optional implementation-ready interface design and focused design QA without production implementation or product acceptance.
 - One functional Developer: the entire slice, algorithm/unit and smoke tests, and the Development Gate.
 - Test Engineer (`tester` protocol role): integration/regression test engineering, the CI-equivalent Integration Gate, classified defects, and reusable evidence without production repairs.
 - Reviewer: acceptance analysis using both gate artifacts and the Test Engineer's named evidence, with additional inspection only for a concrete gap.
@@ -36,6 +37,7 @@ Each role starts from `BRIEF.md`, its active handoff, and the exact files or ups
 | Role | Default Profile | Guidance |
 |------|-----------------|----------|
 | Architect | `qwen36-27b` | architecture design |
+| UX Designer (`ux_designer`) | `qwen36-27b` | UX/UI design and design QA |
 | Developer | `qwen36-27b` | implementation, development testing |
 | Test Engineer (`tester`) | `qwen36-27b` | integration testing, verification |
 | Reviewer | `qwen36-27b` | verification, coding standards |
@@ -52,7 +54,7 @@ Inject the smallest role-specific guidance bundle that covers the task. Large ge
 
 ## Instruction Layers and Role Policies
 
-Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, and permitted evidence types.
+Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, and permitted evidence types.
 
 Precedence is: explicit Project Lead CLI override, pinned role-policy default, then profile configuration for settings not fixed above. `--profile` is optional for a new draft because the role supplies a default. Keep explicit overrides stable across an attempt.
 

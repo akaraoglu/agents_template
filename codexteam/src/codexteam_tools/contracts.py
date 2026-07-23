@@ -17,6 +17,7 @@ AGENT_ROLES = {
     "leader",
     "reviewer",
     "tester",
+    "ux_designer",
 }
 FILE_ACTIONS = {"created", "modified", "deleted"}
 EVIDENCE_TYPES = {"test_output", "artifact", "file_manifest", "cli_invocation", "spec_compliance", "code_review"}
