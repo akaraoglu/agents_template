@@ -82,6 +82,8 @@ Start a developer draft:
 
 Review the draft, then continue the exact session with `--phase feedback`. After acceptance, use `--phase final` with the same team, task, attempt, role, profile, and workspace. Draft and feedback may edit handoff-scoped project files, but they never write the deterministic result; finalization writes that one result after acceptance.
 
+For OpenAI-backed profiles, the final turn also receives the existing `schemas/result-v1.json` through Codex's `--output-schema`. Local providers receive the compact contract instructions because their structured-output support is not assumed. In both cases, the launcher validates identity, role boundaries, changed paths, and evidence paths before persisting a result.
+
 Inspect current and stale project-local workers:
 
 ```bash

@@ -38,6 +38,7 @@ from .turn_metrics import (
 )
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
+RESULT_SCHEMA_PATH = CODEXTEAM_ROOT / "schemas" / "result-v1.json"
 PHASES = ("draft", "feedback", "final")
 REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 SESSION_SCHEMA_VERSION = "1.0"
@@ -272,6 +273,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
 
     command = build_command(request, turn, executable=executable)
     environment = os.environ.copy()
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment["CODEX_HOME"] = str(_execution_codex_home(request))
     environment["CODEX_SQLITE_HOME"] = str(request.codex_home)
     process = run_process(
@@ -536,6 +538,11 @@ def build_command(
         ),
         "--skip-git-repo-check",
         "--json",
+        *(
+            ["--output-schema", str(RESULT_SCHEMA_PATH)]
+            if request.phase == "final" and request.model_provider == "openai"
+            else []
+        ),
         "-o",
         str(turn.message_path),
         thread_id,
@@ -557,15 +564,21 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
     if request.phase == "final":
         return (
             "[CODEXTEAM FINALIZATION TURN]\n"
-            f"The Project Lead has reviewed the draft for {request.task_id}/{request.attempt_id}.\n"
-            "Use the complete work and real evidence from this entire attempt. Do not invent evidence or expand scope.\n"
-            "Every created or modified file path and every evidence artifact_ref must name an actual existing "
-            "project-relative artifact. Put commands in evidence metadata, never in artifact_ref.\n"
-            "The JSON below is a shape example, not result content. Replace every angle-bracket placeholder "
-            "with observed task data. Remove the example file-change object when no file changed; never copy "
-            "a placeholder into the result.\n"
-            "Return exactly one final result-v1 JSON object with no Markdown fence or additional prose.\n"
-            f"{json.dumps(_schema_example(request), indent=2)}\n\n"
+            f"The Project Lead accepted the draft for {request.task_id}/{request.attempt_id}.\n"
+            "Return one JSON object matching the result-v1 contract, with no prose.\n"
+            "Use the complete attempt and real evidence without inventing evidence or expanding scope.\n"
+            "Set these identity fields exactly:\n"
+            "schema_version: 1.0\n"
+            f"team_id: {request.team_id}\n"
+            f"task_id: {request.task_id}\n"
+            f"agent_role: {request.role}\n"
+            f"attempt_id: {request.attempt_id}\n"
+            "Include every required top-level key: schema_version, result_id, team_id, task_id, "
+            "agent_role, attempt_id, status, summary, output, file_changes, evidence, "
+            "requested_followups, errors, warnings, limitations, and produced_at.\n"
+            "Every created or modified file and every evidence artifact_ref must be an actual existing "
+            "project-relative path. Put commands in evidence metadata, not artifact_ref. Use empty arrays "
+            "when there are no entries.\n\n"
             f"[PROJECT LEAD DECISION]\n{request.prompt.strip()}\n"
         )
 
@@ -1317,6 +1330,19 @@ def _result_from_message(
     validation_errors: list[str] = []
     for candidate in reversed(candidates):
         candidate = dict(candidate)
+        if not isinstance(candidate.get("result_id"), str) or not candidate["result_id"].strip():
+            candidate["result_id"] = f"res-{request.task_id.lower()}-{request.attempt_id}"
+        if candidate.get("status") == "completed":
+            candidate.setdefault("requested_followups", [])
+        for field in ("errors", "warnings", "limitations"):
+            value = candidate.get(field)
+            if isinstance(value, list):
+                candidate[field] = [
+                    item["message"]
+                    if isinstance(item, dict) and isinstance(item.get("message"), str)
+                    else item
+                    for item in value
+                ]
         candidate["output"] = {
             "exit_code": process.exit_code,
             "stdout_tail": process.stdout[-2_000:],
@@ -1392,39 +1418,6 @@ def _result_policy_errors(request: SpawnRequest, result: dict[str, Any]) -> list
         if item["type"] not in request.role_policy.allowed_evidence_types
     )
     return errors
-
-
-def _schema_example(request: SpawnRequest) -> dict[str, Any]:
-    return {
-        "schema_version": "1.0",
-        "result_id": f"res-{request.task_id.lower()}-{request.attempt_id}",
-        "team_id": request.team_id,
-        "task_id": request.task_id,
-        "agent_role": request.role,
-        "attempt_id": request.attempt_id,
-        "status": "completed",
-        "summary": "<actual completed outcome and addressed feedback>",
-        "output": {"exit_code": 0, "stdout_tail": "", "stderr_tail": "", "duration_seconds": 0},
-        "file_changes": [
-            {
-                "path": "<actual project-relative changed file; remove object if none>",
-                "action": "modified",
-            }
-        ],
-        "evidence": [
-            {
-                "type": "artifact",
-                "artifact_ref": "<actual existing project-relative evidence artifact>",
-                "summary": "<what the artifact proves>",
-                "metadata": {},
-            }
-        ],
-        "requested_followups": [],
-        "errors": [],
-        "warnings": [],
-        "limitations": [],
-        "produced_at": "<actual current UTC timestamp ending in Z>",
-    }
 
 
 def _event_failure_text(event: dict[str, Any]) -> str:

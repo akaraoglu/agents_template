@@ -41,6 +41,8 @@ Remove `--dry-run` only after inspecting the command, session location, and fina
 
 `--profile` is an explicit override. When omitted, the selected role policy supplies its default profile. The precedence is lead CLI override, pinned role-policy default, then profile configuration for values the policy does not set. The first draft snapshots the full policy and selected skill contents under the attempt runtime directory; resumes use that exact instruction bundle.
 
+Finalization passes the repository's existing `schemas/result-v1.json` to OpenAI-backed profiles with `--output-schema`. Local providers receive the same compact required-field instructions without being told to search for an unavailable schema. Contract validation and project-boundary checks run before either result is persisted.
+
 ## Run Test Gates
 
 ```bash
@@ -118,6 +120,17 @@ Always preview the exact project ID, profile, reasoning effort, ten turns, and r
 ```
 
 Run live by removing `--dry-run` and choosing a new report path. Add `--enforce-budget` when a functional run must still fail if elapsed time exceeds `--budget-seconds`.
+
+When a supervising Codex surface reports Project Lead usage, pass all three token values together and the optional duration:
+
+```bash
+./scripts/run-e2e-fibonacci-test.sh \
+  --profile qwen36-27b --reasoning-effort medium \
+  --lead-input-tokens 1250000 --lead-cached-tokens 800000 \
+  --lead-output-tokens 45000 --lead-duration-seconds 321
+```
+
+The report derives uncached lead input and evaluates the one-million-input and 50,000-output ceilings. A shell-only canary has no model-driven Project Lead, so these fields remain omitted and the lead-token ceiling remains `NOT_APPLICABLE`.
 
 The controlled project has five sequential owners: leader fixture validation, one developer for the complete CLI and tests, tester acceptance evidence, reviewer evidence audit and focused spot checks, and documenter delivery readiness. Every task follows draft → deterministic gate → final → result validation → independent closure. The clean path is exactly ten turns.
 

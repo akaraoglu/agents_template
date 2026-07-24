@@ -120,6 +120,7 @@ def test_cold_start_project_lead_bootstrap_is_discoverable():
         "do not spawn agents",
         "acceptance-level product check",
         "Keep orchestration proportional",
+        ".agents/skills/codexteam-self-improvement.md",
     )
     for marker in required_agents_markers:
         assert marker in agents
@@ -220,12 +221,29 @@ def test_specialist_role_skills_have_complete_reusable_workflow_sections():
         "integration-testing.md",
         "git-steward.md",
         "ux-ui-design.md",
+        "codexteam-self-improvement.md",
     ):
         content = (CODEXTEAM_ROOT / ".agents" / "skills" / name).read_text(
             encoding="utf-8"
         )
         for heading in required_headings:
             assert heading in content, f"missing {heading!r} in {name}"
+
+
+def test_project_lead_progressively_discloses_self_improvement_workflow():
+    lead = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "project-lead.md"
+    ).read_text(encoding="utf-8")
+    skill = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "codexteam-self-improvement.md"
+    ).read_text(encoding="utf-8")
+
+    assert "## Self-Improvement Boundary" in lead
+    assert "At a stable boundary" in lead
+    assert "Existing attempt bundles remain pinned" in lead
+    assert "observed -> proposed -> candidate -> verified -> accepted" in skill
+    assert "A negative case where the skill or tool should not activate" in skill
+    assert "Loading all skills into every agent" in skill
 
 
 def test_project_test_gate_template_defines_distinct_owners_and_ci_parity():

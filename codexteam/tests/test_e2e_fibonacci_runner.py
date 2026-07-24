@@ -226,6 +226,68 @@ def test_product_only_mode_passes_offline_and_writes_report(tmp_path: Path):
     assert (project / "src" / "fibonacci_tree_cli.py").is_file()
 
 
+def test_report_includes_validated_codex_reported_lead_usage(tmp_path: Path):
+    project = tmp_path / "valid-product-with-lead-usage"
+    project.mkdir()
+    write_valid_product(project)
+    report = tmp_path / "lead-usage-report.md"
+
+    completed = subprocess.run(
+        [
+            str(RUNNER),
+            "--product-only",
+            str(project),
+            "--report-file",
+            str(report),
+            "--lead-duration-seconds",
+            "321",
+            "--lead-input-tokens",
+            "1250000",
+            "--lead-cached-tokens",
+            "800000",
+            "--lead-output-tokens",
+            "45000",
+        ],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report_text = report.read_text(encoding="utf-8")
+    assert "- Lead-token ceiling status: PASS" in report_text
+    assert "- Lead input tokens: 1250000" in report_text
+    assert "- Lead cached input tokens: 800000" in report_text
+    assert "- Lead uncached input tokens: 450000" in report_text
+    assert "- Lead output tokens: 45000" in report_text
+    assert "- Lead duration seconds: 321" in report_text
+
+
+def test_runner_rejects_partial_lead_token_reporting(tmp_path: Path):
+    project = tmp_path / "unused-product"
+    project.mkdir()
+
+    completed = subprocess.run(
+        [
+            str(RUNNER),
+            "--product-only",
+            str(project),
+            "--lead-input-tokens",
+            "100",
+        ],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "requires input, cached-input, and output values together" in completed.stderr
+
+
 def test_product_only_failure_preserves_project_and_reports_recovery_state(tmp_path: Path):
     project = tmp_path / "failing-product"
     project.mkdir()

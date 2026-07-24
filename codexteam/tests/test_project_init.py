@@ -27,6 +27,7 @@ def test_project_dry_run_is_complete_and_does_not_write(tmp_path: Path):
     assert ".codexteam/skills/integration-testing.md" in plan.files
     assert ".codexteam/skills/verification.md" in plan.files
     assert ".codexteam/skills/subagent-orchestration.md" in plan.files
+    assert ".codexteam/skills/codexteam-self-improvement.md" in plan.files
     assert ".codexteam/skills/ux-ui-design.md" in plan.files
     assert ".codexteam/roles/developer.toml" in plan.files
     assert ".codexteam/roles/architect.toml" in plan.files

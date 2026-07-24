@@ -27,6 +27,7 @@ The Developer runs at most the targeted browser smoke required by the Developmen
 2. Add a regression test for the assigned defect or boundary when the behavior can be asserted at development-test scope.
 3. Run the smallest changed-area command first.
 4. Run the complete configured development gate, including one startup or happy-path smoke check.
+   Capture high-volume CLI output inside the test harness and report only the assertion result; do not dump a large successful payload into the agent transcript.
 5. Self-review failures and the implementation diff; fix only Developer-owned source and tests.
 6. Preserve exact commands and observations in a project-relative evidence artifact when the handoff requires one.
 7. Report integration, system, broad-browser, security, and environment coverage as unverified until the Test Engineer runs the integration gate.

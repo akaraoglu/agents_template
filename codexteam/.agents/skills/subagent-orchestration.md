@@ -158,34 +158,13 @@ Run the same command with `--phase final`. This is the only normal phase that wr
 
 Before finalization, remind the responsible AI that:
 
-- every required top-level field is present: `schema_version`, `result_id`, `team_id`, `task_id`, `agent_role`, `attempt_id`, `status`, `summary`, `output`, `file_changes`, `evidence`, `requested_followups`, `errors`, `warnings`, `limitations`, and `produced_at`;
-- `schema_version` is exactly `"1.0"`, and `team_id`, `task_id`, `attempt_id`, and `agent_role` exactly match the handoff and launcher arguments;
-- `result_id` is a non-empty stable identifier for this result and `summary` states the actual outcome rather than intent;
-- `status` is one of `completed`, `failed`, `partial`, `blocked`, or `needs_review`;
-- `output` includes `exit_code`, `stdout_tail`, `stderr_tail`, and non-negative `duration_seconds`;
-- `file_changes`, `evidence`, `requested_followups`, `errors`, `warnings`, and `limitations` are present even when empty;
-- file actions are exactly `created`, `modified`, or `deleted`;
-- evidence types are exactly `test_output`, `artifact`, `file_manifest`, `cli_invocation`, `spec_compliance`, or `code_review`;
-- `artifact_ref` values are safe project-relative paths, never command strings; and
-- `produced_at` is actual UTC ending in `Z`.
+- OpenAI-backed profiles receive `schemas/result-v1.json` as the final-turn output schema, while local providers receive the compact required-field contract without an unsupported schema claim;
+- `team_id`, `task_id`, `attempt_id`, and `agent_role` exactly match the handoff and launcher arguments;
+- the summary, status, limitations, file changes, and evidence describe observed work rather than intent;
+- every declared created or modified path and every evidence `artifact_ref` names an actual project-relative artifact; and
+- commands belong in evidence metadata, never in `artifact_ref`.
 
-Give the worker one task-specific evidence-object example with all required keys. Enum reminders alone are not enough for a reliable final envelope. The launcher must also verify that every declared created or modified path and every evidence `artifact_ref` exists before it seals the result and finalizes the session. A boundary-validation failure remains `correction_needed` and resumable in the same thread.
-
-The launcher supplies a shape example containing both object forms. A completed result must follow these shapes with actual project-relative values:
-
-```json
-{
-  "file_changes": [{"path": "docs/DELIVERY.md", "action": "modified"}],
-  "evidence": [{
-    "type": "artifact",
-    "artifact_ref": "results/t005-delivery-audit.txt",
-    "summary": "The delivery audit matches verified artifacts and limitations.",
-    "metadata": {}
-  }]
-}
-```
-
-Use `[]` when there were no file changes. Never rename `action`, `stderr_tail`, or an evidence key, and never copy an example path that was not produced by the task.
+The launcher fills only its stable result ID, process output, an omitted empty follow-up list for completed work, and string-normalizes message-bearing error/warning/limitation objects. It validates the returned contract, scope identity, role policy, changed paths, and evidence paths before sealing the result. A schema or boundary failure remains `correction_needed` and resumable in the same thread. Do not repeat the complete schema or a generic example object in the final prompt; task-specific truth is the useful context.
 
 7. Validate the final result, inspect declared artifacts, and close the task with independent verification:
 

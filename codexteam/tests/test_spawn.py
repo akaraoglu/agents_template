@@ -1,6 +1,7 @@
 import argparse
 import json
 import stat
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -106,19 +107,48 @@ def test_handoff_prompt_requires_draft_not_final_result(tmp_path: Path, monkeypa
     assert "DRAFT T002/att-001" in prompt
 
 
-def test_final_prompt_includes_copyable_result_object_shapes(tmp_path: Path, monkeypatch):
+def test_final_prompt_relies_on_schema_and_keeps_task_specific_truth(tmp_path: Path, monkeypatch):
     run_draft(tmp_path, monkeypatch)
     request = spawn.prepare_request(
         request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
     )
     prompt = spawn.build_prompt(request, spawn.prepare_turn(request))
 
-    assert '"action": "modified"' in prompt
-    assert '"type": "artifact"' in prompt
-    assert '"artifact_ref": "<actual existing project-relative evidence artifact>"' in prompt
-    assert '"stderr_tail": ""' in prompt
-    assert "Remove the example file-change object when no file changed" in prompt
-    assert "never copy a placeholder into the result" in prompt
+    assert "matching the result-v1 contract" in prompt
+    assert "team_id: team-1" in prompt
+    assert "task_id: T002" in prompt
+    assert "agent_role: developer" in prompt
+    assert "attempt_id: att-001" in prompt
+    assert "requested_followups, errors, warnings, limitations, and produced_at" in prompt
+    assert "actual existing project-relative path" in prompt
+    assert '"artifact_ref": "<actual existing project-relative evidence artifact>"' not in prompt
+    assert len(prompt) < 1300
+
+
+def test_final_command_supplies_result_schema_only_for_openai_final_phase(
+    tmp_path: Path, monkeypatch
+):
+    run_draft(tmp_path, monkeypatch)
+
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="FEEDBACK: REVISE")
+    )
+    feedback_command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
+    assert "--output-schema" not in feedback_command
+
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
+    )
+    final_turn = spawn.prepare_turn(final)
+    local_final_command = spawn.build_command(final, final_turn)
+    assert "--output-schema" not in local_final_command
+
+    openai_final = replace(final, model_provider="openai")
+    final_command = spawn.build_command(openai_final, final_turn)
+    schema_index = final_command.index("--output-schema")
+
+    assert final_command[schema_index + 1] == str(spawn.RESULT_SCHEMA_PATH)
+    assert spawn.RESULT_SCHEMA_PATH.is_file()
 
 
 def test_initial_command_persists_json_session_without_ephemeral(tmp_path: Path, monkeypatch):
@@ -132,6 +162,22 @@ def test_initial_command_persists_json_session_without_ephemeral(tmp_path: Path,
     assert "--ephemeral" not in command
     assert "--last" not in command
     assert 'model_reasoning_effort="medium"' in command
+
+
+def test_worker_environment_disables_project_bytecode_caches(tmp_path: Path, monkeypatch):
+    observed = {}
+
+    def fake_process(command, **kwargs):
+        observed["environment"] = kwargs["env"]
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", fake_process)
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+
+    _, code = spawn.run_spawn(request)
+
+    assert code == 0
+    assert observed["environment"]["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 def test_parent_sandbox_mode_skips_redundant_worker_namespace_and_persists(
@@ -432,6 +478,31 @@ def test_final_writes_one_contract_valid_result_and_finalizes_session(
     assert session["last_status"] == "finalized"
     assert session["final_result_path"] == "results/T002-att-001.json"
     assert list(request.result_dir.glob("T002-*.json")) == [request.result_path]
+
+
+def test_completed_final_normalizes_launcher_owned_bookkeeping(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    run_draft(tmp_path, monkeypatch)
+    result = result_factory(task_id="T002", role="developer")
+    result["result_id"] = ""
+    result.pop("requested_followups")
+    result["warnings"] = [{"level": "cosmetic", "message": "Minor wording mismatch."}]
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(json.dumps(result)),
+    )
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
+    )
+
+    persisted, code = spawn.run_spawn(request)
+
+    assert code == 0
+    assert persisted["result_id"] == "res-t002-att-001"
+    assert persisted["requested_followups"] == []
+    assert persisted["warnings"] == ["Minor wording mismatch."]
 
 
 def test_invalid_final_writes_no_result_and_session_remains_resumable(tmp_path: Path, monkeypatch):

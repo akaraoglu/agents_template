@@ -593,3 +593,43 @@ Validation evidence:
 - The per-role correction ceiling passed: T002, T003, and T004 each used one feedback round. The shell canary has no model-driven Project Lead session, so the lead-input/output token ceilings are not applicable; worker-token totals are reported separately and are not compared to lead ceilings.
 
 The next V2 experiment should target result-envelope reliability and smaller local-worker context. Those changes remain outside this accepted foundation and must be measured one at a time against the preserved baseline.
+
+## 14. V2.1 Result Finalization Experiment
+
+The first post-foundation experiment targeted result-envelope correction cost without changing task ownership, session persistence, verification, or closure.
+
+Minimal changes:
+
+- OpenAI-backed final turns receive the existing `result-v1` output schema.
+- Local final turns receive a compact contract instead of a large example or an unsupported schema claim.
+- The launcher supplies only deterministic bookkeeping: a missing or blank result ID, an omitted empty follow-up list for completed work, process output, and string normalization for message-bearing error, warning, or limitation objects.
+- The E2E report accepts optional Codex-reported Project Lead duration and token totals so the existing lead ceilings can be evaluated when that surface exposes them.
+- Worker processes disable Python bytecode writes, and the Fibonacci development contract requires capture-based checks instead of printing large successful trees.
+
+Deterministic verification passed with 190 repository tests.
+
+### Qwen canary outcome
+
+The fresh `qwen36-27b` candidate `fibonacci-tree-cli-v21-qwen-20260724-111544` proved that T001 now drafts, finalizes, validates, and closes on its first pass. T002 still timed out at 300 seconds, so the candidate correctly failed its performance gate and remained preserved.
+
+The T002 evidence separates this failure from the earlier infrastructure and transcript-volume problems:
+
+- The worker started normally and used the selected Qwen profile.
+- It performed 21 command calls and 22 reasoning events; it was not waiting on MCP, Ollama startup, or filesystem access.
+- Command output fell from 145,932 bytes in the earlier Qwen candidate to 15,719 bytes.
+- No `__pycache__` directory or `.pyc` file was created.
+- The worker repeatedly rewrote and rechecked the Unicode renderer, never reached the test/README work, and produced no draft message before timeout.
+
+### Decision and next target
+
+Keep the finalization changes: they remove avoidable local-envelope corrections while preserving semantic validation.
+
+Do not increase the timeout. The next isolated experiment is project-specific task sizing for local models:
+
+1. Split the current all-in-one T002 into one bounded core model/rendering task and one bounded CLI/tests/README task.
+2. Keep independent integration, evidence review, and delivery review.
+3. Keep one responsible AI and one persistent attempt per task.
+4. Keep the same Qwen profile, reasoning effort, 300-second turn limit, 1,800-second run budget, product fixture, and quality gates.
+5. Accept the split only if the full canary passes within the existing 12-turn ceiling and improves verified delivery time without weakening evidence.
+
+This is a task-design experiment, not a new scheduler, recovery mechanism, or agent-control layer.

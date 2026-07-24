@@ -44,6 +44,11 @@ MANIFEST_VERDICT="NOT_RUN"
 PERFORMANCE_VERDICT="NOT_RUN"
 CORRECTION_CEILING_STATUS="NOT_RUN"
 LEAD_TOKEN_CEILING_STATUS="NOT_APPLICABLE"
+LEAD_DURATION_SECONDS=""
+LEAD_INPUT_TOKENS=""
+LEAD_CACHED_INPUT_TOKENS=""
+LEAD_UNCACHED_INPUT_TOKENS=""
+LEAD_OUTPUT_TOKENS=""
 CURRENT_STAGE="argument validation"
 CURRENT_TASK="none"
 CURRENT_PHASE="none"
@@ -71,6 +76,10 @@ Options:
   --projects-root PATH       Generated-project parent directory
   --project-id ID            Explicit unique project ID; never overwrites an existing path
   --report-file PATH         Unique Markdown report path (default: /tmp/<project>-report.md)
+  --lead-duration-seconds N  Codex-reported Project Lead duration, when available
+  --lead-input-tokens N      Codex-reported Project Lead input tokens
+  --lead-cached-tokens N     Codex-reported Project Lead cached input tokens
+  --lead-output-tokens N     Codex-reported Project Lead output tokens
   --dry-run                  Validate and print the plan without creating a project or agent session
   --product-only PROJECT     Run deterministic product checks against an existing project
   -h, --help                 Show this help
@@ -87,6 +96,42 @@ require_positive_integer() {
     local label="$1"
     local value="$2"
     [[ "${value}" =~ ^[1-9][0-9]*$ ]] || fail "${label} must be a positive integer"
+}
+
+require_nonnegative_integer() {
+    local label="$1"
+    local value="$2"
+    [[ "${value}" =~ ^[0-9]+$ ]] || fail "${label} must be a non-negative integer"
+}
+
+evaluate_lead_usage() {
+    local reported=0
+    local value
+
+    for value in \
+        "${LEAD_INPUT_TOKENS}" \
+        "${LEAD_CACHED_INPUT_TOKENS}" \
+        "${LEAD_OUTPUT_TOKENS}"; do
+        [[ -n "${value}" ]] && ((reported += 1))
+    done
+    if (( reported != 0 && reported != 3 )); then
+        fail "lead token reporting requires input, cached-input, and output values together"
+    fi
+    if (( reported == 0 )); then
+        return 0
+    fi
+
+    require_nonnegative_integer "--lead-input-tokens" "${LEAD_INPUT_TOKENS}"
+    require_nonnegative_integer "--lead-cached-tokens" "${LEAD_CACHED_INPUT_TOKENS}"
+    require_nonnegative_integer "--lead-output-tokens" "${LEAD_OUTPUT_TOKENS}"
+    (( LEAD_CACHED_INPUT_TOKENS <= LEAD_INPUT_TOKENS )) \
+        || fail "--lead-cached-tokens cannot exceed --lead-input-tokens"
+    LEAD_UNCACHED_INPUT_TOKENS=$(( LEAD_INPUT_TOKENS - LEAD_CACHED_INPUT_TOKENS ))
+    if (( LEAD_UNCACHED_INPUT_TOKENS <= 1000000 && LEAD_OUTPUT_TOKENS <= 50000 )); then
+        LEAD_TOKEN_CEILING_STATUS="PASS"
+    else
+        LEAD_TOKEN_CEILING_STATUS="FAIL"
+    fi
 }
 
 print_command() {
@@ -419,6 +464,15 @@ write_report() {
         printf -- '- Performance verdict: %s\n' "${PERFORMANCE_VERDICT}"
         printf -- '- Correction ceiling status: %s\n' "${CORRECTION_CEILING_STATUS}"
         printf -- '- Lead-token ceiling status: %s\n' "${LEAD_TOKEN_CEILING_STATUS}"
+        if [[ -n "${LEAD_INPUT_TOKENS}" ]]; then
+            printf -- '- Lead input tokens: %s\n' "${LEAD_INPUT_TOKENS}"
+            printf -- '- Lead cached input tokens: %s\n' "${LEAD_CACHED_INPUT_TOKENS}"
+            printf -- '- Lead uncached input tokens: %s\n' "${LEAD_UNCACHED_INPUT_TOKENS}"
+            printf -- '- Lead output tokens: %s\n' "${LEAD_OUTPUT_TOKENS}"
+        fi
+        if [[ -n "${LEAD_DURATION_SECONDS}" ]]; then
+            printf -- '- Lead duration seconds: %s\n' "${LEAD_DURATION_SECONDS}"
+        fi
         printf -- '- Started: %s\n' "${STARTED_AT}"
         printf -- '- Finished: %s\n' "${FINISHED_AT}"
         printf -- '- Elapsed seconds: %s\n' "${ELAPSED_SECONDS}"
@@ -454,6 +508,7 @@ finish() {
     fi
     if [[ "${PERFORMANCE_VERDICT}" != "NOT_APPLICABLE" ]]; then
         if (( ELAPSED_SECONDS > BUDGET_SECONDS || AGENT_TURNS > 12 )) \
+            || [[ "${LEAD_TOKEN_CEILING_STATUS}" == "FAIL" ]] \
             || { (( final_code == 3 )) && [[ "${CURRENT_STAGE}" == *"turn" ]]; }; then
             PERFORMANCE_VERDICT="FAIL"
         else
@@ -528,6 +583,26 @@ parse_arguments() {
                 REPORT_FILE="$2"
                 shift 2
                 ;;
+            --lead-duration-seconds)
+                [[ $# -ge 2 ]] || fail "--lead-duration-seconds requires a value"
+                LEAD_DURATION_SECONDS="$2"
+                shift 2
+                ;;
+            --lead-input-tokens)
+                [[ $# -ge 2 ]] || fail "--lead-input-tokens requires a value"
+                LEAD_INPUT_TOKENS="$2"
+                shift 2
+                ;;
+            --lead-cached-tokens)
+                [[ $# -ge 2 ]] || fail "--lead-cached-tokens requires a value"
+                LEAD_CACHED_INPUT_TOKENS="$2"
+                shift 2
+                ;;
+            --lead-output-tokens)
+                [[ $# -ge 2 ]] || fail "--lead-output-tokens requires a value"
+                LEAD_OUTPUT_TOKENS="$2"
+                shift 2
+                ;;
             --dry-run)
                 DRY_RUN=1
                 shift
@@ -554,6 +629,10 @@ main() {
     parse_arguments "$@"
     require_positive_integer "--timeout-seconds" "${TIMEOUT_SECONDS}"
     require_positive_integer "--budget-seconds" "${BUDGET_SECONDS}"
+    if [[ -n "${LEAD_DURATION_SECONDS}" ]]; then
+        require_nonnegative_integer "--lead-duration-seconds" "${LEAD_DURATION_SECONDS}"
+    fi
+    evaluate_lead_usage
     case "${REASONING_EFFORT}" in
         ""|minimal|low|medium|high|xhigh) ;;
         *) fail "unsupported --reasoning-effort: ${REASONING_EFFORT}" ;;

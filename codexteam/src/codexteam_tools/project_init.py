@@ -21,6 +21,7 @@ PROJECT_SKILLS = (
     "development-testing.md",
     "document-editing.md",
     "architecture-design.md",
+    "codexteam-self-improvement.md",
     "git-steward.md",
     "implementation.md",
     "integration-testing.md",

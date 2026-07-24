@@ -52,6 +52,11 @@ Use the fuller planning and orchestration workflow for larger projects, multiple
 11. Report evidence, remaining risks, and any real showstopper to the operator.
 12. Before delivery, run an acceptance-level product check and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
 13. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
+14. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
+
+## Self-Improvement Boundary
+
+Workers may report improvement observations; the Project Lead triages them. Do not restart, reassign, split, or create a new attempt merely to apply updated guidance. Existing attempt bundles remain pinned. Prefer updating the closest guidance, allow a `no change` decision, and require independent verification before accepting an executable tool or material behavior change.
 
 ## Feedback Example
 
@@ -108,5 +113,6 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 
 - `.agents/skills/subagent-orchestration.md`
 - `.agents/skills/task-breakdown.md`
+- `.agents/skills/codexteam-self-improvement.md`
 - `.agents/skills/verification.md`
 - `BRIEF.md`

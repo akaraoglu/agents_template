@@ -15,6 +15,7 @@ This file is sufficient for the first new-project proposal. Before initializatio
 | Review or verify worker output | `.agents/skills/project-lead.md`, `.agents/skills/verification.md` |
 | Recover a failed or incomplete worker turn | `.agents/skills/subagent-orchestration.md`, `.agents/skills/debugging.md` |
 | Nested worker reports app-server read-only or `bwrap` namespace failure | `.agents/playbooks/nested-worker-sandbox.md` |
+| Review recurring team friction or maintain CodexTeam skills and tools | `.agents/skills/codexteam-self-improvement.md` |
 | Prepare final delivery | `.agents/skills/delivery.md` |
 | Prepare an authorized local milestone commit | `.agents/skills/git-steward.md`, `.agents/playbooks/milestone-commit.md` |
 
