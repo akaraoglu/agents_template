@@ -315,6 +315,8 @@ def test_completed_turn_tolerates_a_recovered_transient_error_event():
 def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatch):
     request, outcome = run_draft(tmp_path, monkeypatch)
     session = json.loads(request.session_path.read_text())
+    metrics = Path(outcome["metrics_path"])
+    summary = json.loads(metrics.read_text())
     assert outcome["status"] == "draft_ready"
     assert session["thread_id"] == THREAD_ID
     assert session["turn_count"] == 1
@@ -329,7 +331,12 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
     ]
     assert not request.result_path.exists()
     assert stat.S_IMODE(request.session_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(metrics.stat().st_mode) == 0o600
     assert stat.S_IMODE(request.codex_home.stat().st_mode) == 0o700
+    assert summary["task_id"] == "T002"
+    assert summary["attempt_id"] == "att-001"
+    assert summary["turn"]["completed"] is True
+    assert summary["turn"]["duration_seconds"] == 0.2
 
 
 def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: Path, monkeypatch):

@@ -16,6 +16,30 @@ Use when assigned responsibility for source, related tests, scoped technical doc
 - Verification command
 - Project Lead feedback for revision turns
 
+## Planned Lane Pilot
+
+Use this only when the handoff explicitly contains `PLANNED LANE`. The first turn is a planning checkpoint, not an implementation draft:
+
+1. Inspect the handoff and only its named source, test, design, and evidence files.
+2. Do not edit files or run builds, tests, formatters, generators, or other commands likely to write.
+3. Identify observed behavior, exact likely change paths, contracts, dependencies, uncertainties, Developer-owned tests, the targeted browser smoke when needed, Development Gate commands, and stop conditions.
+4. Return:
+
+```text
+PLAN Txxx/att-xxx
+
+Behavior and non-goals:
+Files and contracts:
+Dependencies and uncertainties:
+Implementation sequence:
+Developer-owned tests:
+Browser smoke:
+Development Gate:
+Stop conditions:
+```
+
+Wait for the Project Lead's exact `PLAN ACCEPTED`. Then resume this same session, revise the plan when new code evidence requires it, report any material scope expansion, and follow the normal workflow below. A plan is a reviewed hypothesis, not permission to conceal a newly discovered dependency.
+
 ## Workflow
 
 1. Read the relevant files before editing and restate the bounded outcome internally.

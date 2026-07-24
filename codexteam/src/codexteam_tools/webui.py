@@ -10,6 +10,7 @@ from flask import Flask, abort, render_template
 
 from .paths import PathValidationError, contained_path, normalize_task_id, validate_identifier
 from .tasks import TaskDocumentError, TaskRow, parse_task_document
+from .turn_metrics import load_summary, metrics_path
 
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +19,9 @@ UNKNOWN = "unknown"
 VERDICTS = ("Lifecycle", "Product", "Evidence", "Management", "Manifest", "Performance")
 TURN_FILE = re.compile(r"^(\d+)-(draft|feedback|final)\.jsonl$")
 FAILED_TURN_STATUSES = {"turn_failed", "process_failed", "timed_out", "interrupted", "correction_needed"}
+COMPLETED_TASK_STATUSES = {"completed", "complete", "done"}
+ACTIVE_PHASES = {"draft", "feedback", "final"}
+_BOARD_COLUMNS = ("Backlog", "In Progress", "In Review", "In Validation", "Blocked", "Done")
 COMPLETED_PROJECT_STATUSES = {"complete", "completed", "delivered", "done"}
 PHASES = ("draft", "feedback", "final", "verify", "closed")
 
@@ -77,9 +81,13 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         attempts = sorted(sessions.get(task_id, []), key=lambda item: _timestamp_value(item["updated_at"]))
         latest = attempts[-1] if attempts else {}
         durations = [item["duration_seconds"] for item in attempts if item["duration_seconds"] is not None]
+        objective = row.description if row else UNKNOWN
+        milestone_id, display_objective = _task_presentation(objective)
         task = {
             "id": task_id,
-            "objective": row.description if row else UNKNOWN,
+            "objective": objective,
+            "display_objective": display_objective,
+            "milestone_id": milestone_id,
             "owner": row.owner if row and row.owner else UNKNOWN,
             "status": row.status if row else latest.get("status", UNKNOWN),
             "verification": row.verification if row and row.verification else UNKNOWN,
@@ -112,6 +120,45 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
 
     tasks.sort(key=lambda item: item["id"])
     tasks.sort(key=lambda item: _timestamp_value(item["updated_at"]), reverse=True)
+    expensive_drafts = _expensive_drafts(tasks)
+
+    # --- Board column projection (T004) ---
+    attention_count = 0
+    open_count = 0
+    for task in tasks:
+        task["board_column"] = _board_column(task)
+        status_lower = task["status"].lower()
+        # board_attention: recoverable failures stay in progress lane with marker.
+        # Also treat task-row recoverable statuses as attention even without sessions.
+        is_recoverable_row = (
+            status_lower not in COMPLETED_TASK_STATUSES
+            and status_lower != "blocked"
+            and (task["failed_turns"] > 0 or status_lower in FAILED_TURN_STATUSES)
+        )
+        task["board_attention"] = is_recoverable_row
+        # Attention count includes canonical blocked tasks AND recoverable failures
+        if task["board_column"] == "Blocked" or task["board_attention"]:
+            attention_count += 1
+        # Use COMPLETED_TASK_STATUSES for open vs completed distinction
+        if status_lower not in COMPLETED_TASK_STATUSES:
+            open_count += 1
+
+    # Compact board groups (list of tasks per column)
+    board_groups = {col: [] for col in _BOARD_COLUMNS}
+    for task in tasks:
+        col = task["board_column"]
+        board_groups[col].append(task)
+    # Sort within each lane by latest activity. Newer task IDs break ties for
+    # planned tasks that do not have session timestamps yet.
+    for col in _BOARD_COLUMNS:
+        board_groups[col].sort(
+            key=lambda task: (_timestamp_value(task["updated_at"]), int(task["id"][1:])),
+            reverse=True,
+        )
+
+    # Compact card payload per task
+    for task in tasks:
+        task["card"] = _compact_card(task)
 
     timestamps = [item[key] for group in sessions.values() for item in group for key in ("created_at", "updated_at")]
     timestamps = [value for value in timestamps if value]
@@ -129,10 +176,10 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         if elapsed is not None:
             elapsed_source = "session timestamps"
 
-    completed = sum(task["status"] == "Completed" for task in tasks)
-    blocked = sum(task["status"] == "Blocked" for task in tasks)
+    completed = sum(task["status"].lower() in COMPLETED_TASK_STATUSES for task in tasks)
+    blocked = sum(task["status"].lower() == "blocked" for task in tasks)
     failed = sum(
-        task["status"] != "Completed" and task["failed_turns"] > 0
+        task["status"].lower() not in COMPLETED_TASK_STATUSES and task["failed_turns"] > 0
         for task in tasks
     )
     first_heading = _first_heading(project / "PROJECT.md")
@@ -146,6 +193,8 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
             seen_agents.add(agent_key)
             agents.append(
                 {
+                    "objective": task["display_objective"],
+                    "milestone_id": task["milestone_id"],
                     "owner": task["owner"],
                     "role": task["role"],
                     "profile": task["profile"],
@@ -156,9 +205,36 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
                 }
             )
     agent_total = len(agents)
-    agents = agents[:8]
+    agent_activity = _agent_activity(tasks)
     active_task = state.get("Active Task", UNKNOWN)
     active_task_details = next((task for task in tasks if task["id"] == active_task), None)
+    agents = agents[:8]
+    # Compact focus payload (T004)
+    if active_task_details:
+        focus_payload = {
+            "task_id": active_task,
+            "objective": active_task_details["display_objective"],
+            "milestone_id": active_task_details["milestone_id"],
+            "owner": active_task_details["owner"],
+            "owner_label": _human_owner_label(active_task_details["owner"], active_task_details.get("role")),
+            "role": active_task_details["role"],
+            "profile": active_task_details["profile"],
+            "stage": active_task_details["phase"],
+            "last_activity": active_task_details["updated_at"],
+        }
+    else:
+        focus_payload = {
+            "task_id": active_task,
+            "objective": None,
+            "milestone_id": None,
+            "owner": UNKNOWN,
+            "owner_label": None,
+            "role": UNKNOWN,
+            "profile": UNKNOWN,
+            "stage": UNKNOWN,
+            "last_activity": UNKNOWN,
+        }
+
     needs_attention = blocked > 0 or failed > 0 or str(state.get("Status", "")).lower() in {"blocked", "failed"}
     progress_percent = round(completed / len(tasks) * 100) if tasks else 0
     reported_error = report.get("Error")
@@ -173,6 +249,22 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         diagnostic_path = UNKNOWN
     else:
         error = diagnostic_path = UNKNOWN
+
+    # Reported verdicts only (filter out unknown) — T004
+    reported_verdicts = {name: val for name, val in verdicts.items() if val != UNKNOWN}
+
+    # Portfolio group — T004
+    portfolio_group = _portfolio_group(needs_attention, tasks, state)
+
+    # Attention summary (short human label, no raw path) — T004
+    attention_summary = _attention_summary(error, tasks)
+
+    # Compact summary — T004
+    project_summary = _compact_summary(
+        completed, len(tasks), open_count, attention_count,
+        tasks, elapsed,
+    )
+
     return {
         "id": project_id,
         "name": first_heading or project_id,
@@ -189,9 +281,17 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         "task_failed": failed,
         "task_blocked": blocked,
         "progress_percent": progress_percent,
+        "portfolio_group": portfolio_group,
+        "focus": focus_payload,
+        "summary": project_summary,
+        "board_groups": board_groups,
+        "reported_verdicts": reported_verdicts,
+        "has_all_verdicts_missing": all(v == UNKNOWN for v in verdicts.values()),
+        "attention_summary": attention_summary,
         "needs_attention": needs_attention,
         "agents": agents,
         "agent_total": agent_total,
+        "agent_activity": agent_activity,
         "turns": sum(task["turns"] for task in tasks),
         "corrections": sum(task["corrections"] for task in tasks),
         "failed_turns": sum(task["failed_turns"] for task in tasks),
@@ -206,6 +306,7 @@ def load_project(projects_dir: str | Path, project_id: str) -> dict[str, Any]:
         "diagnostic_path": diagnostic_path,
         "verdicts": verdicts,
         "milestone_commits": milestone_commits,
+        "expensive_drafts": expensive_drafts,
     }
 
 
@@ -216,20 +317,19 @@ def create_app(projects_dir: str | Path | None = None) -> Flask:
     @app.get("/")
     def projects_view():
         projects = list_projects(root)
-        attention = [project for project in projects if project["needs_attention"]]
-        active = [
-            project
-            for project in projects
-            if not project["needs_attention"] and project["status"].lower() not in COMPLETED_PROJECT_STATUSES
-        ]
-        delivered = [project for project in projects if project["status"].lower() in COMPLETED_PROJECT_STATUSES]
+        # Portfolio grouping: each project in exactly one group (T004)
+        attention_projects = [p for p in projects if p.get("portfolio_group") == "needs_attention"]
+        active_projects = [p for p in projects if p.get("portfolio_group") == "active"]
+        completed_projects = [p for p in projects if p.get("portfolio_group") == "recently_completed"]
+        total_count = len(projects)
         active_count = sum(project["status"].lower() not in COMPLETED_PROJECT_STATUSES for project in projects)
         return render_template(
             "webui/projects.html",
             projects=projects,
-            attention_projects=attention,
-            active_projects=active,
-            delivered_projects=delivered,
+            attention_projects=attention_projects,
+            active_projects=active_projects,
+            completed_projects=completed_projects,
+            total_count=total_count,
             active_count=active_count,
         )
 
@@ -314,10 +414,24 @@ def _session(project: Path, path: Path) -> dict[str, Any] | None:
         match = TURN_FILE.match(turn_file.name)
         number = int(match.group(1))
         phase = match.group(2)
-        parsed = _jsonl(turn_file)
-        if parsed["usage"] is not None:
-            usage = parsed["usage"]
-        turn_error = parsed["error"]
+        metrics = load_summary(metrics_path(turn_file))
+        parsed = _jsonl(turn_file) if metrics is None else None
+        turn_usage = (
+            metrics["usage"].get("cumulative", {})
+            if metrics is not None
+            else (parsed["usage"] or {})
+        )
+        turn_delta = metrics["usage"].get("delta", {}) if metrics is not None else {}
+        activity = metrics.get("activity", {}) if metrics is not None else {}
+        metric_turn = metrics.get("turn", {}) if metrics is not None else {}
+        metric_events = metrics.get("events", {}) if metrics is not None else {}
+        if _has_usage(turn_usage):
+            usage = turn_usage
+        turn_error = (
+            metric_events.get("last_error")
+            if metrics is not None
+            else parsed["error"]
+        )
         turn_diagnostic = UNKNOWN
         if turn_error:
             turn_diagnostic = turn_file.relative_to(project).as_posix()
@@ -325,22 +439,46 @@ def _session(project: Path, path: Path) -> dict[str, Any] | None:
             if stderr.is_file() and stderr.stat().st_size:
                 turn_diagnostic = stderr.relative_to(project).as_posix()
         item = metadata.get(number, {})
-        turn_usage = parsed["usage"] or {}
         turn_details.append(
             {
                 "number": number,
                 "phase": str(item.get("phase", phase)),
                 "status": str(item.get("status", UNKNOWN)),
-                "duration_seconds": item.get("duration_seconds"),
+                "duration_seconds": item.get(
+                    "duration_seconds",
+                    metric_turn.get("duration_seconds"),
+                ),
                 "input_tokens": turn_usage.get("input_tokens"),
                 "output_tokens": turn_usage.get("output_tokens"),
                 "cached_tokens": turn_usage.get("cached_input_tokens"),
+                "uncached_tokens": turn_usage.get("uncached_input_tokens"),
+                "input_delta": turn_delta.get("input_tokens"),
+                "output_delta": turn_delta.get("output_tokens"),
+                "cached_delta": turn_delta.get("cached_input_tokens"),
+                "uncached_delta": turn_delta.get("uncached_input_tokens"),
+                "delta_mode": (
+                    metrics["usage"].get("delta_mode", UNKNOWN)
+                    if metrics is not None
+                    else UNKNOWN
+                ),
+                "metrics_available": metrics is not None,
+                "completed": metric_turn.get("completed") if metrics is not None else None,
+                "tool_calls": activity.get("tool_calls"),
+                "failed_tool_calls": activity.get("failed_tool_calls"),
+                "command_calls": activity.get("command_calls"),
+                "failed_command_calls": activity.get("failed_command_calls"),
+                "edit_events": activity.get("edit_events"),
+                "agent_messages": activity.get("agent_messages"),
+                "command_output_bytes": activity.get("command_output_bytes"),
+                "max_command_output_bytes": activity.get("max_command_output_bytes"),
+                "repeated_commands": activity.get("repeated_commands", []),
+                "largest_commands": activity.get("largest_commands", []),
                 "error": turn_error or UNKNOWN,
                 "diagnostic_path": turn_diagnostic,
             }
         )
-        if parsed["error"]:
-            error = parsed["error"]
+        if turn_error:
+            error = turn_error
             diagnostic = turn_diagnostic
 
     recorded_numbers = {item["number"] for item in turn_details}
@@ -355,6 +493,24 @@ def _session(project: Path, path: Path) -> dict[str, Any] | None:
                     "input_tokens": None,
                     "output_tokens": None,
                     "cached_tokens": None,
+                    "uncached_tokens": None,
+                    "input_delta": None,
+                    "output_delta": None,
+                    "cached_delta": None,
+                    "uncached_delta": None,
+                    "delta_mode": UNKNOWN,
+                    "metrics_available": False,
+                    "completed": None,
+                    "tool_calls": None,
+                    "failed_tool_calls": None,
+                    "command_calls": None,
+                    "failed_command_calls": None,
+                    "edit_events": None,
+                    "agent_messages": None,
+                    "command_output_bytes": None,
+                    "max_command_output_bytes": None,
+                    "repeated_commands": [],
+                    "largest_commands": [],
                     "error": UNKNOWN,
                     "diagnostic_path": UNKNOWN,
                 }
@@ -432,6 +588,68 @@ def _jsonl(path: Path) -> dict[str, Any]:
     except (OSError, ValueError, json.JSONDecodeError):
         error = "unreadable turn log"
     return {"usage": usage, "error": error}
+
+
+def _has_usage(usage: Any) -> bool:
+    return isinstance(usage, dict) and any(
+        isinstance(usage.get(key), (int, float))
+        for key in ("input_tokens", "cached_input_tokens", "output_tokens")
+    )
+
+
+def _expensive_drafts(
+    tasks: list[dict[str, Any]],
+    *,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    drafts = []
+    for task in tasks:
+        for attempt in task["attempts"]:
+            for turn in attempt["turn_details"]:
+                if (
+                    turn["phase"] != "draft"
+                    or not turn["metrics_available"]
+                    or turn["completed"] is not True
+                ):
+                    continue
+                ranking_tokens = turn["input_delta"]
+                if ranking_tokens is None:
+                    ranking_tokens = turn["input_tokens"]
+                if ranking_tokens is None:
+                    continue
+                drafts.append(
+                    {
+                        "task_id": task["id"],
+                        "attempt": attempt["attempt"],
+                        "role": attempt["role"],
+                        "profile": attempt["profile"],
+                        "status": attempt["status"],
+                        "turn": turn["number"],
+                        "input_tokens": turn["input_tokens"],
+                        "input_delta": turn["input_delta"],
+                        "cached_tokens": turn["cached_tokens"],
+                        "uncached_tokens": turn["uncached_tokens"],
+                        "output_tokens": turn["output_tokens"],
+                        "duration_seconds": turn["duration_seconds"],
+                        "tool_calls": turn["tool_calls"],
+                        "failed_tool_calls": turn["failed_tool_calls"],
+                        "command_calls": turn["command_calls"],
+                        "failed_command_calls": turn["failed_command_calls"],
+                        "command_output_bytes": turn["command_output_bytes"],
+                        "repeated_commands": turn["repeated_commands"],
+                        "largest_commands": turn["largest_commands"],
+                        "ranking_tokens": ranking_tokens,
+                    }
+                )
+    drafts.sort(
+        key=lambda item: (
+            -item["ranking_tokens"],
+            item["task_id"],
+            item["attempt"],
+            item["turn"],
+        )
+    )
+    return drafts[:limit]
 
 
 def _bullets(path: Path) -> dict[str, str]:
@@ -593,3 +811,380 @@ def _latest_file_timestamp(*paths: Path) -> str | None:
     if not existing:
         return None
     return datetime.fromtimestamp(max(existing), timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+# --- Presentation projection helpers (T004) ---
+
+def _board_column(task: dict[str, Any]) -> str:
+    """Deterministic board column from task row + latest session evidence.
+
+    Precedence: Blocked > Done > In Validation > In Review > In Progress > Backlog.
+    Uses lowercase comparison throughout for session status to avoid case mismatches.
+    """
+    status = task["status"]
+    phase = task["phase"]
+    verification = task["verification"]
+    attempts = task.get("attempts", [])
+
+    # Normalize latest session status to lowercase for consistent comparison
+    latest_session_status = ""
+    if attempts:
+        # attempts are stored newest-first in load_project
+        latest_attempt = attempts[0]
+        latest_session_status = str(latest_attempt.get("status", "")).lower()
+
+    status_lower = status.lower()
+
+    # Blocked — canonical blocked only
+    if status_lower == "blocked":
+        return "Blocked"
+
+    # Done — completed + verified positively. Use COMPLETED_TASK_STATUSES for consistency.
+    if status_lower in COMPLETED_TASK_STATUSES:
+        verification_lower = str(verification).lower()
+        if verification_lower in {"pass", "passed", "verified", "complete", "completed"}:
+            return "Done"
+
+    # In Validation — completed but verification pending/unknown/not positive.
+    # Also finalized work awaiting positive verification.
+    if status_lower in COMPLETED_TASK_STATUSES or latest_session_status == "finalized":
+        return "In Validation"
+
+    # In Review — draft_ready result, Needs Review status, or revised draft awaiting Lead.
+    # Check both task-row status and session status (lowercase).
+    if latest_session_status == "draft_ready" or status_lower == "draft_ready":
+        return "In Review"
+    if "review" in status_lower:
+        return "In Review"
+
+    # Active feedback correction or active phase work → In Progress
+    if phase.lower() in ACTIVE_PHASES:
+        return "In Progress"
+
+    # Task row says In Progress, Assigned, Drafted
+    if status_lower in {"in progress", "assigned", "drafted"}:
+        return "In Progress"
+
+    # Failed turns but not canonical blocked — recoverable, stays in progress lane.
+    # Also explicit interrupted/correction_needed latest session statuses (lowercase).
+    if task["failed_turns"] > 0:
+        return "In Progress"
+    if latest_session_status in FAILED_TURN_STATUSES:
+        return "In Progress"
+    # Task-row recoverable statuses even without session files
+    if status_lower in {s for s in FAILED_TURN_STATUSES}:
+        return "In Progress"
+
+    # Backlog — Planned/Ready/no session/no higher match
+    if status_lower in {"planned", "ready"}:
+        return "Backlog"
+
+    # Default fallback
+    return "Backlog"
+
+
+def _portfolio_group(needs_attention: bool, tasks: list[dict[str, Any]], state: dict[str, str]) -> str:
+    """Return one of needs_attention, active, recently_completed.
+
+    Each project appears in exactly one group with this precedence.
+    """
+    if needs_attention:
+        return "needs_attention"
+    status = state.get("Status", "").lower()
+    if status in COMPLETED_PROJECT_STATUSES:
+        return "recently_completed"
+    if tasks and all(t["status"].lower() in {"completed"} for t in tasks):
+        return "recently_completed"
+    return "active"
+
+
+def _task_presentation(objective: str) -> tuple[str | None, str | None]:
+    """Split the existing ``M# — objective`` convention for UI presentation."""
+    if not objective or objective == UNKNOWN:
+        return None, None
+    match = re.match(r"^\s*(M\d{1,3})\s*(?:—|–|-|:)\s*(.+?)\s*$", objective, re.IGNORECASE)
+    if not match:
+        return None, objective
+    return match.group(1).upper(), match.group(2)
+
+
+def _compact_card(task: dict[str, Any]) -> dict[str, Any]:
+    """Compact task-card payload for the board lane.
+
+    Includes objective-first hierarchy with useful secondary facts:
+    owner, role/profile when present, stage/action, last activity,
+    verification when reported, turns/corrections when non-zero.
+    No raw paths or provider strings.
+    """
+    card = {
+        "id": task["id"],
+        "objective": task["display_objective"],
+        "milestone_id": task["milestone_id"],
+        "owner": task["owner"] if task["owner"] != UNKNOWN else None,
+        "owner_label": _human_owner_label(task["owner"], task.get("role")),
+        "board_column": task.get("board_column", "Backlog"),
+        "attention": task.get("board_attention", False),
+    }
+    error = task.get("error", UNKNOWN)
+    human = _human_error(error)
+    if human:
+        card["attention_label"] = human
+    if task["role"] != UNKNOWN:
+        card["role"] = task["role"]
+    if task["profile"] != UNKNOWN:
+        card["profile"] = task["profile"]
+    # Current stage/action from phase (human-readable)
+    phase = task.get("phase", UNKNOWN)
+    if phase != UNKNOWN:
+        card["stage"] = phase.title()
+    # Last activity timestamp when available
+    updated = task.get("updated_at", UNKNOWN)
+    if updated and updated != UNKNOWN:
+        card["last_activity"] = updated
+    # Verification when reported (not unknown)
+    verification = task.get("verification", UNKNOWN)
+    if verification != UNKNOWN:
+        card["verification"] = verification
+    # Turns/corrections when non-zero
+    turns = task.get("turns", 0)
+    corrections = task.get("corrections", 0)
+    if isinstance(turns, (int, float)) and int(turns) > 0:
+        card["turns"] = int(turns)
+    if isinstance(corrections, (int, float)) and int(corrections) > 0:
+        card["corrections"] = int(corrections)
+    return card
+
+
+def _human_error(error: str) -> str | None:
+    """Convert a raw error status to a short human label. Never returns raw paths."""
+    if not error or error == UNKNOWN:
+        return None
+    mapping = {
+        "turn_failed": "Worker failed",
+        "process_failed": "Process failure",
+        "timed_out": "Timeout",
+        "interrupted": "Interrupted",
+        "correction_needed": "Correction needed",
+    }
+    for key, label in mapping.items():
+        if error.lower().startswith(key):
+            return label
+    # Check if the error message contains a known status indicator
+    lower = error.lower()
+    for key, label in mapping.items():
+        if key in lower:
+            return label
+    text = error.split("\n")[0]
+    return text if len(text) <= 120 else text[:117] + "..."
+
+
+def _human_owner_label(owner: str, canonical_role: str | None = None) -> str | None:
+    """Normalize raw owner string for presentation.
+
+    Deterministic rules:
+    1. Already-human text (no backticks, no em-dash descriptor, no parenthetical role) → unchanged.
+    2. If canonical role is reported → return role with underscores→spaces, title-cased.
+    3. Otherwise use parenthetical role when present.
+    4. Otherwise use the final human role word from the em-dash descriptor after removing
+       backticks and trailing attempt marker.
+
+    Uses the module-level re import; does not hard-code model names.
+    """
+    if not owner or owner == UNKNOWN:
+        return None
+    label = owner.strip()
+
+    # Determine if this is a machine-formatted owner string
+    has_backticks = "`" in label
+    has_emdash_descriptor = "—" in label
+    paren_match = re.search(r"\s*\(([a-zA-Z][a-zA-Z0-9_-]*)\)\s*$", label)
+
+    is_machine_formatted = has_backticks or has_emdash_descriptor or paren_match is not None
+
+    if not is_machine_formatted:
+        # Already-human text passes through unchanged
+        return label
+
+    # Machine-formatted: prefer canonical role if reported
+    if canonical_role and canonical_role != UNKNOWN:
+        return canonical_role.replace("_", " ").title()
+
+    # Fall back to parenthetical role when present
+    if paren_match is not None:
+        role_name = paren_match.group(1)
+        return role_name.replace("_", " ").title()
+
+    # Last resort: extract the final human role word from em-dash descriptor
+    # e.g., "`gitgui-m17-dev-T080` — GPT-5.4 mini Developer" → "Developer"
+    label = label.replace("`", "")  # strip backticks
+    if has_emdash_descriptor:
+        parts = label.split("—")
+        descriptor = parts[-1].strip()
+        # Remove trailing attempt marker
+        descriptor = re.sub(r"\s+att-\d{3}$", "", descriptor, flags=re.IGNORECASE)
+        # Take the final word as the human role
+        words = descriptor.split()
+        if words:
+            return words[-1].replace("_", " ").title()
+
+    # If none of the above matched, fall back to title-cased label
+    return label.title()
+
+
+def _attention_summary(error: str, tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Compact attention summary without raw diagnostic paths.
+
+    Derives the human label from task/session status for canonical names like
+    "Worker failed", "Interrupted", etc.  Uses the error text only as a message.
+    """
+    if not error or error == UNKNOWN:
+        return None
+    # Prefer the canonical session/task status for the label
+    label_source = error
+    for task in tasks:
+        if task.get("needs_attention") and task["error"] != UNKNOWN:
+            # Use the attempt's last_status which is a canonical status string
+            attempts = task.get("attempts", [])
+            if attempts:
+                # attempts[0] is newest-first per load_project contract
+                last_status = attempts[0].get("status", "")
+                if last_status and last_status != UNKNOWN:
+                    label_source = last_status
+                    break
+    label = _human_error(label_source)
+
+    # Sanitize the message: replace any raw diagnostic path with a generic sentence.
+    # Do not attempt complex parsing; just check for known path fragments.
+    raw_message = error.split(chr(10))[0] if chr(10) in error else error
+    needs_sanitize = False
+    for fragment in (".jsonl", ".stderr", "/sessions/", "/turns/", ".codexteam/runtime"):
+        if fragment.lower() in raw_message:
+            needs_sanitize = True
+            break
+    if needs_sanitize:
+        # Use the human label as a short explanatory sentence, or generic fallback
+        raw_message = label if label else "Attention needed"
+
+    # Deduplicate: if label and message are equal case-insensitively, avoid repetition
+    if label and label.lower() == raw_message.lower():
+        raw_message = "Review the latest task details."
+
+    return {
+        "label": label,
+        "message": raw_message,
+    }
+
+
+def _compact_summary(
+    completed: int,
+    total: int,
+    open_count: int,
+    attention_count: int,
+    tasks: list[dict[str, Any]],
+    elapsed: int | None,
+) -> dict[str, Any]:
+    """Compact project summary with only decision-useful facts."""
+    summary = {
+        "completed": completed,
+        "total": total,
+        "open": open_count,
+    }
+    if attention_count > 0:
+        summary["attention"] = attention_count
+
+    all_turns = sum(task["turns"] for task in tasks)
+    if all_turns > 0:
+        summary["turns"] = all_turns
+    all_corrections = sum(task["corrections"] for task in tasks)
+    if all_corrections > 0:
+        summary["corrections"] = all_corrections
+    if elapsed is not None:
+        summary["elapsed"] = elapsed
+
+    # Token totals only when reported across all tasks
+    total_local = _safe_token_total(tasks, "local_tokens")
+    total_cloud = _safe_token_total(tasks, "cloud_tokens")
+    if total_local is not None:
+        summary["tokens"] = total_local
+    elif total_cloud is not None:
+        summary["tokens"] = total_cloud
+
+    return summary
+
+
+def _safe_token_total(items: list[dict[str, Any]], key: str) -> int | None:
+    """Safely sum a token key across tasks; returns None if any value is missing or all zeros."""
+    values = []
+    for item in items:
+        val = item.get(key)
+        if isinstance(val, (int, float)):
+            values.append(int(val))
+        elif val is not None:
+            return None  # Mixed types — omit entirely
+    if not values:
+        return None
+    total = sum(values)
+    return total if total > 0 else None
+
+
+def _agent_activity(tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Split agents into active and inactive groups with compact payloads.
+
+    Active = In Progress work only (not draft_ready/awaiting review).
+    Dedup includes owner so different owners with same role/profile are separate.
+    Preserves exact role/profile/provider values.
+    """
+    active = []
+    inactive = []
+    seen = set()
+    for task in tasks:
+        # Include owner in identity deduplication per feedback item 5
+        agent_key = (task["role"], task["profile"], task["owner"])
+        if agent_key in seen:
+            continue
+        seen.add(agent_key)
+        # Active only = genuinely In Progress work (not draft_ready or awaiting review)
+        is_active = (
+            task["board_column"] == "In Progress"
+            and task["status"].lower() not in {"completed"}
+        )
+        entry = {
+            "objective": task["display_objective"],
+            "milestone_id": task["milestone_id"],
+            "owner": task["owner"] if task["owner"] != UNKNOWN else None,
+            "owner_label": _human_owner_label(task["owner"], task.get("role")),
+            "role": task["role"] if task["role"] != UNKNOWN else None,
+            "profile": task["profile"] if task["profile"] != UNKNOWN else None,
+            "provider": task.get("provider"),
+            "task_id": task["id"],
+            "phase": task["phase"] if task["phase"] != UNKNOWN else None,
+            "status": task["status"],
+            "activity_label": _activity_label(task),
+        }
+        if is_active:
+            active.append(entry)
+        else:
+            inactive.append(entry)
+    return {"active": active, "inactive": inactive}
+
+
+def _activity_label(task: dict[str, Any]) -> str | None:
+    """Short human-readable activity label."""
+    phase = task["phase"]
+    status = task["status"].lower()
+    if status in {"completed"}:
+        return "Completed"
+    if status == "blocked":
+        return "Blocked"
+    if task.get("board_attention"):
+        return "Needs attention"
+    # draft_ready / awaiting review is not active execution
+    attempts = task.get("attempts", [])
+    latest_status = ""
+    if attempts:
+        latest_status = attempts[0].get("status", "")
+    if latest_status == "draft_ready" or "review" in status:
+        return "Awaiting review"
+    if phase in ACTIVE_PHASES:
+        return f"Working — {phase}"
+    return None

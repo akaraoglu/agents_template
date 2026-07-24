@@ -117,6 +117,32 @@ def test_developer_and_test_engineer_have_distinct_testing_skills():
     assert "integration gate" in tester.developer_instructions
 
 
+def test_developer_planned_lane_is_conditional_and_same_session():
+    developer = load_role_policy("developer")
+    root = DEFAULT_ROLES_ROOT.parent
+    implementation = (root / ".agents/skills/implementation.md").read_text(
+        encoding="utf-8"
+    )
+    development_testing = (
+        root / ".agents/skills/development-testing.md"
+    ).read_text(encoding="utf-8")
+    orchestration = (
+        root / ".agents/skills/subagent-orchestration.md"
+    ).read_text(encoding="utf-8")
+
+    assert "When the handoff explicitly contains `PLANNED LANE`" in (
+        developer.developer_instructions
+    )
+    assert "do not modify files" in developer.developer_instructions
+    assert "exact `PLAN ACCEPTED`" in developer.developer_instructions
+    assert "PLAN Txxx/att-xxx" in implementation
+    assert "same session" in implementation
+    assert "run Chromium after implementation by default" in development_testing
+    assert "Test Engineer owns the broader Chromium" in development_testing
+    assert "Treat the next `DRAFT` as the implementation draft" in orchestration
+    assert "Do not add a new task type, agent, result schema" in orchestration
+
+
 def test_native_projection_source_manifests_are_valid_toml():
     for path in DEFAULT_ROLES_ROOT.glob("*.toml"):
         assert tomllib.loads(path.read_text())["role"] == path.stem

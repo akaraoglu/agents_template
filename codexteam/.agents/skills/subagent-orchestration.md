@@ -62,6 +62,20 @@ The first draft stores `role-policy.json`, each selected skill, and `guidance-ma
 
 Role change patterns are a broad mechanical backstop. The handoff's Allowed Paths may be narrower and remains authoritative for assignment review. A post-turn forbidden write leaves the attempt `correction_needed`; it does not silently accept or revert the file.
 
+## Conditional Planned Lane Pilot
+
+Keep the Fast Lane for small tasks whose behavior, files, dependencies, and checks are explicit. Add the literal marker `PLANNED LANE` to the stable Developer prompt only when acceptance behavior is ambiguous, UI/browser behavior changes, multiple contracts are involved, dependencies or coverage are uncertain, or the change is architectural, security-sensitive, migratory, or data-integrity-sensitive.
+
+For that lane:
+
+1. Start the normal Developer draft in the normal writable sandbox and same logical attempt. The first response must be `PLAN <task>/<attempt>`, not an implementation `DRAFT`.
+2. Inspect `turn-state.json` and the handoff-scoped diff. Reject the checkpoint if production or test files changed. The writable sandbox is retained only because the same pinned session must later implement.
+3. Return one consolidated `PLAN REVISION REQUIRED` when the plan hides a dependency, broadens scope, lacks an exact Development Gate, or assigns integration ownership to the Developer.
+4. When acceptable, resume the exact session with `--phase feedback` and an exact `PLAN ACCEPTED` followed by the bounded implementation instruction. This is execution authorization, not preference-only revision feedback.
+5. Treat the next `DRAFT` as the implementation draft. Only then require the Development Gate and start the Test Engineer.
+
+Do not add a new task type, agent, result schema, launcher phase, or planning document for this pilot. Preserve the plan in the existing private turn history. Measure planning and implementation turns separately with their metrics sidecars; do not impose hard command or token limits during the pilot.
+
 ## Workflow
 
 1. Read `BRIEF.md`, the active handoff, and the exact requirement sections, files, and upstream artifacts named by that handoff. Read broader management or source context only when planning, closing state, or resolving an observable conflict; do not require repo-wide rediscovery from every role.
@@ -79,6 +93,8 @@ Role change patterns are a broad mechanical backstop. The handoff's Allowed Path
 Run again without `--dry-run`. The launcher stores the exact Codex thread under `.codexteam/runtime/`; it must never resume with `--last`.
 
 During execution, inspect project-local state with `./scripts/subagent-status.py <project-root>`. A stale status means the persisted running observation exceeded its timeout and grace period; inspect its named diagnostics and session before deciding on recovery. The status command never retries or terminates work.
+
+After each process returns, the launcher writes one private `<turn>.metrics.json` beside the JSONL. Use the WebUI for per-turn token deltas, tool/failure counts, output volume, repeats, largest-command previews, and the ten most expensive completed drafts. For historical sessions, preview `./scripts/backfill-turn-metrics.py <project-root>` before adding `--write`; do not overwrite existing sidecars unless explicitly repairing the metrics schema.
 
 Before the first live draft, test the Ollama endpoint from the same execution surface; `--dry-run` validates only the command and session paths. If Ollama is reachable inside a Codex `workspace-write` Project Lead, select a local profile and add `--trust-parent-sandbox` to draft and every resumed turn. If it is reachable only from the host, run the launcher from an approved host-level surface and omit that flag on every turn so the worker keeps its normal sandbox. Authenticated OpenAI workers also require the host-level route because their source Codex home is outside the parent writable boundary. MCP is not required. Follow `.agents/playbooks/nested-worker-sandbox.md` for diagnostics and attempt rules.
 

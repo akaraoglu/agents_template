@@ -146,4 +146,20 @@ The product-only gate runs the unittest suite and the repository-owned black-box
 ../env-python/bin/python scripts/run-webui.py
 ```
 
-The server binds only to `127.0.0.1:5000`. It reads existing project, session, JSONL, gate, milestone-commit, and `results/e2e-report.md` artifacts directly. Projects and tasks are ordered by latest activity, and the project view expands from task phases into attempts, turns, tokens, errors, diagnostics, and verified local commits. The theme menu defaults to System Default and stores an explicit Light or Dark preference in browser-local storage. Missing durations, tokens, or verdicts display as `unknown`. There are no mutation routes or recovery actions.
+The server binds only to `127.0.0.1:5000`. It reads existing project, session, JSONL, per-turn metrics, gate, milestone-commit, and `results/e2e-report.md` artifacts directly. Projects appear once in Needs attention, Active, or Recently completed. The project view uses a deterministic six-lane Kanban, shows the ten newest tasks in each lane before an older-task disclosure, and expands into attempts, turns, token deltas, tool-cycle counts, errors, diagnostics, and verified local commits. Milestone IDs are grouping metadata and canonical task IDs lead task titles. It also ranks the ten completed drafts with the largest input deltas. The theme menu defaults to System Default and stores an explicit Light or Dark preference in browser-local storage. Missing compact metrics and all-missing verdict groups are omitted. There are no mutation routes or recovery actions.
+
+## Turn Metrics Backfill
+
+Preview sidecars for existing sessions:
+
+```bash
+./scripts/backfill-turn-metrics.py ./projects/<project-id>
+```
+
+Write only the missing sidecars after reviewing the preview:
+
+```bash
+./scripts/backfill-turn-metrics.py ./projects/<project-id> --write
+```
+
+The default is read-only. Existing valid sidecars are preserved; replacing them requires both `--write --overwrite`. Add `--json` for machine-readable path/action records. Sidecars contain counts, byte sizes, token totals and deltas, command fingerprints, and redacted command previews, never command output content.

@@ -1,4 +1,24 @@
 {% extends "webui/base.html" %}
+{% macro metric(value) -%}
+  {{ "{:,}".format(value) if value is not none else None }}
+{%- endmacro %}
+{% macro board_card(task, col, project_id) -%}
+  <a class="board-card{% if task.card.attention %} attention{% endif %}" href="{{ url_for('project_view', project_id=project_id) }}#{{ task.id }}" title="{{ task.id }}">
+    {% if task.card.milestone_id %}<span class="milestone-id">{{ task.card.milestone_id }}</span>{% endif %}
+    <div class="card-objective"><span class="task-title-id">{{ task.id }}</span>{% if task.card.objective %} — {{ task.card.objective }}{% endif %}</div>
+    {% if task.card.owner_label %}<div class="card-owner">{{ task.card.owner_label }}</div>{% endif %}
+    <div class="card-state">
+      <span class="status-pill status-{{ col|lower|replace(' ', '-') }}">{{ col }}</span>
+      {% if task.card.attention and task.card.attention_label %}
+        <span class="status-pill attention">!</span>
+      {% endif %}
+      {% if task.card.verification is defined %}<span class="status-pill verification">{{ task.card.verification }}</span>{% endif %}
+    </div>
+    {% if task.card.turns is defined and task.card.turns > 0 %}
+      <small>{{ task.card.turns }} turns{% if task.card.corrections is defined and task.card.corrections > 0 %} · {{ task.card.corrections }} corrections{% endif %}</small>
+    {% endif %}
+  </a>
+{%- endmacro %}
 {% block title %}{{ project.name }} · CodexTeam{% endblock %}
 {% block content %}
   <a class="back-link" href="{{ url_for('projects_view') }}">← All projects</a>
@@ -6,7 +26,6 @@
     <div>
       <span class="eyebrow">Project execution</span>
       <h1>{{ project.name }}</h1>
-      <code>{{ project.id }}</code>
     </div>
     <div class="heading-actions">
       <span class="status-badge status-{{ project.status|lower|replace(' ', '-') }}">{{ project.status }}</span>
@@ -14,93 +33,134 @@
     </div>
   </div>
 
-  {% if project.needs_attention %}
+  {# Attention banner — literal title "Attention" + human state + one sentence (T04) #}
+  {% if project.attention_summary and project.attention_summary.label %}
     <section class="attention-banner">
-      <div><span>!</span><p><strong>Execution needs attention</strong>{{ project.error }}</p></div>
-      {% if project.diagnostic_path != 'unknown' %}<code>{{ project.diagnostic_path }}</code>{% endif %}
+      <div><span>!</span><p><strong>Attention</strong></p></div>
+      <p>{{ project.attention_summary.label }} — {{ project.attention_summary.message }}</p>
     </section>
   {% endif %}
 
+  {# Current focus card (T004) — leads with human objective #}
   <section class="project-overview">
     <div class="focus-card">
-      <span class="eyebrow">Current focus</span>
-      <div class="focus-title"><strong>{{ project.active_task }}</strong>{% if project.active_task_details %}<span>{{ project.active_task_details.phase|title }}</span>{% endif %}</div>
-      {% if project.active_task_details %}
-        <p>{{ project.active_task_details.objective }}</p>
-        <div class="agent-line"><span class="agent-mark">{{ project.active_task_details.role[:2]|upper }}</span><div><strong>{{ project.active_task_details.owner }}</strong><small>{{ project.active_task_details.role }} · {{ project.active_task_details.profile }} · {{ project.active_task_details.provider }}</small></div></div>
-      {% else %}<p>No active assignment details are recorded.</p>{% endif %}
-    </div>
-    <div class="metric-grid">
-      <div><span>Progress</span><strong>{{ project.task_completed }}/{{ project.task_total }}</strong><div class="progress"><i style="width: {{ project.progress_percent }}%"></i></div></div>
-      <div><span>Elapsed</span><strong>{{ project.elapsed_seconds if project.elapsed_seconds is not none else '—' }}<small> seconds</small></strong><small>{{ project.elapsed_source }}</small></div>
-      <div><span>Execution</span><strong>{{ project.turns }}<small> turns</small></strong><small>{{ project.corrections }} corrections · {{ project.failed_turns }} failed</small></div>
-      <div><span>Reported tokens</span><strong>{{ project.local_tokens if project.local_tokens is not none else '—' }}<small> local</small></strong><small>{{ project.cloud_tokens if project.cloud_tokens is not none else '—' }} cloud</small></div>
+      <div class="focus-context">
+        <span class="eyebrow">Current focus</span>
+        {% if project.focus.milestone_id %}<span class="milestone-id">{{ project.focus.milestone_id }}</span>{% endif %}
+      </div>
+      {% if project.focus.objective %}
+        <div class="focus-title"><strong><span class="task-title-id">{{ project.focus.task_id }}</span> — {{ project.focus.objective }}</strong></div>
+        <div class="focus-meta">
+          {% if project.focus.owner_label %}<div><span>Owner</span><span>{{ project.focus.owner_label }}</span></div>{% endif %}
+          {% if project.focus.role and project.focus.role != 'unknown' %}<div><span>Role</span><span>{{ project.focus.role }}</span></div>{% endif %}
+          {% if project.focus.profile and project.focus.profile != 'unknown' %}<div><span>Model profile</span><span>{{ project.focus.profile }}</span></div>{% endif %}
+          {% if project.focus.stage and project.focus.stage != 'unknown' %}<div><span>Stage</span><span>{{ project.focus.stage|title }}</span></div>{% endif %}
+          {% if project.focus.last_activity and project.focus.last_activity != 'unknown' %}<div><span>Last activity</span><time>{{ project.focus.last_activity }}</time></div>{% endif %}
+        </div>
+      {% else %}
+        <p>No active assignment details are recorded.</p>
+      {% endif %}
+
+      {# Compact summary chips (T004) #}
+      <div class="summary-chips">
+        <span class="chip completed"><strong>{{ project.task_completed }}</strong><small>/ {{ project.task_total }} completed</small></span>
+        <span class="chip open"><strong>{{ project.summary.open|default(project.task_total - project.task_completed) }}</strong><small>open</small></span>
+        {% if project.summary.attention|default(0) > 0 %}
+          <span class="chip attention"><strong>{{ project.summary.attention }}</strong><small>attention</small></span>
+        {% endif %}
+        {% if project.summary.elapsed is defined and project.summary.elapsed is not none %}
+          <span class="chip elapsed"><strong>{{ project.summary.elapsed }}</strong><small>s elapsed</small></span>
+        {% endif %}
+        {% if project.summary.turns is defined and project.summary.turns is not none and project.summary.turns > 0 %}
+          <span class="chip turns"><strong>{{ project.summary.turns }}</strong><small>turns</small></span>
+        {% endif %}
+        {% if project.summary.corrections is defined and project.summary.corrections is not none and project.summary.corrections > 0 %}
+          <span class="chip corrections"><strong>{{ project.summary.corrections }}</strong><small>corrections</small></span>
+        {% endif %}
+        {% if project.summary.tokens is defined and project.summary.tokens is not none %}
+          <span class="chip tokens"><strong>{{ "{:,}".format(project.summary.tokens) }}</strong><small>tokens</small></span>
+        {% endif %}
+      </div>
     </div>
   </section>
 
-  <section class="quality-strip" aria-label="Quality gates">
-    {% for name, verdict in project.verdicts.items() %}
-      <div class="verdict-{{ verdict|lower }}"><span>{{ name|title }}</span><strong>{{ verdict }}</strong></div>
-    {% endfor %}
+  {# Verification strip — hidden when all verdicts missing (T004) #}
+  {% if not project.has_all_verdicts_missing and project.reported_verdicts %}
+    <section class="quality-strip" aria-label="Quality gates">
+      {% for name, verdict in project.reported_verdicts.items() %}
+        <div class="verdict-{{ verdict|lower }}"><span>{{ name|title }}</span><strong>{{ verdict }}</strong></div>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  {# Task board with six lanes (T004) #}
+  <section class="dashboard-section board-section" aria-label="Task board">
+    <div class="section-heading"><div><span class="eyebrow">Read only</span><h2>Task board</h2></div><span>{{ project.task_total }} tasks</span></div>
+    <div class="board-lanes">
+      {% for col in ["Backlog", "In Progress", "In Review", "In Validation", "Blocked", "Done"] %}
+        {% set tasks = project.board_groups[col] %}
+        <div class="lane" data-column="{{ col|lower|replace(' ', '-') }}">
+          <div class="lane-header"><span>{{ col }}</span><span class="lane-count">{{ tasks|length }}</span></div>
+          <div class="lane-body">
+            {% for task in tasks[:10] %}
+              {{ board_card(task, col, project.id) }}
+            {% else %}
+              <div class="lane-empty">No tasks</div>
+            {% endfor %}
+            {% if tasks|length > 10 %}
+              <details class="lane-older">
+                <summary>
+                  <span class="older-show">Show {{ tasks|length - 10 }} older…</span>
+                  <span class="older-hide">Hide older</span>
+                </summary>
+                <div class="lane-older-list">
+                  {% for task in tasks[10:] %}
+                    {{ board_card(task, col, project.id) }}
+                  {% endfor %}
+                </div>
+              </details>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
   </section>
 
-  {% if project.agents %}
-    <section class="dashboard-section team-section">
-      <div class="section-heading"><div><span class="eyebrow">Responsible AI</span><h2>Recent agent sessions</h2></div><span>{{ project.agent_total }} configurations · latest activity first</span></div>
-      <div class="team-grid">
-        {% for agent in project.agents %}
-          <div class="agent-card">
-            <span class="agent-mark">{{ agent.role[:2]|upper }}</span>
-            <div><strong>{{ agent.role|title }}</strong><small>{{ agent.profile }} · {{ agent.provider }}</small><span>{{ agent.task_id }} · {{ agent.phase|title }}</span></div>
-          </div>
-        {% endfor %}
-      </div>
-    </section>
-  {% endif %}
-
-  {% if project.milestone_commits %}
-    <section class="dashboard-section commit-section">
-      <div class="section-heading"><div><span class="eyebrow">Verified local history</span><h2>Milestone commits</h2></div><span>Read-only records</span></div>
-      <div class="commit-list">
-        {% for commit in project.milestone_commits %}
-          <div>
-            <code title="{{ commit.commit }}">{{ commit.short_commit }}</code>
-            <span><strong>{{ commit.subject }}</strong><small>{{ commit.boundary_id }} · {{ commit.branch }}</small></span>
-            <span>{{ commit.path_count }} path{% if commit.path_count != 1 %}s{% endif %}</span>
-            <time>{{ commit.committed_at }}</time>
-          </div>
-        {% endfor %}
-      </div>
-    </section>
-  {% endif %}
-
+  {# Task details drill-down (below board) (T004) #}
   <section class="dashboard-section execution-section">
-    <div class="section-heading"><div><span class="eyebrow">Latest activity first</span><h2>Task execution</h2></div><span>Draft → Feedback → Final → Verify → Closed</span></div>
+    <div class="section-heading"><div><span class="eyebrow">Latest activity first</span><h2>Task details</h2></div></div>
     <div class="task-list">
       {% for task in project.tasks %}
-        <details class="task-panel{% if task.id == project.active_task %} current{% endif %}{% if task.needs_attention %} attention{% endif %}" {% if task.id == project.active_task or task.needs_attention %}open{% endif %}>
+        <details class="task-panel{% if task.id == project.active_task %} current{% endif %}{% if task.needs_attention %} attention{% endif %}" id="{{ task.id }}" {% if task.id == project.active_task or task.needs_attention %}open{% endif %}>
           <summary>
-            <div class="task-identity"><strong>{{ task.id }}</strong><span>{{ task.objective }}</span><small>Updated {{ task.updated_at }}</small></div>
-            <div class="task-agent"><span class="agent-mark">{{ task.role[:2]|upper }}</span><div><strong>{% if task.role != 'unknown' %}{{ task.role|title }}{% else %}{{ task.owner }}{% endif %}</strong>{% if task.role != 'unknown' %}<small class="owner-name">{{ task.owner }}</small>{% endif %}<small>{{ task.profile }}</small></div></div>
-            <div class="phase-track">
-              {% for phase in task.phases %}
-                <div class="phase {{ phase.state }}"><i></i><span>{{ phase.name|title }}</span><small>{% if phase.duration_seconds is not none %}{{ phase.duration_seconds }}s{% elif phase.state == 'complete' %}Done{% elif phase.state == 'warning' %}Revised{% elif phase.state == 'failed' %}Failed{% elif phase.state == 'active' %}Active{% else %}—{% endif %}</small></div>
-              {% endfor %}
+            <div class="task-identity">
+              {% if task.milestone_id %}<span class="milestone-id">{{ task.milestone_id }}</span>{% endif %}
+              <strong><span class="task-title-id">{{ task.id }}</span>{% if task.display_objective %} — {{ task.display_objective }}{% endif %}</strong>
+              <small>Updated {{ task.updated_at }}</small>
+            </div>
+            <div class="task-agent">
+              {% if task.role != 'unknown' %}<span class="agent-mark">{{ task.role[:2]|upper }}</span>{% endif %}
+              <div>
+                {% if task.role != 'unknown' %}<strong>{{ task.role|title }}</strong>{% else %}<strong>{{ task.owner }}</strong>{% endif %}
+                {% if task.profile != 'unknown' %}<small>{{ task.profile }}</small>{% endif %}
+              </div>
             </div>
             <span class="disclosure">⌄</span>
           </summary>
           <div class="task-details">
             <div class="task-facts">
               <div><span>Status</span><strong>{{ task.status }}</strong></div>
-              <div><span>Latest phase</span><strong>{{ task.phase }}</strong></div>
+              <div><span>Latest phase</span><strong>{{ task.phase if task.phase != 'unknown' else '—' }}</strong></div>
               <div><span>Attempts</span><strong>{{ task.attempts|length }}</strong></div>
               <div><span>Turns</span><strong>{{ task.turns }}</strong></div>
-              <div><span>Duration</span><strong>{{ task.duration_seconds if task.duration_seconds is not none else 'unknown' }}</strong></div>
-              <div><span>Tokens</span><strong>{{ task.local_tokens if task.local_tokens is not none else 'unknown' }} local</strong></div>
+              {% if task.duration_seconds is not none %}<div><span>Duration</span><strong>{{ task.duration_seconds }} s</strong></div>{% endif %}
+              {% if task.local_tokens is not none %}<div><span>Tokens</span><strong>{{ metric(task.local_tokens) }}</strong></div>{% elif task.cloud_tokens is not none %}<div><span>Tokens</span><strong>{{ metric(task.cloud_tokens) }}</strong></div>{% endif %}
             </div>
             {% if task.needs_attention and task.error != 'unknown' %}
-              <div class="inline-error"><strong>{{ task.error }}</strong><code>{{ task.diagnostic_path }}</code></div>
+              <div class="inline-error"><strong>{{ task.error }}</strong>{% if task.diagnostic_path != 'unknown' %}<code>{{ task.diagnostic_path }}</code>{% endif %}</div>
             {% endif %}
+            {# Verification not reported note #}
+            {% if project.has_all_verdicts_missing %}<div class="verification-note">Verification not reported.</div>{% endif %}
             <div class="attempt-list">
               {% for attempt in task.attempts %}
                 <details class="attempt" {% if loop.first and task.needs_attention %}open{% endif %}>
@@ -110,8 +170,14 @@
                       <div class="turn-row">
                         <strong>{{ turn.number }} · {{ turn.phase|title }}</strong>
                         <span>{{ turn.status }}</span>
-                        <span>{{ turn.duration_seconds if turn.duration_seconds is not none else '—' }}s</span>
-                        <span>{% if turn.input_tokens is not none %}{{ turn.input_tokens }} in · {{ turn.output_tokens }} out{% else %}tokens unknown{% endif %}</span>
+                        <span>{{ turn.duration_seconds if turn.duration_seconds is not none else '—' }} s</span>
+                        {% if turn.input_tokens is not none %}<span>{{ metric(turn.input_tokens) }} in · {{ metric(turn.output_tokens) }} out</span>{% endif %}
+                        {% if turn.metrics_available %}
+                          <div class="turn-cycle">
+                            <span>{{ metric(turn.input_delta) }} input Δ · {{ metric(turn.cached_delta) }} cached Δ</span>
+                            <span>{{ metric(turn.tool_calls) }} tools · {{ metric(turn.command_calls) }} commands</span>
+                          </div>
+                        {% endif %}
                         {% if turn.error != 'unknown' %}<p>{{ turn.error }}{% if turn.diagnostic_path != 'unknown' %}<code>{{ turn.diagnostic_path }}</code>{% endif %}</p>{% endif %}
                       </div>
                     {% else %}<div class="empty-state">No per-turn details recorded.</div>{% endfor %}
@@ -119,19 +185,128 @@
                 </details>
               {% else %}<div class="empty-state">No agent session recorded for this task.</div>{% endfor %}
             </div>
-            <div class="verification"><span>Verification</span><code>{{ task.verification }}</code></div>
           </div>
         </details>
       {% else %}<div class="empty-state">No task ledger available.</div>{% endfor %}
     </div>
   </section>
 
-  <section class="dashboard-section">
-    <div class="section-heading"><div><span class="eyebrow">Usage detail</span><h2>Reported tokens</h2></div><span>Provider-reported values only</span></div>
-    <div class="token-grid">
-      <div><span>Local</span><strong>{{ project.local_input_tokens if project.local_input_tokens is not none else 'unknown' }}</strong><small>input</small><strong>{{ project.local_output_tokens if project.local_output_tokens is not none else 'unknown' }}</strong><small>output</small></div>
-      <div><span>Cloud</span><strong>{{ project.cloud_input_tokens if project.cloud_input_tokens is not none else 'unknown' }}</strong><small>input</small><strong>{{ project.cloud_output_tokens if project.cloud_output_tokens is not none else 'unknown' }}</strong><small>output</small></div>
-      <div><span>Cache</span><strong>{{ project.cached_tokens if project.cached_tokens is not none else 'unknown' }}</strong><small>reported cached input</small></div>
+  {# Agent activity (T004) — leads with human objective #}
+  {% if project.agent_activity and (project.agent_activity.active or project.agent_activity.inactive) %}
+    <section class="dashboard-section team-section">
+      <div class="section-heading"><div><span class="eyebrow">Responsible AI</span><h2>Agent activity</h2></div><span>{{ project.agent_total }} configurations</span></div>
+      {% if project.agent_activity.active %}
+        <div class="team-grid">
+          {% for agent in project.agent_activity.active %}
+            <div class="agent-card active">
+              <div class="agent-task">
+                {% if agent.milestone_id %}<span class="milestone-id">{{ agent.milestone_id }}</span>{% endif %}
+                <div class="card-objective"><span class="task-title-id">{{ agent.task_id }}</span>{% if agent.objective %} — {{ agent.objective }}{% endif %}</div>
+              </div>
+              <div><strong>{{ agent.owner_label|default(agent.owner)|default(agent.role) }}</strong>
+                {% if agent.role %}<small>role: {{ agent.role }}</small>{% endif %}
+                {% if agent.profile %}<small>profile: {{ agent.profile }}</small>{% endif %}
+                {% if agent.activity_label %}<span class="activity-label">{{ agent.activity_label }}</span>{% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if project.agent_activity.inactive %}
+        <details class="inactive-agents">
+          <summary><span>{{ project.agent_activity.inactive|length }} completed or inactive session{% if project.agent_activity.inactive|length != 1 %}s{% endif %}</span></summary>
+          <div class="team-grid">
+            {% for agent in project.agent_activity.inactive %}
+              <div class="agent-card">
+                <div class="agent-task">
+                  {% if agent.milestone_id %}<span class="milestone-id">{{ agent.milestone_id }}</span>{% endif %}
+                  <div class="card-objective"><span class="task-title-id">{{ agent.task_id }}</span>{% if agent.objective %} — {{ agent.objective }}{% endif %}</div>
+                </div>
+                <div><strong>{{ agent.owner_label|default(agent.owner)|default(agent.role) }}</strong>
+                  {% if agent.role %}<small>role: {{ agent.role }}</small>{% endif %}
+                  {% if agent.profile %}<small>profile: {{ agent.profile }}</small>{% endif %}
+                  {% if agent.activity_label %}<span class="activity-label">{{ agent.activity_label }}</span>{% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </details>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {# Milestone evidence — compact (T004) #}
+  {% if project.milestone_commits %}
+    <section class="dashboard-section commit-section">
+      <div class="section-heading"><div><span class="eyebrow">Verified local history</span><h2>Milestone evidence</h2></div><span>Read-only records</span></div>
+      <div class="commit-list">
+        {% for commit in project.milestone_commits %}
+          <div>
+            <code title="{{ commit.commit }}">{{ commit.short_commit }}</code>
+            <span><strong>{{ commit.subject }}</strong><small>{{ commit.boundary_id }} · {{ commit.branch }}</small></span>
+            <time>{{ commit.committed_at }}</time>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {# Cost and diagnostics — collapsed by default (T004) #}
+  <details class="dashboard-section cost-section" id="cost-and-diagnostics">
+    <summary><span class="section-heading"><div><span class="eyebrow">Detail</span><h2>Cost and diagnostics</h2></div></span></summary>
+    <div class="cost-content">
+      {% if project.expensive_drafts %}
+        <section>
+          <h3>Most expensive drafts</h3>
+          <div class="hotspot-list">
+            {% for draft in project.expensive_drafts %}
+              <details class="hotspot-row">
+                <summary>
+                  <strong class="hotspot-rank">{{ loop.index }}</strong>
+                  <span class="hotspot-identity"><strong>{{ draft.task_id }} · {{ draft.attempt }}</strong><small>{{ draft.role }} · {{ draft.profile }}</small></span>
+                  <span><strong>{{ metric(draft.ranking_tokens) }}</strong><small>input delta</small></span>
+                  <span><strong>{{ draft.duration_seconds if draft.duration_seconds is not none else '—' }} s</strong></span>
+                  <span class="disclosure">⌄</span>
+                </summary>
+                <div class="hotspot-detail">
+                  {% if draft.input_tokens is not none %}
+                    <div><span>Tokens</span><strong>{{ metric(draft.input_tokens) }} in · {{ metric(draft.output_tokens) }} out</strong></div>
+                  {% endif %}
+                  <div><span>Activity</span><strong>{{ metric(draft.tool_calls) }} tools · {{ metric(draft.command_calls) }} commands</strong></div>
+                  {% if draft.largest_commands %}
+                    <div class="command-block">
+                      <span>Largest command outputs</span>
+                      <ol>{% for cmd in draft.largest_commands %}<li><code>{{ cmd.preview }}</code><strong>{{ metric(cmd.output_bytes) }} B{% if cmd.failed %} · failed{% endif %}</strong></li>{% endfor %}</ol>
+                    </div>
+                  {% endif %}
+                  {% if draft.repeated_commands %}
+                    <div class="command-block">
+                      <span>Repeated commands</span>
+                      <ol>{% for cmd in draft.repeated_commands %}<li><code>{{ cmd.preview }}</code><strong>{{ cmd.count }} calls</strong></li>{% endfor %}</ol>
+                    </div>
+                  {% endif %}
+                </div>
+              </details>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+
+      {# Token detail — only when reported #}
+      {% if project.local_tokens is not none or project.cloud_tokens is not none %}
+        <section class="token-section">
+          <h3>Token totals</h3>
+          <div class="token-grid">
+            {% if project.local_tokens is not none %}
+              <div><span>Local</span><strong>{{ metric(project.local_tokens) }}</strong></div>
+            {% endif %}
+            {% if project.cloud_tokens is not none %}
+              <div><span>Cloud</span><strong>{{ metric(project.cloud_tokens) }}</strong></div>
+            {% endif %}
+          </div>
+        </section>
+      {% endif %}
     </div>
-  </section>
+  </details>
+
 {% endblock %}

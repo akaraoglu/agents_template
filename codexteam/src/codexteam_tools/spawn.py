@@ -30,6 +30,12 @@ from .roles import (
     load_role_policy,
     load_role_policy_snapshot,
 )
+from .turn_metrics import (
+    metrics_path,
+    previous_summary,
+    summarize_turn,
+    write_summary,
+)
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 PHASES = ("draft", "feedback", "final")
@@ -284,6 +290,19 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
     boundary_errors = role_boundary_errors(request.role_policy, changed_paths)
 
     events = parse_codex_events(process.stdout)
+    summary = summarize_turn(
+        process.stdout,
+        task_id=request.task_id,
+        attempt_id=request.attempt_id,
+        role=request.role,
+        profile=request.profile,
+        turn_number=turn.number,
+        phase=request.phase,
+        duration_seconds=process.duration_seconds,
+        source_event_file=turn.events_path.name,
+        previous_summary=previous_summary(turn.events_path.parent, turn.number),
+    )
+    write_summary(metrics_path(turn.events_path), summary)
     stored_thread_id = turn.session.get("thread_id") if turn.session is not None else None
     event_thread_id = _single_thread_id(events.thread_ids)
     thread_id = stored_thread_id or event_thread_id
@@ -1282,6 +1301,7 @@ def _turn_outcome(
         "session_path": str(request.session_path),
         "turn_path": str(turn.message_path),
         "events_path": str(turn.events_path),
+        "metrics_path": str(metrics_path(turn.events_path)),
         "stderr_path": str(turn.stderr_path),
         "result_path": str(request.result_path) if request.result_path.exists() else None,
         "errors": errors or [],
