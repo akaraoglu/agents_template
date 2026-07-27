@@ -13,7 +13,7 @@
 - machine-readable Development and Integration Gate execution
 - deterministic authorized local milestone commits
 - project-local subagent status inspection
-- read-only Web UI aggregation, including milestone commit records
+- read-only project, task, metric, and milestone-commit readers used by operator surfaces
 - verified task closure
 
 Runtime projects and model output belong under the configured projects root, not here.

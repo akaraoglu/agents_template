@@ -156,10 +156,23 @@ The product-only gate runs the unittest suite and the repository-owned black-box
 ## Read-only WebUI
 
 ```bash
-../env-python/bin/python scripts/run-webui.py
+../env-python/bin/python projects/codexteam-project-management-web-ui/scripts/run-webui.py
 ```
 
-The server binds only to `127.0.0.1:5000`. It reads existing project, session, JSONL, per-turn metrics, gate, milestone-commit, and `results/e2e-report.md` artifacts directly. Projects appear once in a newest-first table with current focus, status and attention, task progress, and update time. The project view uses a deterministic six-lane Kanban, shows the ten newest tasks in each lane before an older-task disclosure, and expands into attempts, turns, token deltas, tool-cycle counts, errors, diagnostics, and verified local commits. Milestone IDs are grouping metadata and canonical task IDs lead task titles. It also ranks the ten completed drafts with the largest input deltas. The theme menu defaults to System Default and stores an explicit Light or Dark preference in browser-local storage. Missing compact metrics and all-missing verdict groups are omitted. There are no mutation routes or recovery actions.
+The standalone `projects/codexteam-project-management-web-ui` repository owns the
+Flask application, templates, assets, launcher, and UI tests. The server binds only
+to `127.0.0.1:5000` and reads existing project, session, JSONL, per-turn metrics,
+gate, milestone-commit, and `results/e2e-report.md` artifacts through the parent
+toolkit. Projects appear once in a newest-first table with current focus, status and
+attention, task progress, and update time. The project view uses a deterministic
+six-lane Kanban, shows the ten newest tasks in each lane before an older-task
+disclosure, and expands into attempts, turns, token deltas, tool-cycle counts, errors,
+diagnostics, and verified local commits. Milestone IDs are grouping metadata and
+canonical task IDs lead task titles. It also ranks the ten completed drafts with the
+largest input deltas. The theme menu defaults to System Default and stores an explicit
+Light or Dark preference in browser-local storage. Missing compact metrics and
+all-missing verdict groups are omitted. There are no mutation routes or recovery
+actions.
 
 ## Turn Metrics Backfill
 

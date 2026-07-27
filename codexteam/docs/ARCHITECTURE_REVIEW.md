@@ -9,7 +9,8 @@ The current architecture is a small workflow-tool package plus repository-local 
 - `.agents/`: reusable leader, worker, verification, and delivery guidance.
 - `roles/`: strict role-policy-v1 manifests for nine accountable identities, including the optional Feature Planner and UX Designer.
 - `generated/native-agents/`: deterministic optional projections for native Codex custom agents.
-- `src/codexteam_tools/`: deterministic path, contract, task, spawn, gate, Git boundary, Web UI, and closure logic.
+- `src/codexteam_tools/`: deterministic path, contract, task, spawn, gate, Git boundary, artifact-reader, and closure logic.
+- `projects/codexteam-project-management-web-ui/`: standalone Flask/Jinja operator UI consuming the shared artifact readers.
 - `scripts/`: operator-facing compatibility entrypoints.
 - `schemas/`: machine-readable handoff, result, role-policy, gate, commit-plan, authorization, and commit-record contracts.
 - `templates/project/`: complete project initialization template.

@@ -391,7 +391,9 @@ Every task has one responsible AI. Worker and specialist tasks use a selected lo
 
 **Responsible AI:** `webui-developer-01`, local developer role.
 **Outcome:** Implement the grouped project command center, read-only six-lane Kanban, expandable execution details, Agent activity, task/milestone identity hierarchy, themes, and responsive layouts with Flask, Jinja templates, plain CSS, and direct artifact reads.
-**Allowed files:** `src/codexteam_tools/webui.py`, its package-local templates/static files, `scripts/run-webui.py`, `requirements-webui.txt`, and focused WebUI tests.
+**Owned files:** `projects/codexteam-project-management-web-ui/src/codexteam_webui/`,
+its templates/static files, launcher, dependency declaration, and focused WebUI
+tests. The parent keeps only shared `codexteam_tools` artifact readers.
 **Verification:** It renders the M006 baseline and approved failure fixtures, binds to loopback, and exposes no mutation action.
 **Dependency:** M006.
 
@@ -483,7 +485,10 @@ Use the existing environment:
 | Werkzeug | 3.1.8, installed through Flask |
 | pytest | 8.4.2 |
 
-Declare only Flask as a WebUI runtime dependency. Jinja and Werkzeug remain Flask dependencies. Do not add a package manager; use a one-line `requirements-webui.txt` containing `Flask==3.1.3`.
+Declare only Flask as a WebUI runtime dependency. Jinja and Werkzeug remain Flask
+dependencies. Do not add a package manager; use the standalone project's one-line
+`projects/codexteam-project-management-web-ui/requirements-webui.txt` containing
+`Flask==3.1.3`.
 
 ### 12.2 Server
 
@@ -536,23 +541,26 @@ Keep them as functions until actual repeated complexity proves another structure
 ### 12.5 Source layout
 
 ```text
-src/codexteam_tools/webui.py
-src/codexteam_tools/templates/webui/
+projects/codexteam-project-management-web-ui/src/codexteam_webui/webui.py
+projects/codexteam-project-management-web-ui/src/codexteam_webui/templates/webui/
   base.html
   projects.html
   project.html
-src/codexteam_tools/static/webui.css
-scripts/run-webui.py
-tests/test_webui.py
-requirements-webui.txt
+projects/codexteam-project-management-web-ui/src/codexteam_webui/static/webui.css
+projects/codexteam-project-management-web-ui/scripts/run-webui.py
+projects/codexteam-project-management-web-ui/tests/test_webui.py
+projects/codexteam-project-management-web-ui/requirements-webui.txt
 ```
 
-`scripts/run-webui.py` is a thin entrypoint. Keep artifact reading, metric calculation, and the two routes in `webui.py` initially. Split the file only if the actual implementation becomes clearly smaller or easier to understand after the split.
+The standalone
+`projects/codexteam-project-management-web-ui/scripts/run-webui.py` is a thin
+entrypoint. Keep UI aggregation and the two routes in `webui.py`; reuse the parent
+`codexteam_tools` readers instead of duplicating them.
 
 ### 12.6 Run command
 
 ```bash
-../env-python/bin/python scripts/run-webui.py
+../env-python/bin/python projects/codexteam-project-management-web-ui/scripts/run-webui.py
 ```
 
 ### 12.7 Tests

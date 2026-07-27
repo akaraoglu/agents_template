@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from codexteam_tools import spawn, webui
+from codexteam_tools import spawn
 from codexteam_tools.contracts import validate_handoff, validate_result
 from codexteam_tools.roles import load_role_policy
 
@@ -115,13 +115,3 @@ def test_spawn_uses_cloud_default_and_accepts_explicit_local_override(
     )
     assert local_request.profile == "qwen36-27b"
     assert local_request.model_provider == "ollama_local"
-
-
-def test_webui_humanizes_feature_planner_role():
-    assert (
-        webui._human_owner_label(
-            "`team-plan-T007` — GPT-5.4 mini Feature Planner",
-            "feature_planner",
-        )
-        == "Feature Planner"
-    )
