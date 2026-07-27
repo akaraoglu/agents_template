@@ -317,20 +317,17 @@ def create_app(projects_dir: str | Path | None = None) -> Flask:
     @app.get("/")
     def projects_view():
         projects = list_projects(root)
-        # Portfolio grouping: each project in exactly one group (T004)
-        attention_projects = [p for p in projects if p.get("portfolio_group") == "needs_attention"]
-        active_projects = [p for p in projects if p.get("portfolio_group") == "active"]
-        completed_projects = [p for p in projects if p.get("portfolio_group") == "recently_completed"]
         total_count = len(projects)
         active_count = sum(project["status"].lower() not in COMPLETED_PROJECT_STATUSES for project in projects)
+        attention_count = sum(bool(project.get("needs_attention")) for project in projects)
+        completed_count = sum(project.get("portfolio_group") == "recently_completed" for project in projects)
         return render_template(
             "webui/projects.html",
             projects=projects,
-            attention_projects=attention_projects,
-            active_projects=active_projects,
-            completed_projects=completed_projects,
             total_count=total_count,
             active_count=active_count,
+            attention_count=attention_count,
+            completed_count=completed_count,
         )
 
     @app.get("/projects/<project_id>")

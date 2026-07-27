@@ -1,27 +1,5 @@
 {% extends "webui/base.html" %}
 {% block title %}Projects · CodexTeam{% endblock %}
-{% macro portfolio_card(project) %}
-  <a class="project-card" href="{{ url_for('project_view', project_id=project.id) }}">
-    <div class="card-heading">
-      <h3>{{ project.name }}</h3>
-      <span class="status-badge status-{{ project.status|lower|replace(' ', '-') }}">{{ project.status }}</span>
-    </div>
-    {% if project.focus and project.focus.objective %}
-      {% if project.focus.milestone_id %}<span class="milestone-id">{{ project.focus.milestone_id }}</span>{% endif %}
-      <div class="card-objective"><span class="task-title-id">{{ project.focus.task_id }}</span> — {{ project.focus.objective }}</div>
-    {% endif %}
-    <div class="card-summary">
-      {% if project.focus and project.focus.owner_label %}
-        <span class="chip owner"><strong>{{ project.focus.owner_label }}</strong><small>owner</small></span>
-      {% endif %}
-      <span class="chip completed"><strong>{{ project.task_completed }}</strong><small>of {{ project.task_total }} completed</small></span>
-      {% if project.summary is not none and project.summary.attention|default(0) > 0 %}
-        <span class="chip attention"><strong>{{ project.summary.attention }}</strong><small>attention</small></span>
-      {% endif %}
-    </div>
-    <time>Updated {{ project.updated_at }}</time>
-  </a>
-{% endmacro %}
 {% block content %}
   <div class="page-heading">
     <div><span class="eyebrow">Workspace overview</span><h1>Projects</h1><p>Current work, responsible agents, and execution health.</p></div>
@@ -31,29 +9,82 @@
   <section class="overview" aria-label="Workspace summary">
     <div><strong>{{ total_count|default(projects|length) }}</strong><span>Projects</span></div>
     <div><strong>{{ active_count }}</strong><span>Active</span></div>
-    <div><strong>{{ attention_projects|length }}</strong><span>Need attention</span></div>
-    <div><strong>{{ completed_projects|length }}</strong><span>Completed</span></div>
+    <div><strong>{{ attention_count }}</strong><span>Need attention</span></div>
+    <div><strong>{{ completed_count }}</strong><span>Completed</span></div>
   </section>
 
-  {% if attention_projects %}
-    <section class="dashboard-section">
-      <div class="section-heading"><div><span class="eyebrow danger">Action required</span><h2>Needs attention</h2></div><span>{{ attention_projects|length }} project{% if attention_projects|length != 1 %}s{% endif %}</span></div>
-      <div class="project-grid">{% for project in attention_projects %}{{ portfolio_card(project) }}{% endfor %}</div>
-    </section>
-  {% endif %}
-
-  {% if active_projects %}
-    <section class="dashboard-section">
-      <div class="section-heading"><div><span class="eyebrow">In progress</span><h2>Active</h2></div><span>Latest activity first</span></div>
-      <div class="project-grid">{% for project in active_projects %}{{ portfolio_card(project) }}{% endfor %}</div>
-    </section>
-  {% endif %}
-
-  {% if completed_projects %}
-    <section class="dashboard-section">
-      <div class="section-heading"><div><span class="eyebrow">Completed work</span><h2>Recently completed</h2></div><span>Latest activity first</span></div>
-      <div class="project-grid compact">{% for project in completed_projects %}{{ portfolio_card(project) }}{% endfor %}</div>
-    </section>
-  {% endif %}
-
+  <section class="dashboard-section" aria-labelledby="projects-table-title">
+    <div class="section-heading">
+      <div><span class="eyebrow">Workspace projects</span><h2 id="projects-table-title">All projects</h2></div>
+      <span>Latest activity first</span>
+    </div>
+    {% if projects %}
+      <div class="project-table-shell">
+        <table class="project-table">
+          <caption>All projects ordered by latest activity</caption>
+          <thead>
+            <tr>
+              <th scope="col">Project</th>
+              <th scope="col">Current focus</th>
+              <th scope="col">Status</th>
+              <th scope="col">Progress</th>
+              <th scope="col" aria-sort="descending">Updated <span aria-hidden="true">↓</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for project in projects %}
+              <tr>
+                <td data-label="Project">
+                  <a class="project-link" href="{{ url_for('project_view', project_id=project.id) }}">
+                    <strong>{{ project.name }}</strong>
+                    <code>{{ project.id }}</code>
+                  </a>
+                </td>
+                <td data-label="Current focus">
+                  <div class="project-cell-stack">
+                    {% if project.focus and project.focus.objective %}
+                      <span class="project-focus"><span class="task-title-id">{{ project.focus.task_id }}</span> — {{ project.focus.objective }}</span>
+                      {% if project.focus.owner_label %}<small>{{ project.focus.owner_label }}</small>{% endif %}
+                    {% else %}
+                      <span class="unknown-value">No active task</span>
+                    {% endif %}
+                  </div>
+                </td>
+                <td data-label="Status">
+                  <div class="project-cell-stack">
+                    <span class="status-badge status-{{ project.status|lower|replace(' ', '-') }}">{{ project.status }}</span>
+                    {% if project.summary.attention|default(0) > 0 %}
+                      <small class="project-attention">{{ project.summary.attention }} task{% if project.summary.attention != 1 %}s{% endif %} need{% if project.summary.attention == 1 %}s{% endif %} attention</small>
+                    {% elif project.needs_attention %}
+                      <small class="project-attention">Needs attention</small>
+                    {% endif %}
+                  </div>
+                </td>
+                <td data-label="Progress">
+                  <div class="project-progress">
+                    <span><strong>{{ project.task_completed }} / {{ project.task_total }}</strong> tasks</span>
+                    <span class="progress" aria-hidden="true"><i style="width: {{ project.progress_percent }}%"></i></span>
+                  </div>
+                </td>
+                <td data-label="Updated">
+                  <div class="project-updated">
+                    {% if project.updated_at != 'unknown' %}
+                      <time datetime="{{ project.updated_at }}">{{ project.updated_at }}</time>
+                    {% else %}
+                      <span class="unknown-value">Unknown</span>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="project-table-empty">
+        <strong>No projects yet</strong>
+        <span>Initialized projects will appear here.</span>
+      </div>
+    {% endif %}
+  </section>
 {% endblock %}

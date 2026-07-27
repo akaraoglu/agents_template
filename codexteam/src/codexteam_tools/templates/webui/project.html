@@ -49,7 +49,7 @@
         {% if project.focus.milestone_id %}<span class="milestone-id">{{ project.focus.milestone_id }}</span>{% endif %}
       </div>
       {% if project.focus.objective %}
-        <div class="focus-title"><strong><span class="task-title-id">{{ project.focus.task_id }}</span> — {{ project.focus.objective }}</strong></div>
+        <a class="focus-title" href="#{{ project.focus.task_id }}"><strong><span class="task-title-id">{{ project.focus.task_id }}</span> — {{ project.focus.objective }}</strong></a>
         <div class="focus-meta">
           {% if project.focus.owner_label %}<div><span>Owner</span><span>{{ project.focus.owner_label }}</span></div>{% endif %}
           {% if project.focus.role and project.focus.role != 'unknown' %}<div><span>Role</span><span>{{ project.focus.role }}</span></div>{% endif %}

@@ -252,6 +252,8 @@ def test_routes_render_escape_reload_and_never_write(tmp_path: Path):
     assert b"<script>alert(1)</script>" not in detail.data
     assert b"developer-01" in detail.data and b"qwen36-27b" in detail.data
     assert b"Task details" in detail.data
+    assert b'<a class="focus-title" href="#T002">' in detail.data
+    assert b'id="T002"' in detail.data
     assert b"Milestone evidence" in detail.data
     assert b"1234567890ab" in detail.data
     assert b"feat: complete verified slice" in detail.data
@@ -481,8 +483,7 @@ def _write_tasks(project: Path, rows: list[tuple[str, str, str, str, str]]) -> N
     (project / "TASKS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def test_portfolio_grouping_uniqueness(tmp_path: Path):
-    """Each project appears in exactly one portfolio group."""
+def test_projects_table_lists_each_project_once_with_status_and_attention(tmp_path: Path):
     p1 = _base_project(tmp_path, "needs-attn", status="ACTIVE")
     _write_tasks(p1, [("T001", "Task A", "Blocked", "dev", "Pending")])
     _write_session(p1, "T001", phase="draft", status="turn_failed")
@@ -495,30 +496,29 @@ def test_portfolio_grouping_uniqueness(tmp_path: Path):
     _write_tasks(p3, [("T001", "Task C", "Completed", "dev", "Passed")])
     _write_session(p3, "T001")
 
-    projects = webui.list_projects(tmp_path)
-
-    groups = {p["id"]: p.get("portfolio_group") for p in projects}
-    assert groups["needs-attn"] == "needs_attention"
-    assert groups["active-pj"] == "active"
-    assert groups["done-pj"] == "recently_completed"
-
-    # Verify uniqueness — each project appears exactly once
-    all_ids = set()
-    for p in projects:
-        gid = p.get("portfolio_group")
-        assert p["id"] not in all_ids or True  # check individual membership
-        all_ids.add(p["id"])
-
-    # Verify via Flask view — each project card appears in only one section
     client = webui.create_app(tmp_path).test_client()
     response = client.get("/")
     assert response.status_code == 200
     data = response.data.decode("utf-8")
-    # Each project should have exactly one <a class="project-card" href="/projects/<id>> link
+    assert 'class="project-table"' in data
+    assert '<h2 id="projects-table-title">All projects</h2>' in data
+    assert "<h2>Needs attention</h2>" not in data
+    assert "<h2>Active</h2>" not in data
+    assert "<h2>Recently completed</h2>" not in data
+    assert "1 task needs attention" in data
+    assert "1 / 1" in data
     for pid in ("needs-attn", "active-pj", "done-pj"):
-        import re
-        cards = re.findall(rf'<a[ \t]+class="project-card"[ \t]+href="/projects/{re.escape(pid)}"', data)
-        assert len(cards) == 1, f"Project {pid} has {len(cards)} card links; expected exactly 1"
+        links = re.findall(rf'<a[ \t]+class="project-link"[ \t]+href="/projects/{re.escape(pid)}"', data)
+        assert len(links) == 1, f"Project {pid} has {len(links)} table links; expected exactly 1"
+
+
+def test_projects_table_empty_state(tmp_path: Path):
+    response = webui.create_app(tmp_path).test_client().get("/")
+
+    assert response.status_code == 200
+    assert b"No projects yet" in response.data
+    assert b"Initialized projects will appear here." in response.data
+    assert b'class="project-table"' not in response.data
 
 
 def test_board_column_blocked_precedence(tmp_path: Path):
@@ -777,7 +777,6 @@ def test_task_id_is_title_and_milestone_is_grouping_metadata(tmp_path: Path):
     assert detail.count('class="task-title-id">T092<') >= 4
     assert 'class="milestone-id">T092<' not in detail
     assert "M19 — Review final project closure" not in detail
-    assert 'class="milestone-id">M19<' in portfolio
     assert 'class="task-title-id">T092<' in portfolio
 
 
