@@ -38,7 +38,7 @@ from .turn_metrics import (
 )
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
-RESULT_SCHEMA_PATH = CODEXTEAM_ROOT / "schemas" / "result-v1.json"
+RESULT_SCHEMA_PATH = CODEXTEAM_ROOT / "schemas" / "result-v1-openai.json"
 PHASES = ("draft", "feedback", "final")
 REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 SESSION_SCHEMA_VERSION = "1.0"
@@ -577,7 +577,7 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
             "agent_role, attempt_id, status, summary, output, file_changes, evidence, "
             "requested_followups, errors, warnings, limitations, and produced_at.\n"
             "Every created or modified file and every evidence artifact_ref must be an actual existing "
-            "project-relative path. Put commands in evidence metadata, not artifact_ref. Use empty arrays "
+            "project-relative path. Summarize relevant commands in evidence summary, never artifact_ref. Use empty arrays "
             "when there are no entries.\n\n"
             f"[PROJECT LEAD DECISION]\n{request.prompt.strip()}\n"
         )

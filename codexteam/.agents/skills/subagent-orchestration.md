@@ -19,10 +19,11 @@ Use after the project specification is approved and the active task has a comple
 
 ## Small-Project Role Flow
 
-For one coherent thin slice, keep the seven identities proportional:
+For one coherent thin slice, keep the core identities proportional:
 
 - Project Lead: scope, handoffs, feedback, acceptance, and state closure.
 - Architect: requirement-traceable code and project structure without implementation or self-approval.
+- Feature Planner (`feature_planner`): optional post-architecture decomposition for materially multi-part implementation, without implementation, canonical task creation, or self-approval.
 - UX Designer (`ux_designer`): optional implementation-ready interface design and focused design QA without production implementation or product acceptance.
 - One functional Developer: the entire slice, algorithm/unit and smoke tests, and the Development Gate.
 - Test Engineer (`tester` protocol role): integration/regression test engineering, the CI-equivalent Integration Gate, classified defects, and reusable evidence without production repairs.
@@ -37,6 +38,7 @@ Each role starts from `BRIEF.md`, its active handoff, and the exact files or ups
 | Role | Default Profile | Guidance |
 |------|-----------------|----------|
 | Architect | `qwen36-27b` | architecture design |
+| Feature Planner (`feature_planner`) | `gpt54-mini` | post-architecture implementation decomposition; `qwen36-27b` is the explicit local override |
 | UX Designer (`ux_designer`) | `qwen36-27b` | UX/UI design and design QA |
 | Developer | `qwen36-27b` | implementation, development testing |
 | Test Engineer (`tester`) | `qwen36-27b` | integration testing, verification |
@@ -48,13 +50,13 @@ Each role starts from `BRIEF.md`, its active handoff, and the exact files or ups
 The responsible role owns the task. A model profile is a capability choice; changing it intentionally creates a new attempt and requires a concise handoff.
 `gemma4-26b` remains available for a bounded secondary perspective, but the live E2E evidence does not support it as the default owner for tool-using audit or document-editing tasks.
 
-`gpt54-mini` is an installed, E2E-verified cloud canary profile. The 2026-07-16 controlled Fibonacci fast-lane run completed all five roles without ownership transfer. Keep Qwen as the documented default until the operator explicitly changes routing; use the canary profile when cloud cost and data handling are acceptable.
+`gpt54-mini` is an installed, E2E-verified cloud canary profile. The 2026-07-16 controlled Fibonacci fast-lane run completed all five roles without ownership transfer. Qwen remains the default for the established execution roles; the Feature Planner deliberately defaults to `gpt54-mini` for detailed decomposition and may be launched with `--profile qwen36-27b` when local-only processing is required.
 
 Inject the smallest role-specific guidance bundle that covers the task. Large generic bundles increase local-model context cost and can obscure the active contract. Use one consolidated feedback message per review round.
 
 ## Instruction Layers and Role Policies
 
-Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, and permitted evidence types.
+Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, and permitted evidence types.
 
 Precedence is: explicit Project Lead CLI override, pinned role-policy default, then profile configuration for settings not fixed above. `--profile` is optional for a new draft because the role supplies a default. Keep explicit overrides stable across an attempt.
 
@@ -74,7 +76,7 @@ For that lane:
 4. When acceptable, resume the exact session with `--phase feedback` and an exact `PLAN ACCEPTED` followed by the bounded implementation instruction. This is execution authorization, not preference-only revision feedback.
 5. Treat the next `DRAFT` as the implementation draft. Only then require the Development Gate and start the Test Engineer.
 
-Do not add a new task type, agent, result schema, launcher phase, or planning document for this pilot. Preserve the plan in the existing private turn history. Measure planning and implementation turns separately with their metrics sidecars; do not impose hard command or token limits during the pilot.
+Do not add a new task type, agent, result schema, launcher phase, or planning document for this pilot. It remains the same-session checkpoint for one Developer assignment; the separate Feature Planner role is used earlier only when accepted design must become multiple implementation tasks. Preserve the checkpoint plan in the existing private turn history. Measure planning and implementation turns separately with their metrics sidecars; do not impose hard command or token limits during the pilot.
 
 ## Workflow
 
@@ -182,7 +184,7 @@ Use `jq '{status, summary, file_changes, evidence, errors, warnings, limitations
 
 8. Confirm `BRIEF.md`, `TASKS.md`, `PROJECT_STATE.md`, `CURRENT_TASK.md`, and `RESULT.md` agree before the next assignment.
 
-Pass evidence forward instead of recreating it: the Architect records requirement-linked design; the Developer records Development Gate evidence; the Test Engineer records test changes, exact Integration Gate commands, observations, classifications, and artifact paths; the Reviewer evaluates architecture, source, test changes, both gates, and expectation integrity; the optional Documenter cites accepted evidence and review disposition. A downstream role runs another command only when independence requires it or an observable evidence gap exists.
+Pass evidence forward instead of recreating it: the Architect records requirement-linked design; an optional Feature Planner records accepted decomposition boundaries; the Developer records Development Gate evidence; the Test Engineer records test changes, exact Integration Gate commands, observations, classifications, and artifact paths; the Reviewer evaluates architecture, source, test changes, both gates, and expectation integrity; the optional Documenter cites accepted evidence and review disposition. A downstream role runs another command only when independence requires it or an observable evidence gap exists.
 
 After canonical closure, invoke Local Git Steward only when the Project Lead has named an important-task or milestone boundary. Inspect first, review an explicit commit-plan JSON, authorize that exact digest and path set, then let the deterministic executor re-run the Integration Gate against the candidate tree and create one local commit. The role and executor have no push, merge, tag, release, publication, or remote-PR authority.
 

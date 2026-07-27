@@ -9,10 +9,10 @@ It is not an application server, controller service, board, HTTP API, or MCP imp
 Every worker receives three instruction layers:
 
 1. Project `AGENTS.md` and the selected handoff provide common project rules and task scope.
-2. One validated manifest under `roles/` provides the selected Architect, optional UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader identity, defaults, guidance bundle, change boundary, and allowed evidence types.
+2. One validated manifest under `roles/` provides the selected Architect, optional Feature Planner (`feature_planner`), optional UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader identity, defaults, guidance bundle, change boundary, and allowed evidence types.
 3. The launcher pins the complete role policy and every selected skill under `.codexteam/runtime/` when the draft starts, so feedback and finalization cannot drift when repository defaults change.
 
-The eight roles do not share one role prompt. They share common project rules, then receive distinct role instructions. UX Designer is optional and is used only for new or materially redesigned interfaces; the default project task scaffold is unchanged. Generated native Codex custom-agent projections under `generated/native-agents/` are optional; the existing `spawn-subagent.sh` process remains the authoritative CodexTeam execution path.
+The nine roles do not share one role prompt. They share common project rules, then receive distinct role instructions. Feature Planner is optional after accepted architecture for materially multi-part implementation, and UX Designer is optional for new or materially redesigned interfaces; the default project task scaffold is unchanged. Generated native Codex custom-agent projections under `generated/native-agents/` are optional; the existing `spawn-subagent.sh` process remains the authoritative CodexTeam execution path.
 
 ## Test Gates
 
@@ -26,7 +26,7 @@ The Test Engineer may add or modify handoff-scoped integration/regression tests,
 ## Workflow
 
 1. Clarify the goal and initialize an exact standalone Git project workspace.
-2. Approve the project specification and Architect-owned design before implementation.
+2. Approve the project specification and Architect-owned design; when needed, accept one Feature Planner advisory decomposition before creating multiple implementation tasks.
 3. Assign each task attempt or evidence stage to one responsible AI and start a persistent draft session.
 4. Review the draft and return consolidated feedback in the same session and attempt.
 5. Accept the draft and persist one final result using result contract v1.
@@ -58,7 +58,7 @@ For a cloud-enabled cold start, `gpt54-mini` at medium reasoning is the recommen
 
 - `qwen36-27b`: default for implementation, testing, review, and documentation
 - `gemma4-26b`: optional bounded secondary perspective when its task-specific capability has been confirmed
-- `gpt54-mini`: controlled cloud canary profile; E2E runner examples explicitly override it to medium reasoning
+- `gpt54-mini`: controlled cloud profile and Feature Planner default; E2E runner examples explicitly override it to medium reasoning
 
 Profiles must exist under `$CODEX_HOME` or `~/.codex` before a subagent is started.
 

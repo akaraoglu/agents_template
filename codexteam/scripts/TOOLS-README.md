@@ -41,7 +41,7 @@ Remove `--dry-run` only after inspecting the command, session location, and fina
 
 `--profile` is an explicit override. When omitted, the selected role policy supplies its default profile. The precedence is lead CLI override, pinned role-policy default, then profile configuration for values the policy does not set. The first draft snapshots the full policy and selected skill contents under the attempt runtime directory; resumes use that exact instruction bundle.
 
-Finalization passes the repository's existing `schemas/result-v1.json` to OpenAI-backed profiles with `--output-schema`. Local providers receive the same compact required-field instructions without being told to search for an unavailable schema. Contract validation and project-boundary checks run before either result is persisted.
+Finalization passes the strict `schemas/result-v1-openai.json` projection to OpenAI-backed profiles with `--output-schema`; persisted records remain validated against the backward-compatible result-v1 contract. Local providers receive the same compact required-field instructions without being told to search for an unavailable schema. Contract validation and project-boundary checks run before either result is persisted.
 
 ## Run Test Gates
 

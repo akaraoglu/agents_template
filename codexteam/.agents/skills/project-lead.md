@@ -37,22 +37,31 @@ Prefer medium reasoning effort for routine fast-lane turns. Increase reasoning o
 
 Use the fuller planning and orchestration workflow for larger projects, multiple independently changing components, migrations, security-sensitive work, or slices that need more than one Developer owner. Proportional flow reduces repeated context loading and duplicated evidence; it never removes independent testing, review, or truthful documentation.
 
+After accepting the architecture, delegate one advisory Feature Planner pass when
+the feature spans multiple layers or owners, has several acceptance areas,
+requires focused plus host-only verification, or has path-overlap and sequencing
+risk. Send unresolved contracts or component boundaries to the Architect
+instead. A small explicit slice goes directly to one Developer. The Project Lead
+alone accepts the planner artifact and converts its temporary subtasks into
+canonical task IDs and handoffs.
+
 ## Workflow
 
 1. On cold start, route the request through `AGENTS.md` and `.agents/LEAD_BOOT.md`. For an existing project, inspect the brief, active handoff, and its named files or evidence. Do not begin with repo-wide rediscovery.
 2. Resolve missing requirements internally when the approved specification provides enough evidence; ask the operator only when a material choice or showstopper truly requires them.
-3. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff.
-4. Review the worker's draft and changed files independently before accepting it.
-5. Return one consolidated feedback message only for an observable defect: a failed criterion, contradictory file or command output, missing required artifact, invalid result field, or unsupported completion claim. State what is accepted, what must change, why, and what must remain unchanged. Do not block acceptance for preference-only rewrites or speculative improvements. Store the prompt at one stable project-runtime path and pass that exact path to the launcher.
-6. Resume the same responsible AI for ordinary corrections. Reassign only for irrecoverable session loss, material scope change, or intentional capability transfer.
-7. Authorize finalization only after the draft is acceptable.
-8. Validate the final result and run the appropriate independent gate before advancing canonical task state.
-9. Keep the one-page brief and management documents synchronized with verified truth.
-10. Keep feedback and handoffs in literal prompt files when they contain shell metacharacters.
-11. Report evidence, remaining risks, and any real showstopper to the operator.
-12. Before delivery, run an acceptance-level product check and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
-13. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
-14. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
+3. Decide whether accepted design needs Feature Planner decomposition. If so, accept or revise its `results/` artifact before creating implementation tasks; never let the planner implement, activate tasks, spawn workers, or approve its own proposal.
+4. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff.
+5. Review the worker's draft and changed files independently before accepting it.
+6. Return one consolidated feedback message only for an observable defect: a failed criterion, contradictory file or command output, missing required artifact, invalid result field, or unsupported completion claim. State what is accepted, what must change, why, and what must remain unchanged. Do not block acceptance for preference-only rewrites or speculative improvements. Store the prompt at one stable project-runtime path and pass that exact path to the launcher.
+7. Resume the same responsible AI for ordinary corrections. Reassign only for irrecoverable session loss, material scope change, or intentional capability transfer.
+8. Authorize finalization only after the draft is acceptable.
+9. Validate the final result and run the appropriate independent gate before advancing canonical task state.
+10. Keep the one-page brief and management documents synchronized with verified truth.
+11. Keep feedback and handoffs in literal prompt files when they contain shell metacharacters.
+12. Report evidence, remaining risks, and any real showstopper to the operator.
+13. Before delivery, run an acceptance-level product check and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
+14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
+15. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
 
 ## Self-Improvement Boundary
 
@@ -80,6 +89,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 ## Validation
 
 - Tasks map to acceptance criteria and name responsible AIs.
+- Feature Planner is used only after architecture acceptance for materially multi-part implementation; the Project Lead owns task IDs and plan acceptance.
 - Feedback cites observable defects or ground truth.
 - Small-slice roles receive the brief, their handoff, and named artifacts instead of a generic repository-wide reading assignment.
 - Development and Integration Gate evidence is reused by the Reviewer and Documenter unless a concrete gap requires another check.
@@ -96,6 +106,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Rewriting worker output instead of explaining the defect
 - Requesting revisions for stylistic preference without an observable contract or evidence defect
 - Making every role reread the repository and regenerate the same evidence
+- Using the Feature Planner for a small explicit slice or to postpone unresolved architecture
 - Starting new attempts for ordinary corrections
 - Asking the user about routine team decisions
 - Treating readiness as observed success
@@ -113,6 +124,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 
 - `.agents/skills/subagent-orchestration.md`
 - `.agents/skills/task-breakdown.md`
+- `.agents/skills/feature-planning.md`
 - `.agents/skills/codexteam-self-improvement.md`
 - `.agents/skills/verification.md`
 - `BRIEF.md`

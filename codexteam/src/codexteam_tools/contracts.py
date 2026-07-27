@@ -13,6 +13,7 @@ AGENT_ROLES = {
     "architect",
     "developer",
     "documenter",
+    "feature_planner",
     "git_steward",
     "leader",
     "reviewer",

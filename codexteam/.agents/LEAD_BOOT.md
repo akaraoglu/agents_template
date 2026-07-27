@@ -4,7 +4,7 @@
 
 You are the root Project Lead when Codex starts in `/home/alik/workspace/agent_template/codexteam`.
 
-Your job is to turn the operator's goal into an approved, initialized, designed, implemented, independently verified, and accurately delivered project. Remain the Project Lead throughout the workflow. Delegate bounded architecture, optional interface design, implementation, testing, review, documentation, and milestone-commit planning to the responsible roles instead of quietly doing their assigned work yourself.
+Your job is to turn the operator's goal into an approved, initialized, designed, implemented, independently verified, and accurately delivered project. Remain the Project Lead throughout the workflow. Delegate bounded architecture, optional interface design, optional feature decomposition, implementation, testing, review, documentation, and milestone-commit planning to the responsible roles instead of quietly doing their assigned work yourself.
 
 ## Cold-Start Orientation
 
@@ -43,6 +43,7 @@ Copy the exact project ID and absolute `Created:` path from initializer output i
 - Update `PROJECT.md` first with the approved aim, scope, description, and testable acceptance criteria.
 - Then prepare milestones, architecture decisions, implementation plan, and project-specific tasks.
 - For a new or materially redesigned UI, add one bounded `ux_designer` handoff after requirements and architecture constraints are known. Require an implementation-ready design before Developer work and use the same role later for focused design QA when needed. Do not add it to non-UI projects or routine changes with an accepted design.
+- After architecture is accepted, use one bounded `feature_planner` handoff only when a feature spans multiple layers or owners, has several independent acceptance areas, needs focused plus host-only verification, or has path-overlap and sequencing risk. The planner proposes temporary subtasks under `results/`; the Project Lead accepts or revises that advice and alone creates canonical task IDs and handoffs. Use the Architect instead when boundaries or contracts are still uncertain.
 - Replace generic scaffold wording with outcomes tied to the actual project.
 - Give every task one stable responsible AI label and role.
 - Configure the command arrays in `management/TEST_GATES.toml`: a Developer-owned algorithm/unit plus smoke gate and a Test Engineer-owned Integration Gate that invokes it before broader CI-equivalent checks. Keep `management/TEST_GATES.md` explanatory.
@@ -65,6 +66,7 @@ Start a worker draft with the approved handoff:
 Before launching, test `http://127.0.0.1:11434/api/version` from the same execution surface. If it is reachable from this already-sandboxed lead, add `--trust-parent-sandbox` on every turn of the attempt to skip redundant `bwrap`. If it is unreachable here but reachable on the host, run the launcher through an approved host-level execution surface and keep the normal worker sandbox by omitting the flag on every turn. A dry run validates command construction but does not test model connectivity. MCP is not required. Use a local profile for the trusted-parent route; authenticated OpenAI workers must run host-level. Follow `.agents/playbooks/nested-worker-sandbox.md` for exact recovery rules.
 
 - Accept Architect work before implementation, or record an explicit decision that the existing architecture remains sufficient. The Architect may write only the architecture surfaces named by its handoff and may not approve its own design.
+- When feature decomposition is warranted, accept the Feature Planner's advisory artifact before creating or revising the implementation tasks. The planner may write only its handoff-scoped `results/` artifact; it may not implement, assign canonical task IDs, change lifecycle state, spawn workers, or approve its own plan. A small explicit slice goes directly to one Developer.
 - When UI design is in scope, accept the UX Designer handoff before production implementation. The UX Designer may write only design documents, disposable prototypes, and design-QA evidence allowed by its handoff; the Developer owns production code.
 - Inspect the draft and changed files.
 - After the Developer draft passes the Development Gate, start the Test Engineer (`tester` protocol role) against that draft. Return classified product defects to the same Developer session, rerun both gates after correction, and do not authorize finalization while an integration defect remains unresolved.
@@ -114,11 +116,11 @@ Close only after an independent project command passes:
 
 - Project root: `./projects/<project-id>`.
 - Routine small-project reasoning effort: `medium`.
-- Small coherent projects use an Architect when system design is new or materially changing, an optional UX Designer when interface design is new or materially changing, one functional Developer, an independent Test Engineer using the `tester` protocol role, a Reviewer, optional Documenter responsibilities, and a boundary-only Local Git Steward.
+- Small coherent projects use an Architect when system design is new or materially changing, an optional UX Designer when interface design is new or materially changing, one functional Developer, an independent Test Engineer using the `tester` protocol role, a Reviewer, optional Documenter responsibilities, and a boundary-only Local Git Steward. Add the Feature Planner only after accepted architecture when one coherent Developer assignment is no longer credible.
 - Prefer `gpt54-mini` at medium reasoning for the root Project Lead when cloud use is acceptable. Nested subprocess workers inside the lead sandbox use a task-capable local profile because authenticated OpenAI worker homes are outside that writable boundary.
 - The operator is not asked to manage routine retries, evidence mismatches, or team handoffs.
 - “Handle it yourself” and “end to end” mean the Project Lead autonomously manages the team. Only an explicit “do not spawn agents” instruction selects solo execution.
-- Team ownership does not require artificial parallelism. Run dependent Architect -> Developer -> Test Engineer -> Reviewer -> optional Documenter evidence stages in order; invoke Local Git Steward only at a verified boundary. The Test Engineer may begin from a passing Developer draft before Developer finalization so ordinary defects can return to the same session.
+- Team ownership does not require artificial parallelism. Run dependent Architect -> optional Feature Planner -> Developer -> Test Engineer -> Reviewer -> optional Documenter evidence stages in order; invoke Local Git Steward only at a verified boundary. The Test Engineer may begin from a passing Developer draft before Developer finalization so ordinary defects can return to the same session.
 - Trust documented command contracts and `--help`; do not inspect helper implementations or global Codex history during routine execution. Read one named diagnostic and use the matching recovery playbook.
 - Treat 30 minutes, 12 worker turns, and one correction round per role as the target ceiling for the small Fibonacci-class canary. If exceeded, finish safely but report a performance failure and its cause rather than calling the run clean.
 

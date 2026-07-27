@@ -11,7 +11,7 @@
     "team_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
     "task_id": {"type": "string", "pattern": "^T[0-9]{3,6}$"},
     "attempt_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
-    "agent_role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "git_steward", "leader", "ux_designer"]},
+    "agent_role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "feature_planner", "git_steward", "leader", "ux_designer"]},
     "model_profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
     "role_policy": {
       "type": "object",

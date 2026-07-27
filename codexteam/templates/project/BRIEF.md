@@ -27,6 +27,7 @@ This brief is orientation. If it conflicts with an authoritative source, report 
 
 - Project Lead: owns assignments, feedback, finalization permission, verification, and state transitions.
 - Architect: owns requirement-traceable architecture and repository design without implementation or self-approval.
+- Feature Planner: optionally turns accepted architecture into an advisory multi-task implementation plan under `results/`; the Project Lead retains plan acceptance and canonical task ownership.
 - Developer: owns scoped source, unit/algorithm and smoke tests, the Development Gate, self-review, and source revisions.
 - Test Engineer (`tester` protocol role): owns integration/regression test engineering, the CI-equivalent Integration Gate, expectation integrity, and failure classification without production repairs.
 - Reviewer: owns acceptance analysis and evidence-quality review without silently repairing work.
@@ -41,6 +42,7 @@ This brief is orientation. If it conflicts with an authoritative source, report 
 - Ordinary corrections resume the same session and attempt.
 - Test Engineer product defects return through the Project Lead to the same Developer session before finalization; after correction, both gates rerun against the final revision.
 - Architecture is approved before implementation and architecture conformance is reviewed before a milestone commit.
+- Materially multi-part features may receive one bounded Feature Planner pass after architecture approval; small explicit slices go directly to one Developer.
 - The worker emits one final result only after the Project Lead accepts the draft.
 - Independent verification is required before canonical project state advances.
 - Routine uncertainty stays inside the team; only a genuine showstopper reaches the operator.

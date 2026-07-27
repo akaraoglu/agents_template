@@ -20,15 +20,21 @@ def test_all_canonical_role_policies_are_unique_and_complete():
         "architect",
         "developer",
         "documenter",
+        "feature_planner",
         "git_steward",
         "leader",
         "reviewer",
         "tester",
         "ux_designer",
     }
-    assert len({policy.name for policy in policies}) == 8
-    assert len({policy.digest for policy in policies}) == 8
-    assert all(policy.default_profile == "qwen36-27b" for policy in policies)
+    assert len({policy.name for policy in policies}) == 9
+    assert len({policy.digest for policy in policies}) == 9
+    assert load_role_policy("feature_planner").default_profile == "gpt54-mini"
+    assert all(
+        policy.default_profile == "qwen36-27b"
+        for policy in policies
+        if policy.role != "feature_planner"
+    )
 
 
 def test_role_policy_snapshot_digest_is_stable(tmp_path: Path):
@@ -72,6 +78,7 @@ def test_role_boundaries_match_responsibilities():
     reviewer = load_role_policy("reviewer")
     documenter = load_role_policy("documenter")
     architect = load_role_policy("architect")
+    feature_planner = load_role_policy("feature_planner")
     git_steward = load_role_policy("git_steward")
 
     assert developer.allows_change("src/main.py")
@@ -97,6 +104,9 @@ def test_role_boundaries_match_responsibilities():
     assert architect.allows_change("docs/decisions/ADR-0001.md")
     assert not architect.allows_change("src/main.py")
     assert not architect.allows_change("TASKS.md")
+    assert feature_planner.allows_change("results/feature-plan.md")
+    assert not feature_planner.allows_change("src/main.py")
+    assert not feature_planner.allows_change("TASKS.md")
     assert not git_steward.allows_change("src/main.py")
     assert not git_steward.allows_change(".codexteam/runtime/git-steward/m1/plan.json")
 

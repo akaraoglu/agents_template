@@ -10,7 +10,7 @@ This file is sufficient for the first new-project proposal. Before initializatio
 |---|---|
 | Propose a new project from a short request | None; `.agents/LEAD_BOOT.md` is sufficient |
 | Initialize an approved project specification | `.agents/skills/project-init.md`, `.agents/skills/sdd-workflow.md` |
-| Plan milestones, architecture, implementation, or tasks | `.agents/skills/task-breakdown.md`, `.agents/skills/architecture-design.md` |
+| Plan milestones, architecture, implementation, or tasks | `.agents/skills/task-breakdown.md`, `.agents/skills/architecture-design.md`; add `.agents/skills/feature-planning.md` only after accepted architecture when implementation needs multiple bounded tasks |
 | Execute an approved project or delegate work | `.agents/skills/project-lead.md`, `.agents/skills/subagent-orchestration.md` |
 | Review or verify worker output | `.agents/skills/project-lead.md`, `.agents/skills/verification.md` |
 | Recover a failed or incomplete worker turn | `.agents/skills/subagent-orchestration.md`, `.agents/skills/debugging.md` |
@@ -25,7 +25,7 @@ This file is sufficient for the first new-project proposal. Before initializatio
 2. Propose the project aim, users, scope, non-goals, constraints, acceptance criteria, and project-management plan.
 3. Wait for approval before initialization.
 4. Preview and initialize a standalone local Git repository under `./projects`; initialization is not authorization to implement, execute tasks, or create a commit.
-5. Prepare project-specific milestones, Architect-owned system design, optional UX Designer-owned interface design, implementation plan, and assignments with one responsible AI per task attempt or evidence stage. Configure separate Development and Integration Gate commands in `management/TEST_GATES.toml`. Treat initializer task files as scaffolding until this plan is approved.
+5. Prepare project-specific milestones, Architect-owned system design, optional UX Designer-owned interface design, optional post-architecture Feature Planner decomposition for materially multi-part work, implementation plan, and assignments with one responsible AI per task attempt or evidence stage. Configure separate Development and Integration Gate commands in `management/TEST_GATES.toml`. Treat initializer task files as scaffolding until this plan is approved.
 6. Wait for an explicit execution instruction such as `GO` before spawning workers.
 7. During execution, manage persistent draft → feedback → final sessions, verify independently, and close canonical state. Ask the operator only for a material decision or genuine showstopper.
 
@@ -35,10 +35,11 @@ Canonical commands from this exact base folder are in `.agents/LEAD_BOOT.md`. Ne
 
 - Reuse the exact project ID and absolute `Created:` path returned by initialization. Never reconstruct, abbreviate, or retype a generated project path from memory. Before delegation, confirm that `PROJECT.md` and the selected handoff exist at that exact path.
 - Do not create project evidence with shell redirection, `tee`, heredocs, or command substitution. Use the file-editing tool for planned files and CodexTeam commands for captured worker and verification evidence.
-- “Handle it yourself,” “do it end to end,” and “do not ask me routine questions” mean autonomously manage the CodexTeam as Project Lead. They do not authorize silently collapsing Architect, UX Designer, Developer, Test Engineer, Reviewer, Documenter, or Git Steward responsibilities into the lead. Only an explicit instruction such as “do not spawn agents” authorizes solo execution.
+- “Handle it yourself,” “do it end to end,” and “do not ask me routine questions” mean autonomously manage the CodexTeam as Project Lead. They do not authorize silently collapsing Architect, Feature Planner, UX Designer, Developer, Test Engineer, Reviewer, Documenter, or Git Steward responsibilities into the lead. Only an explicit instruction such as “do not spawn agents” authorizes solo execution.
 - Dedicated team roles need not run simultaneously. Parallelize only genuinely independent work; preserve sequential evidence dependencies for implementation, testing, review, and documentation.
 - Developers own algorithm/unit and smoke evidence through the configured Development Gate. Test Engineers use the wire-compatible `tester` role, may change scoped integration/regression tests, never production source, and own the CI-equivalent Integration Gate. Return their product defects to the same Developer session before finalizing either role.
 - Architects own requirement-traceable project and code structure in `ARCHITECTURE.md` and `docs/decisions/`; they do not implement source or approve their own design.
+- After architecture acceptance, use `feature_planner` only when multiple implementation owners, acceptance areas, verification surfaces, or sequencing risks make one coherent Developer task unsuitable. It writes advisory plans under `results/`; the Project Lead owns acceptance and canonical task creation. Send unresolved architecture back to the Architect.
 - For a new or materially redesigned interface, assign `ux_designer` after requirements and system constraints are known. It owns handoff-ready UX/UI design and design QA, not production implementation or product acceptance. Skip it for non-UI work and routine changes with an approved design.
 - The Local Git Steward runs only at a Project Lead-authorized architecture or verified milestone boundary. Its model prepares an explicit plan; the deterministic executor alone stages named paths and creates one local commit. It never pushes, merges, tags, releases, publishes, or opens a remote PR.
 - Before launching a local worker, test the Ollama endpoint from the same execution surface. Use `--trust-parent-sandbox` only when an already-sandboxed Project Lead can reach it; if host Ollama is hidden from the parent sandbox, launch at the approved host level without that flag so the worker keeps its normal sandbox. A dry run does not test model connectivity, and MCP is not required. See `.agents/playbooks/nested-worker-sandbox.md`.

@@ -2,7 +2,7 @@
 
 ## Profile Not Found
 
-Confirm `$CODEX_HOME/<profile>.config.toml` or `~/.codex/<profile>.config.toml` exists. The default tool-using profile is `qwen36-27b`; `gemma4-26b` is an optional secondary profile.
+Confirm `$CODEX_HOME/<profile>.config.toml` or `~/.codex/<profile>.config.toml` exists. Established execution roles default to `qwen36-27b`; Feature Planner defaults to `gpt54-mini` and accepts an explicit `qwen36-27b` local override. `gemma4-26b` is an optional secondary profile.
 
 ## Result Is Partial
 

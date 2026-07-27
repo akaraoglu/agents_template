@@ -149,6 +149,7 @@ def test_final_command_supplies_result_schema_only_for_openai_final_phase(
 
     assert final_command[schema_index + 1] == str(spawn.RESULT_SCHEMA_PATH)
     assert spawn.RESULT_SCHEMA_PATH.is_file()
+    assert spawn.RESULT_SCHEMA_PATH.name == "result-v1-openai.json"
 
 
 def test_initial_command_persists_json_session_without_ephemeral(tmp_path: Path, monkeypatch):

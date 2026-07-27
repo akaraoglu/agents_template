@@ -27,7 +27,7 @@
     "result_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
     "team_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
     "task_id": {"type": "string", "pattern": "^T[0-9]{3,6}$"},
-    "agent_role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "git_steward", "leader", "ux_designer"]},
+    "agent_role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "feature_planner", "git_steward", "leader", "ux_designer"]},
     "attempt_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
     "status": {"enum": ["completed", "failed", "partial", "blocked", "needs_review"]},
     "summary": {"type": "string", "minLength": 1, "maxLength": 2000},

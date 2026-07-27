@@ -7,7 +7,7 @@ The current architecture is a small workflow-tool package plus repository-local 
 ## Components
 
 - `.agents/`: reusable leader, worker, verification, and delivery guidance.
-- `roles/`: strict role-policy-v1 manifests for eight accountable identities, including the optional UX Designer.
+- `roles/`: strict role-policy-v1 manifests for nine accountable identities, including the optional Feature Planner and UX Designer.
 - `generated/native-agents/`: deterministic optional projections for native Codex custom agents.
 - `src/codexteam_tools/`: deterministic path, contract, task, spawn, gate, Git boundary, Web UI, and closure logic.
 - `scripts/`: operator-facing compatibility entrypoints.
@@ -22,7 +22,7 @@ The current architecture is a small workflow-tool package plus repository-local 
 - A worker receives common `AGENTS.md` guidance plus one selected role policy; the draft pins the policy snapshot for every continuation.
 - Post-turn workspace comparison rejects changes outside the role boundary. Handoff-specific scope remains an assignment and review constraint within the broader mechanical role boundary.
 - Developer and Test Engineer ownership is split by test gate. Developers own algorithm/unit and smoke evidence; Test Engineers use the wire-compatible tester role and own handoff-scoped integration/regression expectations plus the CI-equivalent gate without production writes.
-- Architects own requirement-traceable system and repository design but neither implementation nor self-approval. The optional UX Designer owns interface design artifacts and design QA without production writes or self-approval. Local Git Steward model turns are read-only and run only at named boundaries.
+- Architects own requirement-traceable system and repository design but neither implementation nor self-approval. The optional Feature Planner turns accepted design into advisory implementation subtasks under `results/` without canonical task or lifecycle authority. The optional UX Designer owns interface design artifacts and design QA without production writes or self-approval. Local Git Steward model turns are read-only and run only at named boundaries.
 - Worker results are untrusted until schema validation and independent verification pass.
 - Shell text is never evaluated. Verification and Codex commands use structured argument arrays.
 - The leader owns state closure; a worker result cannot update task or delivery state directly.

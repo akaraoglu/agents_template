@@ -27,13 +27,19 @@ Use after `PROJECT.md` has a concrete MVP scope and acceptance criteria, or when
 4. Give each role only `BRIEF.md`, its task handoff, and the exact requirement sections, files, or upstream evidence named in that handoff. Do not use "read the repository" or "read all project documents" as context.
 5. Plan an evidence chain: accepted Architect design, Developer implementation plus Development Gate, Test Engineer integration/regression changes plus Integration Gate, Reviewer audit, then accepted evidence and review disposition to an optional Documenter and boundary-only Git Steward.
    For a new or materially redesigned interface, insert one `ux_designer` handoff after requirements and architecture constraints are known. It produces the implementation-ready interface design and may return for focused design QA; it is not a mandatory task for non-UI work or routine changes with an approved design.
-6. Split larger or materially independent work into project-specific tasks with one named responsible AI role and clear evidence.
-7. Keep task IDs stable when possible.
-8. Make each task independently reviewable.
-9. Define expected files, checks, and acceptance evidence for each task.
-10. Record dependencies explicitly.
-11. Update `TASKS.md`, `management/BACKLOG.md`, and `management/tasks/T*.md`.
-12. Treat each `management/tasks/T*.md` file as the contract passed to the team.
+6. After architecture acceptance, use a bounded `feature_planner` handoff when implementation spans multiple layers or owners, several acceptance areas, focused plus host-only verification, or overlapping-path sequencing. The planner proposes temporary subtasks; the Project Lead alone accepts them and creates canonical task IDs. Send unresolved architecture back to the Architect.
+7. Split larger or materially independent work into project-specific tasks with one named responsible AI role and clear evidence.
+8. Keep task IDs stable when possible.
+9. Make each task independently reviewable.
+10. Define expected files, checks, and acceptance evidence for each task. When a
+   task changes a shared helper or representation, name its existing consumers
+   and inherited focused contract tests in Context and Verification even when
+   those tests remain outside the task's editable paths. Preserve accepted
+   upstream semantics at the shared layer; satisfy presentation-only changes at
+   the presentation seam.
+11. Record dependencies explicitly.
+12. Update `TASKS.md`, `management/BACKLOG.md`, and `management/tasks/T*.md`.
+13. Treat each `management/tasks/T*.md` file as the contract passed to the team.
 
 ## Small-Project Role Flow
 
@@ -75,6 +81,7 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 - One explicit responsible AI for every task
 - Architect owns design without implementation or self-approval; one functional Developer owns a small coherent slice and Development Gate; a Test Engineer owns scoped integration/regression tests and the Integration Gate; Reviewer and optional Documenter receive separate bounded evidence responsibilities; Git Steward is boundary-only.
 - When applicable, UX Designer owns interface design and design QA without production implementation or product acceptance.
+- When applicable, Feature Planner produces an advisory decomposition after accepted architecture; it does not implement or own canonical task creation.
 - Explicit blockers and dependencies
 - Worker-ready task files that can be executed without chat history
 
@@ -83,8 +90,11 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 - Every acceptance criterion is covered by at least one task.
 - No task requires hidden knowledge from chat only.
 - No task is so broad that verification is unclear.
+- Feature Planner proposals use temporary labels until the Project Lead accepts and converts them into canonical tasks.
 - Each task file has enough information for a different agent to run it safely.
 - Context names the necessary files and upstream evidence instead of assigning repository-wide rediscovery.
+- Shared-helper tasks name inherited consumers and contract tests that must pass
+  without granting later roles authority to weaken those expectations.
 - Both gate artifacts and Test Engineer failure classifications can flow to the Reviewer and Documenter without being translated or recreated.
 - Every commit boundary names exact tasks and paths and requires current review plus Integration Gate or architecture-review evidence.
 - Ordinary corrections can return to the same responsible AI without reconstructing ownership from chat.
@@ -95,6 +105,10 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 - Using generic role-only ownership such as "Agent" instead of a stable responsible AI label.
 - Splitting by file instead of by user-visible behavior.
 - Splitting one small functional slice across several Developers without an observed need.
+- Invoking the Feature Planner for a small explicit slice or before architecture decisions are settled.
 - Asking every role to read all documents, rediscover the same files, or rerun already sufficient evidence.
 - Hiding critical requirements in task descriptions only.
+- Treating a presentation requirement as permission to change an accepted
+  shared projection/domain contract, or omitting that contract's focused test
+  from downstream verification.
 - Replanning without preserving useful task history.

@@ -19,6 +19,7 @@ def test_machine_schemas_are_valid_json():
         "architect",
         "developer",
         "documenter",
+        "feature_planner",
         "git_steward",
         "leader",
         "reviewer",
@@ -28,8 +29,43 @@ def test_machine_schemas_are_valid_json():
     handoff_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "handoff-v1.json").read_text(encoding="utf-8"))
     assert set(handoff_schema["properties"]["agent_role"]["enum"]) == expected_roles
     assert set(result_schema["properties"]["agent_role"]["enum"]) == expected_roles
+    openai_schema = json.loads(
+        (CODEXTEAM_ROOT / "schemas" / "result-v1-openai.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert set(openai_schema["properties"]["agent_role"]["enum"]) == expected_roles
     gate_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "gate-record-v1.json").read_text(encoding="utf-8"))
     assert "configuration_digest" in gate_schema["required"]
+
+
+def test_openai_result_schema_is_a_strict_v1_projection():
+    stored = json.loads(
+        (CODEXTEAM_ROOT / "schemas" / "result-v1.json").read_text(encoding="utf-8")
+    )
+    output = json.loads(
+        (CODEXTEAM_ROOT / "schemas" / "result-v1-openai.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert output["required"] == stored["required"]
+    assert set(output["properties"]) == set(stored["properties"])
+
+    def assert_strict_objects(node):
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert node.get("additionalProperties") is False
+                assert set(node.get("required", ())) == set(node.get("properties", ()))
+            if "const" in node or "enum" in node:
+                assert "type" in node
+            for value in node.values():
+                assert_strict_objects(value)
+        elif isinstance(node, list):
+            for value in node:
+                assert_strict_objects(value)
+
+    assert_strict_objects(output)
 
 
 def test_documentation_has_no_obsolete_runtime_references():
@@ -140,6 +176,7 @@ def test_cold_start_project_lead_bootstrap_is_discoverable():
         "same execution surface",
         "does not test model connectivity",
         "MCP is not required",
+        "feature_planner",
         ".codexteam/lead-prompt-<task>-<attempt>.md",
         "jq '{status, summary, file_changes, evidence, errors, warnings, limitations}'",
         "30 minutes, 12 worker turns",
@@ -217,6 +254,7 @@ def test_specialist_role_skills_have_complete_reusable_workflow_sections():
     )
     for name in (
         "architecture-design.md",
+        "feature-planning.md",
         "development-testing.md",
         "integration-testing.md",
         "git-steward.md",

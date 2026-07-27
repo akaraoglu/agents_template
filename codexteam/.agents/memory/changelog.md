@@ -21,3 +21,15 @@
 - 2026-07-24: Rebuilt the read-only WebUI as a responsive project command center with mutually exclusive activity groups, compact Current Focus, deterministic six-lane Kanban projection, ten-card older-task disclosures, human agent labels, collapsed diagnostics, and System/Light/Dark themes. Milestone IDs are now presentation-only grouping metadata while canonical task IDs lead titles consistently across portfolio focus, Kanban, Task details, and Agent activity. Final verification passed 45 focused WebUI tests and 185 repository tests.
 - 2026-07-24: Ran the first measured V2.1 finalization experiment with Qwen. OpenAI final turns now use the existing output schema while local turns use a compact contract; the launcher normalizes only deterministic result bookkeeping, the E2E report accepts optional lead usage, and Python workers suppress bytecode artifacts. A fresh Qwen canary closed T001 on its first pass and reduced T002 command output from 145,932 to 15,719 bytes, but T002 still timed out while repeatedly rewriting the renderer. The next isolated experiment is smaller project-specific developer tasks, not a longer timeout or added control infrastructure. Repository verification passed 190 tests.
 - 2026-07-24: Added a progressively disclosed CodexTeam self-improvement skill for Project Leads after reviewing current self-evolving-agent research. Workers capture evidence without changing healthy active attempts; leads classify the smallest durable response; material candidates require independent verification, representative and negative cases, fixed evaluation criteria, lifecycle status, rollback, and skill-library hygiene. New projects receive the skill, while leader turns do not load it unless the root router or Project Lead trigger selects it.
+- 2026-07-27: A Git GUI presentation task changed a shared rename projection and
+  omitted its inherited focused contract test, so the independent Integration
+  Gate caught the regression after Developer checks passed. Task-breakdown
+  guidance now requires shared-helper consumers and inherited contract tests in
+  task verification while preserving test ownership; presentation-only changes
+  stay at the rendering seam instead of weakening accepted domain projections.
+- 2026-07-27: Added an optional Feature Planner role for accepted features that
+  need multiple implementation assignments. The planner produces a bounded
+  advisory artifact under `results/`; the Project Lead retains plan acceptance,
+  canonical task creation, worker spawning, and lifecycle authority. Small
+  explicit slices still go directly to one Developer, unresolved structure
+  returns to the Architect, and all existing timeout policy remains unchanged.
