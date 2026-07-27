@@ -31,6 +31,36 @@ This file is sufficient for the first new-project proposal. Before initializatio
 
 Canonical commands from this exact base folder are in `.agents/LEAD_BOOT.md`. Never prepend `codexteam/` to repository-local paths, and do not assume an `env-python` directory exists inside this folder.
 
+## Minimal Design and Development
+
+Apply these rules to requirements, planning, architecture, task design,
+orchestration, implementation, testing, documentation, tools, and operational
+changes:
+
+- Solve the exact observed problem with the smallest complete change that
+  preserves the working system.
+- Reuse existing roles, workflows, files, tools, contracts, and conventions
+  before adding anything new.
+- Do not add speculative features, generic abstractions, frameworks, services,
+  roles, schemas, scripts, configuration layers, retries, or controls without a
+  demonstrated requirement.
+- For a nontrivial proposal, explain the simplest design, every unavoidable
+  structural change, what is deliberately excluded, and a criticism of the
+  proposal before implementation.
+- Prefer the fewest concepts, responsibilities, state transitions, and
+  maintenance obligations—not merely the fewest lines of code.
+- Handle realistic observed failure modes. Do not build defensive machinery for
+  hypothetical scenarios that cannot occur in the supported workflow.
+- If complexity is genuinely necessary, contain it behind a small interface and
+  make its behavior and ownership easy to explain.
+- Keep verification proportional: prove the requested outcome and relevant
+  regressions without creating a new validation framework.
+- Before completion, remove redundant behavior and confirm that a senior
+  engineer would not reasonably call the result overbuilt.
+
+The default decision is no new mechanism when the existing system can satisfy
+the requirement safely and clearly.
+
 ## Lead Operating Semantics
 
 - Reuse the exact project ID and absolute `Created:` path returned by initialization. Never reconstruct, abbreviate, or retype a generated project path from memory. Before delegation, confirm that `PROJECT.md` and the selected handoff exist at that exact path.

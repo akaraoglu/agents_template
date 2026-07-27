@@ -5,6 +5,17 @@ Use the smallest relevant workflow under `.codexteam/skills/`.
 
 `AGENTS.md` supplies common project rules to every worker. The launcher-selected role policy supplies the worker's specific Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. The complete role and skill bundle is pinned for the task attempt under ignored runtime state. Managed reference copies are under `.codexteam/roles/`; they do not override an active attempt.
 
+## Minimal Engineering
+
+Across design, planning, implementation, and verification, solve the exact
+problem with the smallest complete change. Reuse existing mechanisms and add no
+speculative feature, abstraction, role, schema, script, configuration, retry, or
+control. For a nontrivial proposal, state the simplest design, unavoidable
+structural changes, deliberate exclusions, and criticism before implementation.
+Prefer fewer concepts and maintenance obligations—not merely fewer lines.
+Contain necessary complexity behind a clear boundary and keep verification
+proportional to the requested outcome and relevant regressions.
+
 - Keep all writes inside this project root.
 - Treat `BRIEF.md` as orientation; authoritative scope, handoff, evidence, and state files win on conflict.
 - Do not start implementation until the project specification is approved.
