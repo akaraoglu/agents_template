@@ -36,3 +36,4 @@
 - New projects are exact standalone Git repositories by default. Initialization creates no commit and invents no Git identity.
 - Local Git Steward runs only at a Project Lead-authorized important-task or milestone boundary. The model is read-only; a deterministic executor validates an exact plan and authorization, re-verifies the candidate tree, stages literal approved paths, and creates one local commit.
 - Local Git Steward has no remote authority. Push, fetch, merge, rebase, tag, release, publication, and remote PR creation remain human actions.
+- Run Guard is opt-in per worker turn and interrupts only three consecutive identical failed command results. It reuses the existing interrupted, exact-thread resume path and is not a token, time, or general retry limit.

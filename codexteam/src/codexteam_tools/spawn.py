@@ -4,9 +4,11 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import shutil
 import signal
 import subprocess
+import threading
 import time
 import tomllib
 from dataclasses import dataclass
@@ -30,6 +32,7 @@ from .roles import (
     load_role_policy,
     load_role_policy_snapshot,
 )
+from .run_guard import ExactFailedRepeatGuard
 from .turn_metrics import (
     metrics_path,
     previous_summary,
@@ -73,6 +76,7 @@ class SpawnRequest:
     source_codex_home: Path
     add_dirs: tuple[Path, ...]
     trust_parent_sandbox: bool
+    run_guard: bool
     skill_files: tuple[Path, ...]
     guidance_digest: str
     profile_file: Path
@@ -101,6 +105,8 @@ class ProcessResult:
     stderr: str
     duration_seconds: float
     timed_out: bool = False
+    guard_triggered: bool = False
+    guard_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +190,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     if model_verbosity is not None and not isinstance(model_verbosity, str):
         raise ValueError(f"Codex profile model_verbosity must be a string: {profile_file}")
     trust_parent_sandbox = bool(getattr(args, "trust_parent_sandbox", False))
+    run_guard = bool(getattr(args, "run_guard", False))
     if trust_parent_sandbox and model_provider.strip() == "openai":
         raise ValueError(
             "--trust-parent-sandbox requires a local model profile because authenticated "
@@ -214,6 +221,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         source_codex_home=source_codex_home,
         add_dirs=add_dirs,
         trust_parent_sandbox=trust_parent_sandbox,
+        run_guard=run_guard,
         skill_files=skill_files,
         guidance_digest=guidance_digest,
         profile_file=profile_file,
@@ -282,6 +290,9 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
         timeout_seconds=request.timeout_seconds,
         env=environment,
         cwd=request.workspace,
+        events_path=turn.events_path,
+        stderr_path=turn.stderr_path,
+        run_guard=request.run_guard,
     )
     atomic_write_text(turn.events_path, process.stdout)
     atomic_write_text(turn.stderr_path, process.stderr)
@@ -708,7 +719,21 @@ def run_process(
     timeout_seconds: int,
     env: dict[str, str],
     cwd: Path | None = None,
+    events_path: Path | None = None,
+    stderr_path: Path | None = None,
+    run_guard: bool = False,
 ) -> ProcessResult:
+    if run_guard:
+        return _run_guarded_process(
+            command,
+            prompt=prompt,
+            timeout_seconds=timeout_seconds,
+            env=env,
+            cwd=cwd,
+            events_path=events_path,
+            stderr_path=stderr_path,
+        )
+
     started = time.monotonic()
     process = subprocess.Popen(
         command,
@@ -727,6 +752,159 @@ def run_process(
         os.killpg(process.pid, signal.SIGKILL)
         stdout, stderr = process.communicate()
         return ProcessResult(124, stdout, stderr, time.monotonic() - started, timed_out=True)
+
+
+def _run_guarded_process(
+    command: list[str],
+    *,
+    prompt: str,
+    timeout_seconds: int,
+    env: dict[str, str],
+    cwd: Path | None,
+    events_path: Path | None,
+    stderr_path: Path | None,
+) -> ProcessResult:
+    started = time.monotonic()
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        start_new_session=True,
+        env=env,
+        cwd=cwd,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+
+    chunks: queue.Queue[tuple[str, str | None]] = queue.Queue()
+    readers = (
+        threading.Thread(
+            target=_read_process_stream,
+            args=("stdout", process.stdout, chunks),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_read_process_stream,
+            args=("stderr", process.stderr, chunks),
+            daemon=True,
+        ),
+    )
+    for reader in readers:
+        reader.start()
+    try:
+        process.stdin.write(prompt)
+        process.stdin.close()
+    except BrokenPipeError:
+        process.stdin.close()
+
+    guard = ExactFailedRepeatGuard()
+    guard_reason: str | None = None
+    guard_deadline: float | None = None
+    force_killed = False
+    timed_out = False
+    stdout_chunks: list[str] = []
+    stderr_chunks: list[str] = []
+    completed_streams: set[str] = set()
+    event_handle = _open_live_stream(events_path)
+    error_handle = _open_live_stream(stderr_path)
+    try:
+        while len(completed_streams) < 2:
+            now = time.monotonic()
+            if guard_reason is None and not timed_out and now - started >= timeout_seconds:
+                timed_out = True
+                _signal_process_group(process, signal.SIGKILL)
+                force_killed = True
+            elif (
+                guard_deadline is not None
+                and not force_killed
+                and now >= guard_deadline
+                and process.poll() is None
+            ):
+                _signal_process_group(process, signal.SIGKILL)
+                force_killed = True
+
+            try:
+                stream_name, chunk = chunks.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if chunk is None:
+                completed_streams.add(stream_name)
+                continue
+            if stream_name == "stdout":
+                stdout_chunks.append(chunk)
+                _write_live_chunk(event_handle, chunk)
+                if guard_reason is None and not timed_out:
+                    decision = guard.observe_line(chunk)
+                    if decision is not None:
+                        guard_reason = decision.reason
+                        _signal_process_group(process, signal.SIGINT)
+                        guard_deadline = time.monotonic() + 2.0
+            else:
+                stderr_chunks.append(chunk)
+                _write_live_chunk(error_handle, chunk)
+    finally:
+        if event_handle is not None:
+            event_handle.close()
+        if error_handle is not None:
+            error_handle.close()
+        if process.poll() is None:
+            _signal_process_group(process, signal.SIGKILL)
+        process.wait()
+        for reader in readers:
+            reader.join(timeout=1.0)
+
+    exit_code = 124 if timed_out else process.returncode
+    return ProcessResult(
+        exit_code,
+        "".join(stdout_chunks),
+        "".join(stderr_chunks),
+        time.monotonic() - started,
+        timed_out=timed_out,
+        guard_triggered=guard_reason is not None,
+        guard_reason=guard_reason,
+    )
+
+
+def _read_process_stream(
+    stream_name: str,
+    stream: Any,
+    chunks: queue.Queue[tuple[str, str | None]],
+) -> None:
+    try:
+        for line in iter(stream.readline, ""):
+            chunks.put((stream_name, line))
+    finally:
+        stream.close()
+        chunks.put((stream_name, None))
+
+
+def _open_live_stream(path: Path | None) -> Any:
+    if path is None:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("w", encoding="utf-8", newline="")
+    path.chmod(0o600)
+    return handle
+
+
+def _write_live_chunk(handle: Any, chunk: str) -> None:
+    if handle is None:
+        return
+    handle.write(chunk)
+    handle.flush()
+
+
+def _signal_process_group(process: subprocess.Popen[str], target_signal: int) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, target_signal)
+    except ProcessLookupError:
+        return
 
 
 def parse_codex_events(text: str) -> EventSummary:
@@ -822,6 +1000,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument(
+        "--run-guard",
+        action="store_true",
+        help="Interrupt three consecutive identical failed commands and preserve the resumable thread",
+    )
     parser.add_argument("--result-dir", default="results")
     parser.add_argument("--dry-run", action="store_true")
     return parser
@@ -849,6 +1032,7 @@ def main(argv: list[str] | None = None) -> int:
                         "reasoning_effort_override": request.reasoning_effort_override,
                         "workspace": str(request.workspace),
                         "trust_parent_sandbox": request.trust_parent_sandbox,
+                        "run_guard": request.run_guard,
                         "session_path": str(request.session_path),
                         "turn_path": str(turn.message_path),
                         "stderr_path": str(turn.stderr_path),
@@ -1245,6 +1429,7 @@ def _write_turn_state(
         "started_at": existing.get("started_at", now) if same_turn else now,
         "updated_at": now,
         "timeout_seconds": request.timeout_seconds,
+        "run_guard_enabled": request.run_guard,
         "changed_paths": list(changed_paths),
         "errors": errors or [],
     }
@@ -1252,6 +1437,9 @@ def _write_turn_state(
         state["duration_seconds"] = round(process.duration_seconds, 3)
         state["exit_code"] = process.exit_code
         state["timed_out"] = process.timed_out
+        state["run_guard_triggered"] = process.guard_triggered
+        if process.guard_reason is not None:
+            state["run_guard_reason"] = process.guard_reason
     atomic_write_json(turn.state_path, state)
     turn.state_path.chmod(0o600)
 
@@ -1275,6 +1463,8 @@ def _turn_failure(
         return "session_mismatch", 1, ["resumed turn reported a different thread ID"]
     if len(events.thread_ids) > 1:
         return "session_mismatch", 1, ["turn reported multiple thread IDs"]
+    if process.guard_triggered:
+        return "interrupted", 3, [process.guard_reason or "run guard interrupted the turn"]
     if process.timed_out:
         return "interrupted", 3, [f"subagent timed out after {round(process.duration_seconds, 3)} seconds"]
     if process.exit_code != 0:

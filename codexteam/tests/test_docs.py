@@ -156,6 +156,7 @@ def test_cold_start_project_lead_bootstrap_is_discoverable():
         "do not spawn agents",
         "acceptance-level product check",
         "Keep orchestration proportional",
+        "Do not repeat the same command or failure path",
         ".agents/skills/codexteam-self-improvement.md",
     )
     for marker in required_agents_markers:
@@ -183,6 +184,19 @@ def test_cold_start_project_lead_bootstrap_is_discoverable():
     )
     for marker in required_boot_markers:
         assert marker in boot
+
+
+def test_run_guard_is_documented_as_opt_in_and_resumable():
+    readme = (CODEXTEAM_ROOT / "README.md").read_text(encoding="utf-8")
+    user_guide = (CODEXTEAM_ROOT / "docs" / "USER_GUIDE.md").read_text(encoding="utf-8")
+    contracts = (CODEXTEAM_ROOT / "docs" / "PUBLIC_CONTRACTS.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--run-guard" in readme
+    assert "three consecutive identical failed command results" in user_guide
+    assert "preserves a captured thread" in user_guide
+    assert "timeout or opt-in Run Guard" in contracts
 
 
 def test_root_facing_docs_use_guaranteed_base_folder_commands():
@@ -282,6 +296,37 @@ def test_project_lead_progressively_discloses_self_improvement_workflow():
     assert "observed -> proposed -> candidate -> verified -> accepted" in skill
     assert "A negative case where the skill or tool should not activate" in skill
     assert "Loading all skills into every agent" in skill
+
+
+def test_project_lead_context_mcp_workflow_is_discoverable_and_bounded():
+    agents = (CODEXTEAM_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    lead = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "project-lead.md"
+    ).read_text(encoding="utf-8")
+    skill = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "team-context-mcp.md"
+    ).read_text(encoding="utf-8")
+
+    assert ".agents/skills/team-context-mcp.md" in agents
+    assert ".agents/skills/team-context-mcp.md" in lead
+    for tool in (
+        "get_active_task",
+        "get_project_overview",
+        "list_tasks",
+        "get_task_handoff",
+        "get_task_context",
+        "get_attempt_summary",
+        "get_gate_status",
+        "validate_result_record",
+        "get_cost_hotspots",
+        "search_team_memory",
+        "search_repository",
+        "get_change_summary",
+    ):
+        assert f"`{tool}`" in skill
+    assert "Do not call the full tool set as a routine preflight" in skill
+    assert "context, not proof" in skill
+    assert "one narrow fallback" in skill
 
 
 def test_project_test_gate_template_defines_distinct_owners_and_ci_parity():

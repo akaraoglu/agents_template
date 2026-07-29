@@ -171,6 +171,187 @@ def test_summary_derives_delta_from_previous_cumulative_usage():
     assert reset["usage"]["delta"]["input_tokens"] is None
 
 
+def test_summary_aggregates_mcp_calls_without_persisting_payloads():
+    text = jsonl(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "mcp_tool_call",
+                "server": "codexteam-context",
+                "tool": "get_project_overview",
+                "arguments": {"project": "private-project"},
+                "result": {
+                    "content": [{"type": "text", "text": "private-result"}],
+                    "structured_content": {
+                        "query_stats": {
+                            "duration_ms": 12.25,
+                            "returned_bytes": 400,
+                            "source_bytes": 1200,
+                            "cache_hit": True,
+                        }
+                    },
+                    "isError": False,
+                },
+                "status": "completed",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "mcp_tool_call",
+                "server": "codexteam-context",
+                "tool": "search_repository",
+                "arguments": {"query": "private-query"},
+                "result": {"isError": True},
+                "error": "query failed",
+                "status": "failed",
+            },
+        },
+        command("rg fallback", "fallback output"),
+        {
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 250,
+                "cached_input_tokens": 200,
+                "output_tokens": 20,
+            },
+        },
+    )
+
+    summary = summarize(text)
+    activity = summary["activity"]
+    mcp = activity["mcp"]
+
+    assert activity["tool_calls"] == 3
+    assert activity["failed_tool_calls"] == 1
+    assert mcp == {
+        "calls": 2,
+        "failed_calls": 1,
+        "server_duration_ms": 12.25,
+        "client_duration_ms": 0.0,
+        "returned_bytes": 400,
+        "source_bytes": 1200,
+        "cache_hits": 1,
+        "max_returned_bytes": 400,
+        "command_calls_after_failure": 1,
+        "by_tool": [
+            {
+                "server": "codexteam-context",
+                "tool": "get_project_overview",
+                "calls": 1,
+                "failed_calls": 0,
+                "server_duration_ms": 12.25,
+                "client_duration_ms": 0.0,
+                "returned_bytes": 400,
+                "source_bytes": 1200,
+                "cache_hits": 1,
+            },
+            {
+                "server": "codexteam-context",
+                "tool": "search_repository",
+                "calls": 1,
+                "failed_calls": 1,
+                "server_duration_ms": 0.0,
+                "client_duration_ms": 0.0,
+                "returned_bytes": 0,
+                "source_bytes": 0,
+                "cache_hits": 0,
+            },
+        ],
+    }
+    serialized = json.dumps(summary)
+    assert "private-project" not in serialized
+    assert "private-result" not in serialized
+    assert "private-query" not in serialized
+
+
+def test_summary_reads_internal_rollout_mcp_and_usage_events():
+    text = jsonl(
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 55248,
+                        "cached_input_tokens": 34944,
+                        "output_tokens": 1611,
+                        "reasoning_output_tokens": 973,
+                    }
+                },
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {"type": "tool_search_call", "status": "completed"},
+        },
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "mcp_tool_call_end",
+                "invocation": {
+                    "server": "codexteam-context",
+                    "tool": "get_task_context",
+                    "arguments": {"task_id": "T142"},
+                },
+                "duration": {"secs": 0, "nanos": 151892000},
+                "result": {
+                    "Ok": {
+                        "structuredContent": {
+                            "query_stats": {
+                                "duration_ms": 24.44,
+                                "returned_bytes": 4551,
+                                "source_bytes": 78051,
+                                "cache_hit": False,
+                            }
+                        },
+                        "isError": False,
+                    }
+                },
+            },
+        },
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "mcp_tool_call_end",
+                "invocation": {
+                    "server": "other-server",
+                    "tool": "unavailable",
+                    "arguments": {},
+                },
+                "duration": {"secs": 1, "nanos": 500000},
+                "result": {"Err": "not available"},
+            },
+        },
+        {
+            "type": "event_msg",
+            "payload": {"type": "agent_message", "message": "done"},
+        },
+        {
+            "type": "event_msg",
+            "payload": {"type": "task_complete", "duration_ms": 29511},
+        },
+    )
+
+    summary = summarize(text)
+    activity = summary["activity"]
+    mcp = activity["mcp"]
+
+    assert summary["turn"]["completed"] is True
+    assert summary["usage"]["cumulative"]["uncached_input_tokens"] == 20304
+    assert activity["tool_calls"] == 3
+    assert activity["failed_tool_calls"] == 1
+    assert activity["agent_messages"] == 1
+    assert mcp["calls"] == 2
+    assert mcp["failed_calls"] == 1
+    assert mcp["server_duration_ms"] == 24.44
+    assert mcp["client_duration_ms"] == 1152.392
+    assert mcp["returned_bytes"] == 4551
+    assert mcp["source_bytes"] == 78051
+    assert mcp["by_tool"][0]["tool"] == "get_task_context"
+    assert mcp["by_tool"][1]["failed_calls"] == 1
+
+
 def test_summary_write_is_private_validated_and_not_silently_overwritten(tmp_path: Path):
     path = tmp_path / "001-draft.metrics.json"
     summary = summarize(jsonl({"type": "turn.completed", "usage": {}}))

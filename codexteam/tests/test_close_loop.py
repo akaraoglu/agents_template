@@ -128,8 +128,15 @@ def test_close_loop_can_select_explicit_result_among_multiple_attempts(tmp_path:
     assert result["status"] == "completed"
 
 
-def test_last_task_generates_delivery(tmp_path: Path, result_factory):
+def test_last_task_generates_delivery(tmp_path: Path, result_factory, monkeypatch):
     project = project_with_result(tmp_path, result_factory, task_id="T004")
+    transitions = []
+    monkeypatch.setattr(
+        "codexteam_tools.close_loop.set_pending_transition",
+        lambda bound_project, task, next_task: transitions.append(
+            (bound_project, task, next_task)
+        ),
+    )
     tasks = (project / "TASKS.md").read_text()
     for task_id in ("T001", "T002", "T003"):
         tasks = update_task_document(
@@ -155,6 +162,7 @@ def test_last_task_generates_delivery(tmp_path: Path, result_factory):
         "- Next handoff: None; review `DONE_REPORT.md`, `RESULT.md`, and "
         "`results/T004-verification.txt` for delivery evidence."
     ) in brief
+    assert transitions == [(project, "T004", None)]
 
 
 def test_default_t005_reviewer_is_activated_instead_of_delivering_after_t004(
@@ -191,3 +199,22 @@ def test_default_t005_reviewer_is_activated_instead_of_delivering_after_t004(
     assert "Task ID: T005" in current_task
     assert "Status: In Progress" in current_task
     assert not (project / "DELIVERY.md").exists()
+
+
+def test_close_loop_records_pending_metrics_and_activates_next_task(
+    tmp_path: Path, result_factory, monkeypatch
+):
+    project = project_with_result(tmp_path, result_factory, tasks=("T001", "T002"))
+    transitions = []
+    monkeypatch.setattr(
+        "codexteam_tools.close_loop.set_pending_transition",
+        lambda bound_project, task, next_task: transitions.append(
+            (bound_project, task, next_task)
+        ),
+    )
+    plan, result, tasks_text = prepare_close_loop(
+        project, "T001", [sys.executable, "-c", "print('verified')"]
+    )
+    assert execute_close_loop(plan, result, tasks_text, timeout_seconds=10)
+    assert parse_task_document((project / "TASKS.md").read_text()).row("T002").status == "In Progress"
+    assert transitions == [(project, "T001", "T002")]

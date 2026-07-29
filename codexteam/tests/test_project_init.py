@@ -62,6 +62,9 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
     assert "Project `AGENTS.md` contains common project rules" in (
         plan.project_dir / ".codexteam" / "README.md"
     ).read_text()
+    assert "Do not repeat the same command or failure path" in (
+        plan.project_dir / "AGENTS.md"
+    ).read_text()
     tasks = parse_task_document((plan.project_dir / "TASKS.md").read_text())
     assert tasks.row("T001").status == "In Progress"
     assert tasks.row("T002").owner == "architect-01"

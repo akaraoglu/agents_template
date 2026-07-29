@@ -54,11 +54,14 @@ def summarize_turn(
 ) -> dict[str, Any]:
     item_counts: Counter[str] = Counter()
     commands: list[dict[str, Any]] = []
+    mcp_observations: list[dict[str, Any]] = []
     usage: dict[str, Any] | None = None
     completed = False
     last_error: str | None = None
     parse_error_count = 0
     failed_tool_calls = 0
+    mcp_failure_seen = False
+    command_calls_after_mcp_failure = 0
 
     for raw_line in event_text.splitlines():
         line = raw_line.strip()
@@ -73,7 +76,37 @@ def summarize_turn(
             parse_error_count += 1
             continue
         event_type = event.get("type")
-        if event_type == "turn.completed":
+        if event_type == "event_msg":
+            payload = event.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            payload_type = payload.get("type")
+            if payload_type == "token_count":
+                info = payload.get("info")
+                total = info.get("total_token_usage") if isinstance(info, dict) else None
+                if isinstance(total, dict):
+                    usage = total
+            elif payload_type == "task_complete":
+                completed = True
+            elif payload_type == "mcp_tool_call_end":
+                observation = _mcp_observation_from_event(payload)
+                if observation is None:
+                    continue
+                item_counts["mcp_tool_call"] += 1
+                mcp_observations.append(observation)
+                failed_tool_calls += int(observation["failed"])
+                mcp_failure_seen = mcp_failure_seen or observation["failed"]
+            elif payload_type == "agent_message":
+                item_counts["agent_message"] += 1
+            elif payload_type in {"error", "turn_aborted"}:
+                last_error = _event_error(payload)
+        elif event_type == "response_item":
+            payload = event.get("payload")
+            if isinstance(payload, dict) and payload.get("type") == "tool_search_call":
+                item_counts["tool_search_call"] += 1
+                if payload.get("status") == "failed":
+                    failed_tool_calls += 1
+        elif event_type == "turn.completed":
             completed = True
             if isinstance(event.get("usage"), dict):
                 usage = event["usage"]
@@ -86,9 +119,16 @@ def summarize_turn(
             item_type = str(item.get("type") or "unknown")
             item_counts[item_type] += 1
             if item_type == "command_execution":
-                observation = _command_observation(item)
+                observation = command_observation(item)
                 commands.append(observation)
                 failed_tool_calls += observation["failed"]
+                if mcp_failure_seen:
+                    command_calls_after_mcp_failure += 1
+            elif item_type == "mcp_tool_call":
+                observation = _mcp_observation_from_item(item)
+                mcp_observations.append(observation)
+                failed_tool_calls += int(observation["failed"])
+                mcp_failure_seen = mcp_failure_seen or observation["failed"]
             elif item_type not in NON_TOOL_ITEM_TYPES and item.get("status") == "failed":
                 failed_tool_calls += 1
 
@@ -137,6 +177,10 @@ def summarize_turn(
             ),
             "item_type_counts": dict(sorted(item_counts.items())),
             "repeated_commands": repeated,
+            "mcp": _mcp_summary(
+                mcp_observations,
+                command_calls_after_mcp_failure=command_calls_after_mcp_failure,
+            ),
             "largest_commands": [
                 {
                     "fingerprint": item["fingerprint"],
@@ -363,7 +407,7 @@ def _usage_delta(
     return delta, "reset_or_non_monotonic" if non_monotonic else "cumulative"
 
 
-def _command_observation(item: dict[str, Any]) -> dict[str, Any]:
+def command_observation(item: dict[str, Any]) -> dict[str, Any]:
     command = str(item.get("command") or "")
     normalized = " ".join(command.split())
     sanitized = _redact_command(normalized)
@@ -380,6 +424,145 @@ def _command_observation(item: dict[str, Any]) -> dict[str, Any]:
         "exit_code": exit_code,
         "failed": failed,
     }
+
+
+def _mcp_observation_from_item(item: dict[str, Any]) -> dict[str, Any]:
+    result = item.get("result")
+    error = item.get("error")
+    failed = bool(
+        item.get("status") == "failed"
+        or error
+        or (isinstance(result, dict) and result.get("isError") is True)
+    )
+    return _mcp_observation(
+        server=item.get("server"),
+        tool=item.get("tool"),
+        result=result,
+        failed=failed,
+        client_duration_ms=None,
+    )
+
+
+def _mcp_observation_from_event(payload: dict[str, Any]) -> dict[str, Any] | None:
+    invocation = payload.get("invocation")
+    if not isinstance(invocation, dict):
+        return None
+    result_wrapper = payload.get("result")
+    result: Any = None
+    failed = False
+    if isinstance(result_wrapper, dict):
+        if "Err" in result_wrapper:
+            failed = True
+        elif "Ok" in result_wrapper:
+            result = result_wrapper["Ok"]
+            failed = bool(isinstance(result, dict) and result.get("isError") is True)
+        else:
+            result = result_wrapper
+            failed = bool(result_wrapper.get("isError") is True)
+    elif result_wrapper is not None:
+        failed = True
+    return _mcp_observation(
+        server=invocation.get("server"),
+        tool=invocation.get("tool"),
+        result=result,
+        failed=failed,
+        client_duration_ms=_event_duration_ms(payload.get("duration")),
+    )
+
+
+def _mcp_observation(
+    *,
+    server: Any,
+    tool: Any,
+    result: Any,
+    failed: bool,
+    client_duration_ms: float | None,
+) -> dict[str, Any]:
+    structured: Any = None
+    if isinstance(result, dict):
+        structured = result.get("structured_content")
+        if not isinstance(structured, dict):
+            structured = result.get("structuredContent")
+    stats = structured.get("query_stats") if isinstance(structured, dict) else None
+    if not isinstance(stats, dict):
+        stats = {}
+    return {
+        "server": str(server or "unknown"),
+        "tool": str(tool or "unknown"),
+        "failed": bool(failed),
+        "server_duration_ms": _nonnegative_number(stats.get("duration_ms")),
+        "client_duration_ms": client_duration_ms,
+        "returned_bytes": _nonnegative_int(stats.get("returned_bytes")),
+        "source_bytes": _nonnegative_int(stats.get("source_bytes")),
+        "cache_hit": stats.get("cache_hit") is True,
+    }
+
+
+def _mcp_summary(
+    observations: list[dict[str, Any]],
+    *,
+    command_calls_after_mcp_failure: int,
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in observations:
+        key = (item["server"], item["tool"])
+        aggregate = grouped.setdefault(
+            key,
+            {
+                "server": item["server"],
+                "tool": item["tool"],
+                "calls": 0,
+                "failed_calls": 0,
+                "server_duration_ms": 0.0,
+                "client_duration_ms": 0.0,
+                "returned_bytes": 0,
+                "source_bytes": 0,
+                "cache_hits": 0,
+            },
+        )
+        aggregate["calls"] += 1
+        aggregate["failed_calls"] += int(item["failed"])
+        aggregate["server_duration_ms"] += item["server_duration_ms"] or 0
+        aggregate["client_duration_ms"] += item["client_duration_ms"] or 0
+        aggregate["returned_bytes"] += item["returned_bytes"] or 0
+        aggregate["source_bytes"] += item["source_bytes"] or 0
+        aggregate["cache_hits"] += int(item["cache_hit"])
+
+    by_tool = sorted(grouped.values(), key=lambda item: (item["server"], item["tool"]))
+    for item in by_tool:
+        item["server_duration_ms"] = round(item["server_duration_ms"], 3)
+        item["client_duration_ms"] = round(item["client_duration_ms"], 3)
+    return {
+        "calls": len(observations),
+        "failed_calls": sum(int(item["failed"]) for item in observations),
+        "server_duration_ms": round(
+            sum(item["server_duration_ms"] or 0 for item in observations),
+            3,
+        ),
+        "client_duration_ms": round(
+            sum(item["client_duration_ms"] or 0 for item in observations),
+            3,
+        ),
+        "returned_bytes": sum(item["returned_bytes"] or 0 for item in observations),
+        "source_bytes": sum(item["source_bytes"] or 0 for item in observations),
+        "cache_hits": sum(int(item["cache_hit"]) for item in observations),
+        "max_returned_bytes": max(
+            (item["returned_bytes"] or 0 for item in observations),
+            default=0,
+        ),
+        "command_calls_after_failure": command_calls_after_mcp_failure,
+        "by_tool": by_tool,
+    }
+
+
+def _event_duration_ms(value: Any) -> float | None:
+    if not isinstance(value, dict):
+        return None
+    seconds = _nonnegative_number(value.get("secs"))
+    nanos = _nonnegative_number(value.get("nanos"))
+    if seconds is None or nanos is None:
+        return None
+    return round(seconds * 1000 + nanos / 1_000_000, 3)
 
 
 def _repeated_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -421,6 +604,12 @@ def _nonnegative_int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
         return None
     return int(value)
+
+
+def _nonnegative_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return None
+    return float(value)
 
 
 def _duration(value: Any) -> int | float | None:

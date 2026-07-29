@@ -13,6 +13,7 @@ from .files import atomic_write_text
 from .paths import contained_path, ensure_existing_workspace, normalize_task_id, safe_relative_path
 from .spawn import ProcessResult, run_process
 from .tasks import TaskDocumentError, parse_task_document, update_task_document
+from .lead_tracking import set_pending_transition
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,8 @@ def execute_close_loop(
     )
     updated_document = parse_task_document(updated_tasks)
     remaining = [row for row in updated_document.rows if row.status != "Completed"]
+    next_task = remaining[0].task_id if remaining else None
+    set_pending_transition(plan.project, plan.task_id, next_task)
     if remaining and remaining[0].status != "In Progress":
         updated_tasks = update_task_document(
             updated_tasks,
@@ -193,9 +196,7 @@ def execute_close_loop(
                 f"`{plan.task_id}` independently verified with `{result_reference}` and "
                 f"`{verification_relative}`"
             ),
-            "Next handoff": (
-                f"execute `management/tasks/{next_row.task_id}.md` as `{next_row.owner}`."
-            ),
+            "Next handoff": f"execute `management/tasks/{next_row.task_id}.md` as `{next_row.owner}`.",
         }
 
     updated_state = update_bullets(project_state, state_values)

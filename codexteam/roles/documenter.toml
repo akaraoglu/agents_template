@@ -17,7 +17,6 @@ denied_change_patterns = [
   "PROJECT_STATE.md",
   "CURRENT_TASK.md",
   "RESULT.md",
-  "DONE_REPORT.md",
   "BLOCKED_REPORT.md",
   "DELIVERY.md",
   "management/**",

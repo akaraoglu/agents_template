@@ -21,6 +21,12 @@ For a cold start in `/home/alik/workspace/agent_template/codexteam`, the root Co
 
 Do not make every role rediscover the repository. For an active assignment, start with the brief, the handoff, and the files or artifacts that the handoff names. Expand context only when an observable gap requires it.
 
+For existing project, task, attempt, gate, change, repository-search, memory, or
+cost state, load `.agents/skills/team-context-mcp.md` and begin with the smallest
+relevant read-only MCP query. Do not duplicate a sufficient MCP result with a
+broad shell scan. MCP context does not replace canonical mutation commands,
+artifact inspection needed for acceptance, or independent verification.
+
 ## Proportional Role Flow
 
 For a small project or one approved thin slice, keep all responsibilities bounded without turning them into full-project investigations:
@@ -47,12 +53,13 @@ canonical task IDs and handoffs.
 
 ## Workflow
 
-1. On cold start, route the request through `AGENTS.md` and `.agents/LEAD_BOOT.md`. For an existing project, inspect the brief, active handoff, and its named files or evidence. Do not begin with repo-wide rediscovery.
+1. On cold start, route the request through `AGENTS.md` and `.agents/LEAD_BOOT.md`. For an existing project, use the routed context MCP skill to identify the active state, then inspect only the brief, handoff, and named files or evidence needed for the decision. Do not begin with repo-wide rediscovery.
 2. Resolve missing requirements internally when the approved specification provides enough evidence; ask the operator only when a material choice or showstopper truly requires them.
 3. Decide whether accepted design needs Feature Planner decomposition. If so, accept or revise its `results/` artifact before creating implementation tasks; never let the planner implement, activate tasks, spawn workers, or approve its own proposal.
 4. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff.
 5. Review the worker's draft and changed files independently before accepting it.
 6. Return one consolidated feedback message only for an observable defect: a failed criterion, contradictory file or command output, missing required artifact, invalid result field, or unsupported completion claim. State what is accepted, what must change, why, and what must remain unchanged. Do not block acceptance for preference-only rewrites or speculative improvements. Store the prompt at one stable project-runtime path and pass that exact path to the launcher.
+   When a worker reports repeated unchanged evidence, keep the same task, attempt, profile, and thread. Treat the checkpoint as diagnostic evidence, then provide one materially different diagnostic or the missing dependency. Repetition is justified only after relevant state changed, for an explicit determinism check, for a known bounded transient, or with an approved changed setup.
 7. Resume the same responsible AI for ordinary corrections. Reassign only for irrecoverable session loss, material scope change, or intentional capability transfer.
 8. Authorize finalization only after the draft is acceptable.
 9. Validate the final result and run the appropriate independent gate before advancing canonical task state.
@@ -62,6 +69,10 @@ canonical task IDs and handoffs.
 13. Before delivery, run an acceptance-level product check and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
 14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
 15. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
+
+After activating or resuming a project task, bind the top-level Lead session once with
+`./scripts/track-lead-task.py bind --project ./projects/<project-id> --task <task-id>`. Never run
+this bind command from a spawned worker or nested Codex process.
 
 ## Self-Improvement Boundary
 
@@ -123,6 +134,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 ## Related Files
 
 - `.agents/skills/subagent-orchestration.md`
+- `.agents/skills/team-context-mcp.md`
 - `.agents/skills/task-breakdown.md`
 - `.agents/skills/feature-planning.md`
 - `.agents/skills/codexteam-self-improvement.md`

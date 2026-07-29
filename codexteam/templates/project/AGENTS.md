@@ -31,3 +31,4 @@ proportional to the requested outcome and relevant regressions.
 - Workers report routine uncertainty to the Project Lead; only a genuine showstopper reaches the operator.
 - Preserve unrelated files and document content.
 - Stop when a task handoff's stop condition is reached.
+- Do not repeat the same command or failure path when no relevant state changed and no new evidence was produced. Choose a materially different diagnostic or return the unresolved evidence to the Project Lead.

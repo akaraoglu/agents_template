@@ -11,6 +11,7 @@ This file is sufficient for the first new-project proposal. Before initializatio
 | Propose a new project from a short request | None; `.agents/LEAD_BOOT.md` is sufficient |
 | Initialize an approved project specification | `.agents/skills/project-init.md`, `.agents/skills/sdd-workflow.md` |
 | Plan milestones, architecture, implementation, or tasks | `.agents/skills/task-breakdown.md`, `.agents/skills/architecture-design.md`; add `.agents/skills/feature-planning.md` only after accepted architecture when implementation needs multiple bounded tasks |
+| Inspect existing project, task, attempt, change, or cost state | `.agents/skills/team-context-mcp.md` |
 | Execute an approved project or delegate work | `.agents/skills/project-lead.md`, `.agents/skills/subagent-orchestration.md` |
 | Review or verify worker output | `.agents/skills/project-lead.md`, `.agents/skills/verification.md` |
 | Recover a failed or incomplete worker turn | `.agents/skills/subagent-orchestration.md`, `.agents/skills/debugging.md` |
@@ -57,6 +58,9 @@ changes:
   regressions without creating a new validation framework.
 - Before completion, remove redundant behavior and confirm that a senior
   engineer would not reasonably call the result overbuilt.
+- Do not repeat the same command or failure path when no relevant state changed
+  and no new evidence was produced. Choose a materially different diagnostic or
+  return the unresolved evidence to the Project Lead.
 
 The default decision is no new mechanism when the existing system can satisfy
 the requirement safely and clearly.

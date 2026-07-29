@@ -40,6 +40,7 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
         "skill_file": [],
         "add_dir": [],
         "trust_parent_sandbox": False,
+        "run_guard": False,
         "timeout": 10,
         "result_dir": "results",
         "dry_run": False,
@@ -715,6 +716,116 @@ def test_fake_cli_runs_draft_feedback_final_in_one_persistent_session(
     assert len(list((final.session_dir / "turns").glob("*.jsonl"))) == 3
     assert list(final.result_dir.glob("T002-*.json")) == [final.result_path]
     validate_result(json.loads(final.result_path.read_text()), expected_attempt="att-001")
+
+
+def test_run_guard_streams_and_interrupts_identical_failed_commands(tmp_path: Path):
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys, time\n"
+        f"thread = {THREAD_ID!r}\n"
+        "def emit(event):\n"
+        "    print(json.dumps(event), flush=True)\n"
+        "emit({'type': 'thread.started', 'thread_id': thread})\n"
+        "print('diagnostic', file=sys.stderr, flush=True)\n"
+        "for _ in range(3):\n"
+        "    emit({'type': 'item.completed', 'item': {\n"
+        "        'type': 'command_execution',\n"
+        "        'command': 'API_KEY=secret pytest -q',\n"
+        "        'aggregated_output': 'same failure',\n"
+        "        'exit_code': 1,\n"
+        "        'status': 'failed',\n"
+        "    }})\n"
+        "time.sleep(10)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    events_path = tmp_path / "turn.jsonl"
+    stderr_path = tmp_path / "turn.stderr.txt"
+
+    result = spawn.run_process(
+        [str(fake)],
+        prompt="run",
+        timeout_seconds=5,
+        env=spawn.os.environ.copy(),
+        events_path=events_path,
+        stderr_path=stderr_path,
+        run_guard=True,
+    )
+
+    assert result.guard_triggered is True
+    assert result.timed_out is False
+    assert result.duration_seconds < 5
+    assert "3 consecutive identical failed commands" in (result.guard_reason or "")
+    assert "API_KEY=<redacted>" in (result.guard_reason or "")
+    assert "secret" not in (result.guard_reason or "")
+    assert events_path.read_text() == result.stdout
+    assert stderr_path.read_text() == result.stderr
+    assert "diagnostic" in result.stderr
+
+
+def test_run_guard_interruption_preserves_exact_thread_for_feedback(
+    tmp_path: Path, monkeypatch
+):
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys, time\n"
+        "from pathlib import Path\n"
+        f"thread = {THREAD_ID!r}\n"
+        "args = sys.argv[1:]\n"
+        "def emit(event):\n"
+        "    print(json.dumps(event), flush=True)\n"
+        "emit({'type': 'thread.started', 'thread_id': thread})\n"
+        "if 'resume' in args:\n"
+        "    output = Path(args[args.index('-o') + 1])\n"
+        "    message = 'DRAFT T002/att-001\\n\\nOutcome: changed diagnostic'\n"
+        "    output.write_text(message + '\\n')\n"
+        "    emit({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': message}})\n"
+        "    emit({'type': 'turn.completed', 'usage': {}})\n"
+        "else:\n"
+        "    for _ in range(3):\n"
+        "        emit({'type': 'item.completed', 'item': {\n"
+        "            'type': 'command_execution',\n"
+        "            'command': 'pytest -q tests/test_feature.py',\n"
+        "            'aggregated_output': 'same failure',\n"
+        "            'exit_code': 1,\n"
+        "            'status': 'failed',\n"
+        "        }})\n"
+        "    time.sleep(10)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    draft = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, run_guard=True, timeout=5)
+    )
+    draft_outcome, draft_code = spawn.run_spawn(draft, executable=str(fake))
+    session = json.loads(draft.session_path.read_text())
+    turn_state = json.loads((draft.session_dir / "turn-state.json").read_text())
+
+    assert draft_code == 3
+    assert draft_outcome["status"] == "interrupted"
+    assert draft_outcome["thread_id"] == THREAD_ID
+    assert session["thread_id"] == THREAD_ID
+    assert session["last_status"] == "interrupted"
+    assert turn_state["run_guard_enabled"] is True
+    assert turn_state["run_guard_triggered"] is True
+    assert "3 consecutive identical failed commands" in turn_state["run_guard_reason"]
+
+    feedback = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            phase="feedback",
+            prompt="Use a materially different diagnostic.",
+        )
+    )
+    feedback_outcome, feedback_code = spawn.run_spawn(feedback, executable=str(fake))
+
+    assert feedback_code == 0
+    assert feedback_outcome["status"] == "draft_ready"
+    assert feedback_outcome["thread_id"] == THREAD_ID
 
 
 def test_prepare_request_rejects_result_escape(tmp_path: Path, monkeypatch):

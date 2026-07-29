@@ -48,7 +48,7 @@ The Python validator performs additional semantic checks for canonical IDs, UTC 
 - `sync-project-guidance.py`: `0` current/preview/applied; `1` stale with `--check`; `2` invalid project or unsafe collision.
 - `run-test-gate.py`: `0` passed/current or valid dry run; `1` configured command failed; `2` invalid configuration, stale record, or unsafe path.
 - `git-steward.py`: `0` valid inspection/preview/applied boundary; `2` invalid plan, stale evidence, repository mismatch, unsafe Git state, or failed commit verification.
-- `spawn-subagent.sh`: `0` draft ready or valid final result; `1` failed/correction needed; `2` invalid invocation or session scope; `3` interrupted by timeout with session retained when possible.
+- `spawn-subagent.sh`: `0` draft ready or valid final result; `1` failed/correction needed; `2` invalid invocation or session scope; `3` interrupted by timeout or opt-in Run Guard with session retained when possible.
 - `close-loop.sh`: `0` closed/already closed; `1` invalid result/artifact/state; `2` independent verification failure.
 
 ## Mutation Rule

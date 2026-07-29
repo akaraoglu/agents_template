@@ -33,3 +33,13 @@
   canonical task creation, worker spawning, and lifecycle authority. Small
   explicit slices still go directly to one Developer, unresolved structure
   returns to the Architect, and all existing timeout policy remains unchanged.
+- 2026-07-29: Added an opt-in Run Guard feasibility pilot. Guarded turns stream
+  private JSONL and stderr, interrupt only after three consecutive identical
+  failed command results, redact the diagnostic preview, and preserve a captured
+  thread for ordinary same-attempt feedback. Normal turns keep the existing
+  buffered path, and no result or lifecycle state was added.
+- 2026-07-29: Routed existing-project inspection through the registered
+  `codexteam-context` read-only MCP tools. Project Lead guidance now selects the
+  smallest relevant structured query, avoids duplicate broad shell scans,
+  preserves canonical mutation and verification commands, and uses one narrow
+  fallback when MCP context is unavailable or insufficient.

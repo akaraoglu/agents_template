@@ -1,0 +1,16 @@
+{
+  "description": "CodexTeam Lead metrics capture.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/alik/workspace/agent_template/env-python/bin/python /home/alik/workspace/agent_template/codexteam/scripts/track-lead-task.py stop",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

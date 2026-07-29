@@ -40,6 +40,8 @@ After that approval, “handle it yourself” or “end to end” means the Proj
 
 Use `--dry-run` to inspect the exact command, profile, guidance, session path, and final result path without starting Codex. The draft is conversational output and does not create a result.
 
+Use the opt-in `--run-guard` only for turns where an unchanged command-failure loop is a material risk. It streams the private JSONL and stderr files, interrupts after three consecutive identical failed command results, and preserves a captured thread for normal same-attempt feedback. A different command, a file-change event, or a passing command resets the streak. The guard is not a token, time, or general retry limit.
+
 The role manifest selects the default profile and guidance bundle when `--profile` and `--skill-file` are omitted. Lead overrides are explicit. Draft snapshots the policy and skill contents; policy and instruction-bundle digests are embedded in the handoff, session, turn state, and final launcher outcome. Continuations reject a changed pinned file.
 
 T002 uses `--role architect` to produce `ARCHITECTURE.md` and material ADRs without implementation or self-approval. After Project Lead acceptance, T003 uses `--role developer`; the Developer owns algorithm/unit tests, smoke tests, and the Development Gate. After its draft passes, T004 starts an independent Test Engineer with `--role tester`; that protocol name is retained for result compatibility. The Test Engineer may change only handoff-scoped integration/regression tests and controlled expectations, never production source or Developer-owned tests. Return classified product defects to the same Developer session before finalization, then resume the Test Engineer and rerun affected checks plus Integration Gate against the final revision. T005 uses `--role reviewer` for acceptance and architecture conformance.
@@ -61,7 +63,7 @@ The Project Lead inspects the draft and sends one consolidated decision. Use `--
 
 Ordinary corrections do not create new attempts. Start a new attempt only after irrecoverable session loss, intentional reassignment, material scope change, or explicit abandonment.
 
-If a turn fails or returns no final message, inspect the printed diagnostics path and the adjacent JSONL file. Resume the same attempt when its exact thread ID was captured. If repeated focused feedback demonstrates a real capability mismatch, record an intentional owner/profile transfer and continue in a new attempt; the abandoned attempt must remain result-free unless the Project Lead deliberately finalizes it as terminal.
+If a turn fails, is interrupted by timeout or Run Guard, or returns no final message, inspect the printed diagnostics path and the adjacent JSONL file. Resume the same attempt when its exact thread ID was captured. If repeated focused feedback demonstrates a real capability mismatch, record an intentional owner/profile transfer and continue in a new attempt; the abandoned attempt must remain result-free unless the Project Lead deliberately finalizes it as terminal.
 
 Inspect all project-local attempts without searching global Codex history:
 
