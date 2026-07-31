@@ -43,3 +43,52 @@
   smallest relevant structured query, avoids duplicate broad shell scans,
   preserves canonical mutation and verification commands, and uses one narrow
   fallback when MCP context is unavailable or insufficient.
+- 2026-07-29: Added backward-compatible role MCP allowlists and per-process
+  enforcement, plus MCP response-volume and repeated-tool telemetry. Registered
+  Playwright MCP 0.0.78 as a disabled-by-default, six-tool Test Engineer
+  inspection pilot and moved its artifacts to `/tmp`; a real Git GUI canary
+  completed in two calls and 15.9 seconds. Registered GitHub MCP Server v1.7.0
+  by verified image digest with server-enforced read-only mode and an eight-tool
+  host allowlist, but kept it unavailable to roles because the local GitHub
+  credential is invalid.
+- 2026-07-30: Enabled the authenticated, server-enforced `github-readonly` MCP
+  server for new Leader attempts only. Other roles retain their narrow MCP
+  boundaries, and remote reads do not replace local workspace or gate evidence.
+- 2026-07-30: Required new Lead-created task handoffs to include a concise
+  human-facing Type, Summary, and Outcome. The WebUI renders these fields
+  explicitly while preserving legacy What/Goal, Objective, and ledger fallbacks
+  for older tasks.
+- 2026-07-30: Added a local, offline documentation MCP with exactly three
+  read-only tools for source discovery, bounded search, and locator reads.
+  A separate preview-first indexer deterministically indexes explicit local
+  text roots and installed Python-package docstrings into a read-only SQLite
+  FTS database. Architect and Developer roles may use it for narrow reference
+  lookup; all writes, index refreshes, and verification remain deterministic
+  commands outside MCP.
+- 2026-07-30: A two-task matched A/B pilot showed that guided `local-docs`
+  retrieval reduced tool calls from six to two, latency from 71.1 to 37.1
+  seconds, input from 177,975 to 97,276 tokens, and output from 3,817 to 1,453
+  tokens while preserving correct Flask and pytest answers. An unguided turn
+  ignored the registered MCP, and a guessed source ID caused retries. Server,
+  Architect, and Developer guidance now requires one focused search, no guessed
+  source IDs, a first limit of at most five, and source discovery only when an
+  exact filter is necessary.
+- 2026-07-30: A two-task read-only Git GUI replay tested 2–4 KB digest-bound
+  task capsules without a new MCP. Capsules reduced tool calls from 18 to 13,
+  input from 726,423 to 332,124 tokens, uncached input from 123,799 to 83,292,
+  and command output from 351 KB to 108 KB while retaining dependency and test
+  completeness; latency improved only 6%. Added an opt-in two-live-task capsule
+  pilot and soft checkpoint. Deferred the source-context MCP because capsule-only
+  discovery already passed the tool-call threshold and no repeated missing
+  source query was proven.
+- 2026-07-30: Prepared the two-live-task capsule continuation without adding a
+  new schema or metrics tool. Capsules use the private
+  `.codexteam/runtime/task-capsules/Txxx.md` path, are SHA-pinned in the
+  canonical handoff, and have a three-call Lead authoring budget. Existing Lead
+  task metrics and Developer turn sidecars provide combined-cost evidence.
+- 2026-07-31: Replaced Stop-only Lead task transitions with immediate,
+  exact-session rollout checkpoints. Chained task closures now receive separate
+  token baselines, cross-task bind preserves the prior task or requires an
+  explicit reset, and delivered-project cleanup removes only exact-project stale
+  bindings. Added a metadata-only closure rule for lifecycle files written after
+  a Local Git Steward milestone commit.

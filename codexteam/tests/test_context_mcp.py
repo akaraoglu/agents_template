@@ -326,6 +326,49 @@ def test_reader_returns_compact_source_backed_context(
     ]
 
 
+def test_reader_and_mcp_accept_no_active_task_sentinel(
+    context_fixture: tuple[Path, Path, Path],
+) -> None:
+    projects, project, memory = context_fixture
+    _write(
+        project / "CURRENT_TASK.md",
+        "# Current Task\n\n- Task ID: nOnE\n- Status: Awaiting Operator Approval\n",
+    )
+    reader = TeamContextReader(projects, team_memory_root=memory)
+
+    active = reader.get_active_task("demo")
+    assert active["current"]["task_id"] == "nOnE"
+    assert active["ledger"] is None
+    assert active["ledger_warning"] is None
+    assert active["attempts"] == []
+    assert [source["path"] for source in active["sources"]] == ["CURRENT_TASK.md"]
+
+    response = ContextMcpServer(reader).handle(
+        _request(
+            1,
+            "tools/call",
+            {"name": "get_active_task", "arguments": {"project": "demo"}},
+        )
+    )
+    assert response["result"]["isError"] is False
+    assert response["result"]["structuredContent"]["current"]["task_id"] == "nOnE"
+    assert response["result"]["structuredContent"]["ledger"] is None
+
+
+def test_reader_rejects_malformed_non_sentinel_active_task(
+    context_fixture: tuple[Path, Path, Path],
+) -> None:
+    projects, project, memory = context_fixture
+    _write(
+        project / "CURRENT_TASK.md",
+        "# Current Task\n\n- Task ID: Not-A-Task\n- Status: In Progress\n",
+    )
+    reader = TeamContextReader(projects, team_memory_root=memory)
+
+    with pytest.raises(ValueError, match="invalid task ID"):
+        reader.get_active_task("demo")
+
+
 def test_requested_row_survives_unrelated_ledger_validation_failure(
     context_fixture: tuple[Path, Path, Path],
 ) -> None:

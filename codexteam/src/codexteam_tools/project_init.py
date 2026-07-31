@@ -47,6 +47,12 @@ DEFAULT_TASKS = ("T001", "T002", "T003", "T004", "T005")
 OPTIONAL_TASK_HANDOFFS = {
     "T006": """# Task T006: Reconcile documentation with verified delivery evidence
 
+## Short Description
+
+- Type: Documentation
+- Summary: Reconcile user-facing and delivery documentation with the accepted implementation and evidence.
+- Outcome: Every documented behavior and verification claim matches verified project truth.
+
 ## Objective
 
 Make project documentation agree with the implementation and independently verified evidence.

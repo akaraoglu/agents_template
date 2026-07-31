@@ -64,6 +64,32 @@ def successful_process(message: str, *, thread_id: str = THREAD_ID) -> spawn.Pro
     return spawn.ProcessResult(0, event_stream(message, thread_id=thread_id), "", 0.2)
 
 
+def configure_mcp_servers(source_home: Path) -> None:
+    (source_home / "config.toml").write_text(
+        """
+[mcp_servers.codexteam-context]
+command = "context-server"
+
+[mcp_servers.github-readonly]
+command = "github-server"
+
+[mcp_servers.playwright]
+command = "playwright-server"
+
+[mcp_servers.local-docs]
+command = "local-docs-server"
+""".lstrip()
+    )
+
+
+def mcp_overrides(command: list[str]) -> set[str]:
+    return {
+        command[index + 1]
+        for index, argument in enumerate(command[:-1])
+        if argument == "-c" and command[index + 1].startswith("mcp_servers.")
+    }
+
+
 def run_draft(tmp_path: Path, monkeypatch) -> tuple[spawn.SpawnRequest, dict]:
     request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
     (request.workspace / "src").mkdir()
@@ -164,6 +190,76 @@ def test_initial_command_persists_json_session_without_ephemeral(tmp_path: Path,
     assert "--ephemeral" not in command
     assert "--last" not in command
     assert 'model_reasoning_effort="medium"' in command
+
+
+def test_role_policy_enforces_mcp_servers_with_per_process_overrides(
+    tmp_path: Path, monkeypatch
+):
+    developer_args = request_args(tmp_path, monkeypatch)
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    configure_mcp_servers(source_home)
+
+    developer = spawn.prepare_request(developer_args)
+    developer_command = spawn.build_command(developer, spawn.prepare_turn(developer))
+    assert developer.effective_mcp_servers == ("local-docs",)
+    assert developer.missing_mcp_servers == ()
+    assert mcp_overrides(developer_command) == {
+        "mcp_servers.codexteam-context.enabled=false",
+        "mcp_servers.github-readonly.enabled=false",
+        "mcp_servers.playwright.enabled=false",
+        "mcp_servers.local-docs.enabled=true",
+    }
+
+    tester = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="tester")
+    )
+    tester_command = spawn.build_command(tester, spawn.prepare_turn(tester))
+    assert tester.effective_mcp_servers == ("playwright",)
+    assert mcp_overrides(tester_command) == {
+        "mcp_servers.codexteam-context.enabled=false",
+        "mcp_servers.github-readonly.enabled=false",
+        "mcp_servers.playwright.enabled=true",
+        "mcp_servers.local-docs.enabled=false",
+    }
+
+    leader = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="leader")
+    )
+    leader_command = spawn.build_command(leader, spawn.prepare_turn(leader))
+    assert leader.effective_mcp_servers == (
+        "codexteam-context",
+        "github-readonly",
+    )
+    assert mcp_overrides(leader_command) == {
+        "mcp_servers.codexteam-context.enabled=true",
+        "mcp_servers.github-readonly.enabled=true",
+        "mcp_servers.playwright.enabled=false",
+        "mcp_servers.local-docs.enabled=false",
+    }
+
+    architect = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="architect")
+    )
+    architect_command = spawn.build_command(architect, spawn.prepare_turn(architect))
+    assert architect.effective_mcp_servers == ("local-docs",)
+    assert mcp_overrides(architect_command) == {
+        "mcp_servers.codexteam-context.enabled=false",
+        "mcp_servers.github-readonly.enabled=false",
+        "mcp_servers.playwright.enabled=false",
+        "mcp_servers.local-docs.enabled=true",
+    }
+
+
+def test_role_mcp_policy_reports_missing_server_without_enabling_it(
+    tmp_path: Path, monkeypatch
+):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="tester")
+    )
+
+    assert request.effective_mcp_servers == ()
+    assert request.missing_mcp_servers == ("playwright",)
+    assert mcp_overrides(spawn.build_command(request, spawn.prepare_turn(request))) == set()
 
 
 def test_worker_environment_disables_project_bytecode_caches(tmp_path: Path, monkeypatch):

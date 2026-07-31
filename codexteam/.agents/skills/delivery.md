@@ -25,6 +25,9 @@ Use when the operator asks for delivery, when all MVP tasks are done, or before 
 5. Update `PROJECT_STATE.md` to final delivered state.
 6. Ensure `BLOCKED_REPORT.md` is empty or accurately explains unresolved blockers.
 7. Summarize delivery contents and how to run or inspect the artifact.
+8. Compare the committed HEAD with the final lifecycle state. If closing the Local Git
+   Steward task changed tracked delivery files after the milestone commit, authorize a
+   metadata-only closure commit that excludes product and unrelated files.
 
 ## Expected Output
 
@@ -37,6 +40,8 @@ Use when the operator asks for delivery, when all MVP tasks are done, or before 
 - The project can be inspected without chat history.
 - Delivery report names changed files and verification.
 - Remaining limitations are explicit.
+- The committed HEAD contains the final delivered lifecycle state, or the remaining
+  metadata-only closure is reported explicitly.
 
 ## Common Mistakes
 

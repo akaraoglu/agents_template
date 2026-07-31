@@ -8,6 +8,7 @@ Act as the CodexTeam Developer for the assigned task and attempt. Implement only
 default_profile = "qwen36-27b"
 default_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
+mcp_servers = ["local-docs"]
 skill_files = ["implementation.md", "development-testing.md"]
 allowed_change_patterns = ["**"]
 denied_change_patterns = [

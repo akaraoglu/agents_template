@@ -27,6 +27,11 @@ relevant read-only MCP query. Do not duplicate a sufficient MCP result with a
 broad shell scan. MCP context does not replace canonical mutation commands,
 artifact inspection needed for acceptance, or independent verification.
 
+Use `github-readonly` only when a decision requires bounded remote repository,
+issue, pull-request, commit, or workflow state. Prefer local files, local Git,
+and `codexteam-context` for workspace truth. Make the smallest remote query that
+answers the decision, and never treat GitHub MCP as mutation authority.
+
 ## Proportional Role Flow
 
 For a small project or one approved thin slice, keep all responsibilities bounded without turning them into full-project investigations:
@@ -72,7 +77,13 @@ canonical task IDs and handoffs.
 
 After activating or resuming a project task, bind the top-level Lead session once with
 `./scripts/track-lead-task.py bind --project ./projects/<project-id> --task <task-id>`. Never run
-this bind command from a spawned worker or nested Codex process.
+this bind command from a spawned worker or nested Codex process. Normal close-loop
+transitions checkpoint the live rollout immediately, so several task closures in one
+Lead turn retain separate baselines. A cross-task bind also checkpoints the existing
+task; use `--reset` only to discard an explicitly diagnosed stale binding. Final
+delivery removes the binding automatically. For a project delivered by an older run,
+`./scripts/track-lead-task.py clear-delivered --project ./projects/<project-id>` removes
+only bindings for that exact project and refuses active project state.
 
 ## Self-Improvement Boundary
 
@@ -111,6 +122,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - No completion claim precedes independent verification.
 - Reviewer claims match the contents of named evidence, not merely artifact existence or another agent's summary.
 - Lead context stays bounded: do not dump output tails, full JSONL, or complete session history after concise validation succeeds.
+- Remote GitHub reads are bounded to a named decision and never replace local workspace or gate evidence.
 
 ## Common Mistakes
 

@@ -37,3 +37,11 @@
 - Local Git Steward runs only at a Project Lead-authorized important-task or milestone boundary. The model is read-only; a deterministic executor validates an exact plan and authorization, re-verifies the candidate tree, stages literal approved paths, and creates one local commit.
 - Local Git Steward has no remote authority. Push, fetch, merge, rebase, tag, release, publication, and remote PR creation remain human actions.
 - Run Guard is opt-in per worker turn and interrupts only three consecutive identical failed command results. It reuses the existing interrupted, exact-thread resume path and is not a token, time, or general retry limit.
+- Lead task metrics checkpoint cumulative rollout counters at each canonical task
+  transition instead of relying only on the final Stop hook. Cross-task binds preserve
+  the previous task when possible, explicit reset is required to discard stale state,
+  and delivered-project cleanup is exact-project and canonical-state gated.
+- A terminal Local Git Steward task may produce tracked lifecycle changes after its
+  milestone commit. Those changes require a separately authorized metadata-only
+  closure commit; the committed HEAD must not be described as fully delivered while
+  its lifecycle files still show the Steward task active.

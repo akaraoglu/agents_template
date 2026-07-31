@@ -70,6 +70,14 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
     assert tasks.row("T002").owner == "architect-01"
     assert tasks.row("T004").owner == "test-engineer-01"
     assert tasks.row("T005").owner == "reviewer-01"
+    for task_id in ("T001", "T002", "T003", "T004", "T005"):
+        handoff = (
+            plan.project_dir / "management" / "tasks" / f"{task_id}.md"
+        ).read_text()
+        assert "## Short Description" in handoff
+        assert "- Type:" in handoff
+        assert "- Summary:" in handoff
+        assert "- Outcome:" in handoff
     gates = (plan.project_dir / "management" / "TEST_GATES.md").read_text()
     assert "Owner: Developer" in gates
     assert "Owner: Test Engineer (`tester` protocol role)" in gates
@@ -116,6 +124,9 @@ def test_t006_is_opt_in_and_has_a_stable_documenter_owner(tmp_path: Path):
     handoff = (plan.project_dir / "management" / "tasks" / "T006.md").read_text()
     assert "`documenter-01`" in handoff
     assert "verified delivery evidence" in handoff
+    assert "- Type: Documentation" in handoff
+    assert "- Summary:" in handoff
+    assert "- Outcome:" in handoff
 
 
 def test_custom_template_t006_handoff_is_not_overwritten(tmp_path: Path):

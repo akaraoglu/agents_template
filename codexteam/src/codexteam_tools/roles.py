@@ -19,7 +19,8 @@ ROLE_POLICY_SCHEMA_VERSION = "1.0"
 REASONING_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 SANDBOX_MODES = {"read-only", "workspace-write"}
 ROLE_NAME_PATTERN = re.compile(r"codexteam_[a-z][a-z0-9_]{1,63}")
-POLICY_FIELDS = {
+MCP_SERVER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+REQUIRED_POLICY_FIELDS = {
     "schema_version",
     "role",
     "name",
@@ -33,6 +34,8 @@ POLICY_FIELDS = {
     "denied_change_patterns",
     "allowed_evidence_types",
 }
+OPTIONAL_POLICY_FIELDS = {"mcp_servers"}
+POLICY_FIELDS = REQUIRED_POLICY_FIELDS | OPTIONAL_POLICY_FIELDS
 
 
 class RolePolicyError(ValueError):
@@ -53,6 +56,8 @@ class RolePolicy:
     allowed_change_patterns: tuple[str, ...]
     denied_change_patterns: tuple[str, ...]
     allowed_evidence_types: tuple[str, ...]
+    mcp_servers: tuple[str, ...]
+    mcp_servers_declared: bool
     digest: str
     source_path: Path
 
@@ -63,7 +68,7 @@ class RolePolicy:
         return any(fnmatchcase(normalized, pattern) for pattern in self.allowed_change_patterns)
 
     def snapshot(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema_version": self.schema_version,
             "role": self.role,
             "name": self.name,
@@ -78,6 +83,9 @@ class RolePolicy:
             "allowed_evidence_types": list(self.allowed_evidence_types),
             "digest": self.digest,
         }
+        if self.mcp_servers_declared:
+            value["mcp_servers"] = list(self.mcp_servers)
+        return value
 
 
 def load_role_policy(
@@ -136,7 +144,7 @@ def role_policy_from_mapping(
     expected_role: str | None = None,
 ) -> RolePolicy:
     unknown = sorted(set(data) - POLICY_FIELDS)
-    missing = sorted(POLICY_FIELDS - set(data))
+    missing = sorted(REQUIRED_POLICY_FIELDS - set(data))
     errors: list[str] = []
     if unknown:
         errors.append("unknown fields: " + ", ".join(unknown))
@@ -202,6 +210,25 @@ def role_policy_from_mapping(
     unsupported_evidence = sorted(set(evidence_types) - EVIDENCE_TYPES)
     if unsupported_evidence:
         errors.append("unsupported evidence types: " + ", ".join(unsupported_evidence))
+    mcp_servers_declared = "mcp_servers" in data
+    mcp_servers = (
+        _string_tuple(
+            data.get("mcp_servers"),
+            "mcp_servers",
+            errors,
+            required=False,
+        )
+        if mcp_servers_declared
+        else ()
+    )
+    invalid_mcp_servers = sorted(
+        server for server in mcp_servers if not MCP_SERVER_PATTERN.fullmatch(server)
+    )
+    if invalid_mcp_servers:
+        errors.append(
+            "mcp_servers must use names containing only letters, digits, hyphens, "
+            "or underscores: " + ", ".join(invalid_mcp_servers)
+        )
 
     if errors:
         raise RolePolicyError(f"invalid role policy {source_path}: " + "; ".join(errors))
@@ -220,6 +247,8 @@ def role_policy_from_mapping(
         "denied_change_patterns": list(denied_patterns),
         "allowed_evidence_types": list(evidence_types),
     }
+    if mcp_servers_declared:
+        canonical["mcp_servers"] = list(mcp_servers)
     digest = hashlib.sha256(
         json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -236,6 +265,8 @@ def role_policy_from_mapping(
         allowed_change_patterns=allowed_patterns,
         denied_change_patterns=denied_patterns,
         allowed_evidence_types=evidence_types,
+        mcp_servers=mcp_servers,
+        mcp_servers_declared=mcp_servers_declared,
         digest=digest,
         source_path=source_path,
     )

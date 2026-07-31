@@ -74,6 +74,9 @@ class SpawnRequest:
     session_path: Path
     codex_home: Path
     source_codex_home: Path
+    configured_mcp_servers: tuple[str, ...]
+    effective_mcp_servers: tuple[str, ...]
+    missing_mcp_servers: tuple[str, ...]
     add_dirs: tuple[Path, ...]
     trust_parent_sandbox: bool
     run_guard: bool
@@ -170,6 +173,13 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     source_codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve(
         strict=False
     )
+    configured_mcp_servers = _configured_mcp_servers(source_codex_home / "config.toml")
+    effective_mcp_servers = tuple(
+        server for server in role_policy.mcp_servers if server in configured_mcp_servers
+    )
+    missing_mcp_servers = tuple(
+        server for server in role_policy.mcp_servers if server not in configured_mcp_servers
+    )
     profile_file = source_codex_home / f"{profile}.config.toml"
     if not profile_file.is_file():
         raise FileNotFoundError(f"Codex profile not found: {profile_file}")
@@ -219,6 +229,9 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         session_path=session_path,
         codex_home=session_dir / "codex-home",
         source_codex_home=source_codex_home,
+        configured_mcp_servers=configured_mcp_servers,
+        effective_mcp_servers=effective_mcp_servers,
+        missing_mcp_servers=missing_mcp_servers,
         add_dirs=add_dirs,
         trust_parent_sandbox=trust_parent_sandbox,
         run_guard=run_guard,
@@ -497,6 +510,7 @@ def build_command(
             "-c",
             "developer_instructions="
             f"{json.dumps(request.role_policy.developer_instructions)}",
+            *_mcp_override_args(request),
             "-C",
             str(request.workspace),
             "--skip-git-repo-check",
@@ -532,6 +546,7 @@ def build_command(
         "-c",
         "developer_instructions="
         f"{json.dumps(request.role_policy.developer_instructions)}",
+        *_mcp_override_args(request),
         *(
             ["-c", f"model_catalog_json={json.dumps(request.model_catalog_json)}"]
             if request.model_catalog_json
@@ -559,6 +574,38 @@ def build_command(
         thread_id,
         "-",
     ]
+
+
+def _configured_mcp_servers(config_path: Path) -> tuple[str, ...]:
+    if not config_path.is_file():
+        return ()
+    try:
+        value = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"invalid Codex base configuration: {config_path}: {exc}") from exc
+    servers = value.get("mcp_servers")
+    if servers is None:
+        return ()
+    if not isinstance(servers, dict) or any(
+        not isinstance(name, str) or not isinstance(config, dict)
+        for name, config in servers.items()
+    ):
+        raise ValueError(f"Codex base mcp_servers must be a table: {config_path}")
+    return tuple(sorted(servers))
+
+
+def _mcp_override_args(request: SpawnRequest) -> list[str]:
+    allowed = set(request.effective_mcp_servers)
+    arguments: list[str] = []
+    for server in request.configured_mcp_servers:
+        enabled = "true" if server in allowed else "false"
+        arguments.extend(
+            (
+                "-c",
+                f"mcp_servers.{server}.enabled={enabled}",
+            )
+        )
+    return arguments
 
 
 def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
@@ -1028,6 +1075,9 @@ def main(argv: list[str] | None = None) -> int:
                         "role_policy_source": str(request.role_policy.source_path),
                         "default_profile": request.role_policy.default_profile,
                         "sandbox_mode": request.role_policy.sandbox_mode,
+                        "mcp_allowed_servers": list(request.role_policy.mcp_servers),
+                        "mcp_effective_servers": list(request.effective_mcp_servers),
+                        "mcp_missing_servers": list(request.missing_mcp_servers),
                         "reasoning_effort": _session_reasoning_effort(request, turn.session),
                         "reasoning_effort_override": request.reasoning_effort_override,
                         "workspace": str(request.workspace),
@@ -1341,6 +1391,9 @@ def _session_record(
         "model_reasoning_effort": reasoning_effort,
         "reasoning_effort_override": reasoning_effort_override,
         "model_verbosity": request.model_verbosity,
+        "mcp_allowed_servers": list(request.role_policy.mcp_servers),
+        "mcp_effective_servers": list(request.effective_mcp_servers),
+        "mcp_missing_servers": list(request.missing_mcp_servers),
         "workspace_root": str(request.workspace),
         "trust_parent_sandbox": request.trust_parent_sandbox,
         "thread_id": thread_id,
@@ -1430,6 +1483,9 @@ def _write_turn_state(
         "updated_at": now,
         "timeout_seconds": request.timeout_seconds,
         "run_guard_enabled": request.run_guard,
+        "mcp_allowed_servers": list(request.role_policy.mcp_servers),
+        "mcp_effective_servers": list(request.effective_mcp_servers),
+        "mcp_missing_servers": list(request.missing_mcp_servers),
         "changed_paths": list(changed_paths),
         "errors": errors or [],
     }

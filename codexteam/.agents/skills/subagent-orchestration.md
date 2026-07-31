@@ -56,11 +56,13 @@ Inject the smallest role-specific guidance bundle that covers the task. Large ge
 
 ## Instruction Layers and Role Policies
 
-Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, and permitted evidence types.
+Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, permitted evidence types, and optional MCP server allowlist.
 
 Precedence is: explicit Project Lead CLI override, pinned role-policy default, then profile configuration for settings not fixed above. `--profile` is optional for a new draft because the role supplies a default. Keep explicit overrides stable across an attempt.
 
-The first draft stores `role-policy.json`, each selected skill, and `guidance-manifest.json` beside the private session. Feedback and final turns load this complete pinned bundle, not newly edited defaults. Policy and guidance digests must agree across handoff, session, turn state, and result processing.
+The first draft stores `role-policy.json`, each selected skill, and `guidance-manifest.json` beside the private session. Feedback and final turns load this complete pinned bundle, not newly edited defaults. Policy and guidance digests must agree across handoff, session, turn state, and result processing. Existing attempts therefore do not acquire a newly allowed MCP server mid-session.
+
+For every worker process, the launcher explicitly disables each configured MCP server that the pinned role policy does not allow. A named but unconfigured server is reported in dry-run, session, and turn state instead of being silently enabled. The current browser pilot exposes only bounded Playwright inspection tools to the Test Engineer. The Leader alone receives the read-only CodexTeam context and authenticated GitHub read-only servers; all other roles keep GitHub disabled.
 
 Role change patterns are a broad mechanical backstop. The handoff's Allowed Paths may be narrower and remains authoritative for assignment review. A post-turn forbidden write leaves the attempt `correction_needed`; it does not silently accept or revert the file.
 

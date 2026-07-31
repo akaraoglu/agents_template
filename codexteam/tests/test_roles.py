@@ -35,6 +35,18 @@ def test_all_canonical_role_policies_are_unique_and_complete():
         for policy in policies
         if policy.role != "feature_planner"
     )
+    assert load_role_policy("leader").mcp_servers == (
+        "codexteam-context",
+        "github-readonly",
+    )
+    assert load_role_policy("tester").mcp_servers == ("playwright",)
+    assert load_role_policy("architect").mcp_servers == ("local-docs",)
+    assert load_role_policy("developer").mcp_servers == ("local-docs",)
+    assert all(
+        not policy.mcp_servers
+        for policy in policies
+        if policy.role not in {"architect", "developer", "leader", "tester"}
+    )
 
 
 def test_role_policy_snapshot_digest_is_stable(tmp_path: Path):
@@ -52,12 +64,40 @@ def test_role_policy_snapshot_digest_is_stable(tmp_path: Path):
         load_role_policy_snapshot(snapshot, expected_role="tester")
 
 
+def test_legacy_role_policy_snapshot_without_mcp_servers_remains_valid(tmp_path: Path):
+    policy = load_role_policy("reviewer")
+    assert policy.mcp_servers == ()
+    assert policy.mcp_servers_declared is False
+    snapshot = tmp_path / "role-policy.json"
+    snapshot.write_text(json.dumps(policy.snapshot()))
+
+    loaded = load_role_policy_snapshot(snapshot, expected_role="reviewer")
+
+    assert loaded.snapshot() == policy.snapshot()
+    assert "mcp_servers" not in loaded.snapshot()
+
+
 def test_unknown_manifest_fields_are_rejected(tmp_path: Path):
     roles = tmp_path / "roles"
     shutil.copytree(DEFAULT_ROLES_ROOT, roles)
     manifest = roles / "developer.toml"
     manifest.write_text(manifest.read_text() + '\nunknown_setting = "no"\n')
     with pytest.raises(RolePolicyError, match="unknown fields"):
+        load_role_policy("developer", roles_root=roles)
+
+
+def test_invalid_mcp_server_name_is_rejected(tmp_path: Path):
+    roles = tmp_path / "roles"
+    shutil.copytree(DEFAULT_ROLES_ROOT, roles)
+    manifest = roles / "developer.toml"
+    manifest.write_text(
+        manifest.read_text().replace(
+            'mcp_servers = ["local-docs"]',
+            'mcp_servers = ["unsafe.server"]',
+        )
+    )
+
+    with pytest.raises(RolePolicyError, match="mcp_servers must use names"):
         load_role_policy("developer", roles_root=roles)
 
 

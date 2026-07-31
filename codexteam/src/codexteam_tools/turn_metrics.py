@@ -494,6 +494,7 @@ def _mcp_observation(
         "client_duration_ms": client_duration_ms,
         "returned_bytes": _nonnegative_int(stats.get("returned_bytes")),
         "source_bytes": _nonnegative_int(stats.get("source_bytes")),
+        "response_bytes": _serialized_bytes(result),
         "cache_hit": stats.get("cache_hit") is True,
     }
 
@@ -517,6 +518,7 @@ def _mcp_summary(
                 "client_duration_ms": 0.0,
                 "returned_bytes": 0,
                 "source_bytes": 0,
+                "response_bytes": 0,
                 "cache_hits": 0,
             },
         )
@@ -526,6 +528,7 @@ def _mcp_summary(
         aggregate["client_duration_ms"] += item["client_duration_ms"] or 0
         aggregate["returned_bytes"] += item["returned_bytes"] or 0
         aggregate["source_bytes"] += item["source_bytes"] or 0
+        aggregate["response_bytes"] += item["response_bytes"]
         aggregate["cache_hits"] += int(item["cache_hit"])
 
     by_tool = sorted(grouped.values(), key=lambda item: (item["server"], item["tool"]))
@@ -545,12 +548,28 @@ def _mcp_summary(
         ),
         "returned_bytes": sum(item["returned_bytes"] or 0 for item in observations),
         "source_bytes": sum(item["source_bytes"] or 0 for item in observations),
+        "response_bytes": sum(item["response_bytes"] for item in observations),
         "cache_hits": sum(int(item["cache_hit"]) for item in observations),
         "max_returned_bytes": max(
             (item["returned_bytes"] or 0 for item in observations),
             default=0,
         ),
+        "max_response_bytes": max(
+            (item["response_bytes"] for item in observations),
+            default=0,
+        ),
         "command_calls_after_failure": command_calls_after_mcp_failure,
+        "repeated_tools": [
+            {
+                "server": item["server"],
+                "tool": item["tool"],
+                "calls": item["calls"],
+            }
+            for item in sorted(
+                (item for item in by_tool if item["calls"] > 1),
+                key=lambda item: (-item["calls"], item["server"], item["tool"]),
+            )
+        ],
         "by_tool": by_tool,
     }
 
@@ -563,6 +582,21 @@ def _event_duration_ms(value: Any) -> float | None:
     if seconds is None or nanos is None:
         return None
     return round(seconds * 1000 + nanos / 1_000_000, 3)
+
+
+def _serialized_bytes(value: Any) -> int:
+    if value is None:
+        return 0
+    try:
+        serialized = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError):
+        return 0
+    return len(serialized.encode("utf-8"))
 
 
 def _repeated_commands(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:

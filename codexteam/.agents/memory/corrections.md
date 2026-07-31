@@ -44,3 +44,9 @@
 - Do not fabricate Git identity, bypass active hooks silently, amend or rewrite history, or perform push, merge, tag, release, publication, or remote PR actions through Local Git Steward.
 - Do not treat a preview as permission to mutate. Git authorization and commit commands require explicit `--apply`, and preview must not create Git objects, advance HEAD, or alter the index.
 - Do not trust integration evidence created before the approved commit path set. The deterministic executor re-runs the Integration Gate against the isolated candidate tree before committing code milestones.
+- Do not rely on a Stop-only pending transition when one Lead turn can close several
+  tasks. Checkpoint the exact rollout at each transition; otherwise later tasks are
+  silently charged to the first task and the next task has no usable baseline.
+- Do not call a milestone repository fully closed when the milestone commit contains an
+  active Git Steward task and final delivery files remain modified afterward. Commit
+  the narrowly scoped closure metadata separately.

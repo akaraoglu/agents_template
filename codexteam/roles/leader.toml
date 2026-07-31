@@ -9,6 +9,7 @@ default_profile = "qwen36-27b"
 default_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 skill_files = ["project-lead.md", "subagent-orchestration.md", "task-breakdown.md"]
+mcp_servers = ["codexteam-context", "github-readonly"]
 allowed_change_patterns = ["**"]
 denied_change_patterns = [".git/**", "**/__pycache__/**", "**/*.pyc", ".pytest_cache/**"]
 allowed_evidence_types = ["test_output", "artifact", "file_manifest", "cli_invocation", "spec_compliance", "code_review"]

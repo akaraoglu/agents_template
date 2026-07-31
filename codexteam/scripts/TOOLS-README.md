@@ -1,5 +1,27 @@
 # CodexTeam Tool Reference
 
+## Local Documentation
+
+Preview the approved offline sources before writing:
+
+```bash
+../env-python/bin/python scripts/local-docs-index.py \
+  --manifest local-docs.toml
+```
+
+Build or verify the ignored mode-`0600` SQLite FTS5 index:
+
+```bash
+../env-python/bin/python scripts/local-docs-index.py \
+  --manifest local-docs.toml --update
+../env-python/bin/python scripts/local-docs-index.py \
+  --manifest local-docs.toml --verify
+```
+
+The separately registered `local-docs` MCP server opens that index read-only
+and exposes only source listing, bounded search, and exact-locator reads. It has
+no network, shell, indexing, or mutation tool.
+
 ## Initialize
 
 ```bash

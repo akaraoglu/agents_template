@@ -14,6 +14,10 @@
 - Run subagents in a new process session and terminate the process group on timeout.
 - Use a temporary `CODEX_HOME` with mode `0700` and copy only local profile/config/catalog files.
 - Snapshot the workspace before and after each worker turn and reject paths outside the selected role's mechanical change boundary.
+- Treat the pinned role policy's `mcp_servers` as an allowlist and explicitly disable every other configured server for each worker process.
+- Keep Playwright isolated, headless, image-free, and limited to the inspection pilot tools; browser observations never replace deterministic test-gate evidence.
+- Keep GitHub MCP digest-pinned, server-enforced read-only, and host-allowlisted to bounded read tools. Allow it only for the Leader after authentication verification; keep it disabled for every other role.
+- Keep `local-docs` on STDIO with no network or subprocess imports and exactly three read-only tools. Its MCP process opens the ignored mode-`0600` index read-only; only the separate preview-first indexer may atomically replace it from manifest-approved, symlink-free local sources.
 - Execute gate commands only as validated argument arrays from `management/TEST_GATES.toml`; never pass configured text through a shell.
 
 ## Models

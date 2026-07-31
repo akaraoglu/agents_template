@@ -53,7 +53,17 @@ class TeamContextReader:
         current_path = self._required_file(root, "CURRENT_TASK.md")
         tasks_path = self._required_file(root, "TASKS.md")
         current = _parse_bullets(current_path.read_text(encoding="utf-8"))
-        task_id = normalize_task_id(current.get("task_id", ""))
+        raw_task_id = current.get("task_id", "")
+        if raw_task_id.casefold() == "none":
+            return {
+                "project": project,
+                "current": current,
+                "ledger": None,
+                "ledger_warning": None,
+                "attempts": [],
+                "sources": [self._source(root, current_path)],
+            }
+        task_id = normalize_task_id(raw_task_id)
         row, ledger_warning = _read_task_row(
             tasks_path.read_text(encoding="utf-8"),
             task_id,

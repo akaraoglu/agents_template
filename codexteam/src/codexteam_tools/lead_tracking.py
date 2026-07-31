@@ -17,6 +17,7 @@ from .lead_metrics import record_lead_usage
 TOOLKIT_ROOT = Path(__file__).resolve().parents[2]
 COUNTER_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens")
 TASK_ID_RE = re.compile(r"T[0-9]{3,6}")
+_NO_TRANSITION = object()
 
 
 def _now() -> datetime:
@@ -34,6 +35,9 @@ def bind_session(
     session_id: str | None = None,
     lead_root: Path | None = None,
     started_at: datetime | None = None,
+    transcript_path: Path | None = None,
+    sessions_root: Path | None = None,
+    reset_existing: bool = False,
 ) -> Path:
     """Bind the active top-level Lead session to one project task."""
     project = Path(project_value).resolve()
@@ -48,18 +52,54 @@ def bind_session(
 
     root = (lead_root or TOOLKIT_ROOT).resolve()
     path = _marker_path(root, session)
-    previous: dict[str, Any] = {}
     if path.is_file():
         try:
             loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            if not reset_existing:
+                raise ValueError(
+                    f"existing Lead binding is unreadable; use --reset to replace it: {path}"
+                ) from exc
+            loaded = None
+        if isinstance(loaded, dict) and not reset_existing:
             if (
-                isinstance(loaded, dict)
-                and loaded.get("project") == str(project)
-                and loaded.get("task_id") == normalized_task
+                loaded.get("session_id") != session
+                or loaded.get("lead_root") != str(root)
             ):
-                previous = loaded
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-            pass
+                raise ValueError(
+                    f"existing Lead binding does not match this session; use --reset: {path}"
+                )
+            if loaded.get("project") != str(project):
+                raise ValueError(
+                    "Lead session is bound to another project; finish that boundary "
+                    "or use --reset explicitly"
+                )
+            if loaded.get("task_id") == normalized_task:
+                return path
+            if "pending_transition" in loaded:
+                pending = loaded.get("pending_transition")
+                if (
+                    not isinstance(pending, dict)
+                    or pending.get("next_task") != normalized_task
+                ):
+                    raise ValueError(
+                        f"existing Lead binding has an unresolved transition: {pending!r}; "
+                        "end the current turn before binding another task"
+                    )
+            reason = _checkpoint_transition(
+                path,
+                loaded,
+                normalized_task,
+                captured_at=started_at or _now(),
+                transcript_path=transcript_path,
+                sessions_root=sessions_root,
+            )
+            if reason == "captured":
+                return path
+            raise ValueError(
+                f"cannot checkpoint existing Lead task {loaded.get('task_id')!r}: {reason}; "
+                "end the current turn or use --reset to discard the stale binding"
+            )
 
     marker = {
         "schema_version": "1.0",
@@ -67,9 +107,16 @@ def bind_session(
         "lead_root": str(root),
         "project": str(project),
         "task_id": normalized_task,
-        "started_at": previous.get("started_at", (started_at or _now()).isoformat()),
-        "baseline": previous.get("baseline"),
+        "started_at": (started_at or _now()).isoformat(),
+        "baseline": None,
     }
+    resolved_transcript = _resolve_transcript(
+        session,
+        explicit_path=transcript_path,
+        sessions_root=sessions_root,
+    )
+    if resolved_transcript is not None:
+        marker["transcript_path"] = str(resolved_transcript)
     atomic_write_json(path, marker)
     return path
 
@@ -172,6 +219,218 @@ def _session_provider(transcript: Path) -> str | None:
     return None
 
 
+def _session_model(transcript: Path) -> str | None:
+    for line in _reverse_lines(transcript):
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(event, dict) or event.get("type") != "turn_context":
+            continue
+        payload = event.get("payload")
+        model = payload.get("model") if isinstance(payload, dict) else None
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+    return None
+
+
+def _transcript_matches_session(transcript: Path, session_id: str) -> bool:
+    try:
+        with transcript.open(encoding="utf-8") as stream:
+            for _ in range(20):
+                line = stream.readline()
+                if not line:
+                    break
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict) or event.get("type") != "session_meta":
+                    continue
+                payload = event.get("payload")
+                if not isinstance(payload, dict):
+                    return False
+                return session_id in {payload.get("id"), payload.get("session_id")}
+    except (OSError, UnicodeDecodeError):
+        return False
+    return False
+
+
+def _resolve_transcript(
+    session_id: str,
+    *,
+    explicit_path: Path | None = None,
+    marker: dict[str, Any] | None = None,
+    sessions_root: Path | None = None,
+) -> Path | None:
+    candidates: list[Path] = []
+    if explicit_path is not None:
+        candidates.append(Path(explicit_path).expanduser())
+    marker_path = marker.get("transcript_path") if isinstance(marker, dict) else None
+    if isinstance(marker_path, str) and marker_path:
+        candidates.append(Path(marker_path).expanduser())
+    root = sessions_root
+    if root is None:
+        codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+        root = codex_home / "sessions"
+    if root.is_dir():
+        candidates.extend(root.rglob(f"rollout-*-{session_id}.jsonl"))
+    valid: list[Path] = []
+    for candidate in dict.fromkeys(candidates):
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            continue
+        if resolved.is_file() and _transcript_matches_session(resolved, session_id):
+            valid.append(resolved)
+    if not valid:
+        return None
+    return max(valid, key=lambda item: item.stat().st_mtime_ns)
+
+
+def _capture_bound_usage(
+    marker_path: Path,
+    marker: dict[str, Any],
+    transcript: Path,
+    model: str,
+    captured_at: datetime,
+    *,
+    transition: object = _NO_TRANSITION,
+) -> str:
+    try:
+        project = Path(marker["project"]).resolve()
+        if not project.is_dir():
+            return "mismatch"
+        started_at = datetime.fromisoformat(marker["started_at"])
+        stored_baseline = marker.get("baseline")
+        need_baseline = not isinstance(stored_baseline, dict)
+        totals, discovered_baseline = _usage_window(
+            transcript,
+            started_at=started_at,
+            need_baseline=need_baseline,
+        )
+        if totals is None:
+            return "no-totals"
+        baseline = discovered_baseline if need_baseline else stored_baseline
+        if not isinstance(baseline, dict) or not all(
+            isinstance(baseline.get(key), int)
+            and not isinstance(baseline[key], bool)
+            and baseline[key] >= 0
+            for key in COUNTER_KEYS
+        ):
+            return "invalid"
+        deltas = {key: totals[key] - baseline[key] for key in COUNTER_KEYS}
+        if any(value < 0 for value in deltas.values()):
+            return "reset"
+        if deltas["cached_input_tokens"] > deltas["input_tokens"]:
+            return "reset"
+        provider = _session_provider(transcript)
+        if provider is None:
+            return "no-provider"
+
+        pending_present = "pending_transition" in marker
+        next_task: str | None = None
+        if transition is not _NO_TRANSITION:
+            pending_present = True
+            next_task = transition if isinstance(transition, str) else None
+        elif pending_present:
+            pending = marker.get("pending_transition")
+            if not isinstance(pending, dict) or "next_task" not in pending:
+                return "preserved"
+            next_task = pending["next_task"]
+        if pending_present and next_task is not None and (
+            not isinstance(next_task, str) or not TASK_ID_RE.fullmatch(next_task)
+        ):
+            return "preserved"
+
+        duration = max(0.0, (captured_at - started_at).total_seconds())
+        error = record_lead_usage(
+            project,
+            task_id=marker["task_id"],
+            profile=model.strip(),
+            provider=provider,
+            duration_seconds=duration,
+            input_tokens=deltas["input_tokens"],
+            cached_input_tokens=deltas["cached_input_tokens"],
+            output_tokens=deltas["output_tokens"],
+        )
+        if error:
+            return "preserved"
+
+        if pending_present:
+            if next_task is None:
+                marker_path.unlink()
+                return "captured"
+            marker.update(
+                {
+                    "task_id": next_task,
+                    "started_at": captured_at.isoformat(),
+                    "baseline": totals,
+                    "transcript_path": str(transcript),
+                    "model": model.strip(),
+                    "provider": provider,
+                }
+            )
+            marker.pop("pending_transition", None)
+        else:
+            if need_baseline:
+                marker["baseline"] = baseline
+            marker.update(
+                {
+                    "transcript_path": str(transcript),
+                    "model": model.strip(),
+                    "provider": provider,
+                }
+            )
+        atomic_write_json(marker_path, marker)
+        return "captured"
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ):
+        return "preserved"
+
+
+def _checkpoint_transition(
+    marker_path: Path,
+    marker: dict[str, Any],
+    next_task: str | None,
+    *,
+    captured_at: datetime,
+    transcript_path: Path | None = None,
+    sessions_root: Path | None = None,
+) -> str:
+    session = marker.get("session_id")
+    if not isinstance(session, str) or not session:
+        return "mismatch"
+    transcript = _resolve_transcript(
+        session,
+        explicit_path=transcript_path,
+        marker=marker,
+        sessions_root=sessions_root,
+    )
+    if transcript is None:
+        return "no-transcript"
+    model = _session_model(transcript)
+    if model is None:
+        stored_model = marker.get("model")
+        model = stored_model.strip() if isinstance(stored_model, str) else None
+    if not model:
+        return "no-model"
+    return _capture_bound_usage(
+        marker_path,
+        marker,
+        transcript,
+        model,
+        captured_at,
+        transition=next_task,
+    )
+
+
 def capture_stop(
     payload: dict[str, Any],
     *,
@@ -200,82 +459,20 @@ def capture_stop(
             or marker.get("lead_root") != str(root)
         ):
             return "mismatch"
-        project = Path(marker["project"]).resolve()
-        if not project.is_dir():
-            return "mismatch"
         transcript_value = payload.get("transcript_path")
         model = payload.get("model")
         if not isinstance(transcript_value, str) or not isinstance(model, str) or not model.strip():
             return "invalid"
-        transcript = Path(transcript_value)
-        started_at = datetime.fromisoformat(marker["started_at"])
-        stored_baseline = marker.get("baseline")
-        need_baseline = not isinstance(stored_baseline, dict)
-        totals, discovered_baseline = _usage_window(
+        transcript = Path(transcript_value).resolve()
+        if not _transcript_matches_session(transcript, session):
+            return "mismatch"
+        return _capture_bound_usage(
+            marker_path,
+            marker,
             transcript,
-            started_at=started_at,
-            need_baseline=need_baseline,
+            model,
+            now or _now(),
         )
-        if totals is None:
-            return "no-totals"
-        baseline = discovered_baseline if need_baseline else stored_baseline
-        if not isinstance(baseline, dict) or not all(
-            isinstance(baseline.get(key), int)
-            and not isinstance(baseline[key], bool)
-            and baseline[key] >= 0
-            for key in COUNTER_KEYS
-        ):
-            return "invalid"
-        deltas = {key: totals[key] - baseline[key] for key in COUNTER_KEYS}
-        if any(value < 0 for value in deltas.values()):
-            return "reset"
-        if deltas["cached_input_tokens"] > deltas["input_tokens"]:
-            return "reset"
-        provider = _session_provider(transcript)
-        if provider is None:
-            return "no-provider"
-        pending_present = "pending_transition" in marker
-        pending = marker.get("pending_transition")
-        next_task: str | None = None
-        if pending_present:
-            if not isinstance(pending, dict) or "next_task" not in pending:
-                return "preserved"
-            next_task = pending["next_task"]
-            if next_task is not None and (
-                not isinstance(next_task, str) or not TASK_ID_RE.fullmatch(next_task)
-            ):
-                return "preserved"
-        captured_at = now or _now()
-        duration = max(0.0, (captured_at - started_at).total_seconds())
-        error = record_lead_usage(
-            project,
-            task_id=marker["task_id"],
-            profile=model.strip(),
-            provider=provider,
-            duration_seconds=duration,
-            input_tokens=deltas["input_tokens"],
-            cached_input_tokens=deltas["cached_input_tokens"],
-            output_tokens=deltas["output_tokens"],
-        )
-        if error:
-            return "preserved"
-
-        if pending_present:
-            if next_task is None:
-                marker_path.unlink()
-                return "captured"
-            marker.update(
-                {
-                    "task_id": next_task,
-                    "started_at": captured_at.isoformat(),
-                    "baseline": totals,
-                }
-            )
-            marker.pop("pending_transition", None)
-        elif need_baseline:
-            marker["baseline"] = baseline
-        atomic_write_json(marker_path, marker)
-        return "captured"
     except (
         OSError,
         ValueError,
@@ -305,8 +502,11 @@ def set_pending_transition(
     *,
     session_id: str | None = None,
     lead_root: Path | None = None,
+    captured_at: datetime | None = None,
+    transcript_path: Path | None = None,
+    sessions_root: Path | None = None,
 ) -> bool:
-    """Retain the old metrics task until its closing Stop is captured."""
+    """Checkpoint the closing task, falling back to the next Stop when needed."""
     session = session_id or os.environ.get("CODEX_THREAD_ID", "").strip()
     if not session:
         return False
@@ -320,11 +520,80 @@ def set_pending_transition(
             marker.get("session_id") != session
             or marker.get("lead_root") != str(root)
             or Path(marker.get("project", "")).resolve() != project.resolve()
-            or marker.get("task_id") != task_id
         ):
             return False
+        if marker.get("task_id") != task_id:
+            pending = marker.get("pending_transition")
+            if isinstance(pending, dict) and pending.get("next_task") == task_id:
+                raise ValueError(
+                    f"Lead metrics transition {marker.get('task_id')} -> {task_id} "
+                    "is still waiting for a Stop checkpoint; end the current turn "
+                    "before closing another task"
+                )
+            raise ValueError(
+                f"Lead metrics are bound to {marker.get('task_id')!r}, not {task_id!r}; "
+                "rebind the top-level Lead session before closing this task"
+            )
+        reason = _checkpoint_transition(
+            path,
+            marker,
+            next_task,
+            captured_at=captured_at or _now(),
+            transcript_path=transcript_path,
+            sessions_root=sessions_root,
+        )
+        if reason == "captured":
+            return True
+        existing_pending = marker.get("pending_transition")
+        expected_pending = {"from_task": task_id, "next_task": next_task}
+        if existing_pending is not None and existing_pending != expected_pending:
+            raise ValueError(
+                f"Lead metrics already have an unresolved transition: {existing_pending!r}"
+            )
         marker["pending_transition"] = {"from_task": task_id, "next_task": next_task}
         atomic_write_json(path, marker)
         return True
     except (OSError, TypeError, AttributeError, json.JSONDecodeError):
         return False
+
+
+def clear_delivered_project_bindings(
+    project_value: str | Path,
+    *,
+    lead_root: Path | None = None,
+) -> list[Path]:
+    """Remove stale bindings only for a canonically delivered project."""
+    project = Path(project_value).resolve()
+    if not project.is_dir():
+        raise ValueError(f"project path does not exist: {project}")
+    state_path = project / "PROJECT_STATE.md"
+    try:
+        state = state_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"cannot read canonical project state: {state_path}") from exc
+    values: dict[str, str] = {}
+    for line in state.splitlines():
+        if not line.startswith("- ") or ":" not in line:
+            continue
+        key, value = line[2:].split(":", 1)
+        values[key.strip()] = value.strip()
+    if values.get("Status") != "DELIVERED" or values.get("Active Task") != "None":
+        raise ValueError(
+            "refusing to clear Lead bindings unless PROJECT_STATE.md has "
+            "Status: DELIVERED and Active Task: None"
+        )
+
+    root = (lead_root or TOOLKIT_ROOT).resolve()
+    sessions_dir = root / ".codexteam" / "runtime" / "lead-sessions"
+    removed: list[Path] = []
+    if not sessions_dir.is_dir():
+        return removed
+    for path in sorted(sessions_dir.glob("*.json")):
+        try:
+            marker = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if isinstance(marker, dict) and marker.get("project") == str(project):
+            path.unlink()
+            removed.append(path)
+    return removed

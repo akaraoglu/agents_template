@@ -31,6 +31,14 @@ Use for a nontrivial new project or a change to module boundaries, public APIs, 
 
 Use read-only repository inspection and existing project validation commands. Run documentation or diagram validation only when the project already defines it.
 
+When `local-docs` is available and the design depends on an indexed installed
+library or CodexTeam contract, start with one narrow `search_docs` call and a
+limit of at most five. Do not guess source IDs; omit the filter when the exact
+indexed ID is unknown, and call `list_doc_sources` only when an exact source or
+version filter is required. Use `read_doc` only for the winning locator. Treat
+an unavailable or insufficient result as a reason for one focused repository
+or upstream-documentation fallback, not a repeated broad search.
+
 ## Expected Output
 
 - A current `ARCHITECTURE.md` with an exact repository map

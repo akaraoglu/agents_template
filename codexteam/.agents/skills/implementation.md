@@ -40,6 +40,34 @@ Stop conditions:
 
 Wait for the Project Lead's exact `PLAN ACCEPTED`. Then resume this same session, revise the plan when new code evidence requires it, report any material scope expansion, and follow the normal workflow below. A plan is a reviewed hypothesis, not permission to conceal a newly discovered dependency.
 
+### Task Capsule Pilot
+
+When the handoff explicitly says `TASK CAPSULE PILOT`, read its capsule before
+other source discovery. Verify the capsule against the SHA-256 pinned in the
+handoff, then verify every named source/test hash in one command. Use the capsule
+as a starting map, not as proof. A missing or mismatched capsule is a reported
+handoff gap, never permission to trust stale content. One focused expansion is
+allowed when an uncertainty, stale source hash, missing consumer, or conflicting
+source contract requires it; state the reason before expanding.
+
+Before exceeding 12 tool calls, after three failed calls, before a second broad
+repository scan, or before repeating a command without relevant file changes,
+return this checkpoint before at most one additional bounded action:
+
+```text
+CAPSULE CHECKPOINT
+
+Known:
+Unknown:
+Why another call is required:
+Next bounded action:
+Stop condition:
+```
+
+Do not suppress a real dependency to stay below the checkpoint. Report the gap
+so the Lead can correct the capsule. All normal Development Gate and independent
+Integration Gate requirements remain unchanged.
+
 ## Workflow
 
 1. Read the relevant files before editing and restate the bounded outcome internally.
@@ -51,6 +79,14 @@ Wait for the Project Lead's exact `PLAN ACCEPTED`. Then resume this same session
 7. Return a draft describing the outcome, exact evidence, uncertainties, and proposed disposition.
 8. On feedback, preserve accepted work and change only the rejected part.
 9. Update only scoped technical documentation. Propose status to the Project Lead; do not close canonical task state.
+
+When `local-docs` is available and implementation depends on an indexed
+installed library or CodexTeam contract, start with one narrow `search_docs`
+call and a limit of at most five. Do not guess source IDs; omit the filter when
+the exact indexed ID is unknown, and call `list_doc_sources` only when an exact
+source or version filter is required. Use `read_doc` only for the winning
+locator. The index is reference evidence, not proof of current product
+behavior; verify the implementation with the normal Development Gate.
 
 ## Communication Example
 

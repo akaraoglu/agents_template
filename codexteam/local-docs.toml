@@ -1,0 +1,35 @@
+schema_version = 1
+
+[index]
+path = ".codexteam/local-docs.sqlite3"
+max_file_bytes = 1000000
+chunk_chars = 2400
+
+[[sources]]
+id = "codexteam-guidance"
+adapter = "text"
+root = "."
+version = "workspace"
+include = [
+  "README.md",
+  "docs/**/*.md",
+  ".agents/capabilities/*.md",
+  ".agents/skills/*.md",
+  ".agents/playbooks/*.md",
+]
+exclude = []
+
+[[sources]]
+id = "python-flask"
+adapter = "python-package"
+distribution = "Flask"
+
+[[sources]]
+id = "python-jinja"
+adapter = "python-package"
+distribution = "Jinja2"
+
+[[sources]]
+id = "python-pytest"
+adapter = "python-package"
+distribution = "pytest"

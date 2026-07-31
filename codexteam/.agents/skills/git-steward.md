@@ -27,6 +27,11 @@ Use only after the Project Lead marks a verified task group or milestone commit-
 7. The Project Lead persists the accepted JSON under ignored `.codexteam/runtime/git-steward/<boundary>/plan.json`, validates it, and explicitly authorizes its digest.
 8. On final authorization, request the deterministic executor to apply exactly the approved plan.
 9. Report the resulting local commit SHA and any paths intentionally left uncommitted.
+10. After the Lead closes the Git Steward task, inspect tracked status again. If that
+    closure changed tracked lifecycle or delivery files, create one separately
+    authorized metadata-only closure commit. Never mix unrelated product, runtime, or
+    generated files into it, and do not claim the repository is clean until the
+    committed HEAD contains the delivered state.
 
 ## Commands To Run
 
@@ -36,6 +41,8 @@ Use only the repository-owned Git Steward inspection and plan commands. The dete
 
 - One exact `commit-plan-v1` JSON draft, persisted under ignored runtime only after Project Lead acceptance
 - One approved local commit or a precise blocked disposition
+- When required, one narrow follow-up commit containing only post-boundary lifecycle
+  and delivery evidence
 - One `commit-record-v1` and PR summary in ignored runtime storage
 - No product file modifications by the Steward
 
@@ -55,6 +62,8 @@ Use only the repository-owned Git Steward inspection and plan commands. The dete
 - Including runtime, secret, generated, backup, or unrelated files
 - Changing the staging plan after Project Lead approval
 - Writing a tracked report after the commit and leaving the boundary dirty
+- Treating the milestone commit as the final repository state when its committed
+  `PROJECT_STATE.md` still names the Git Steward task as active
 
 ## Related Files
 

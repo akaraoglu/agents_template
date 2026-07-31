@@ -231,9 +231,12 @@ def test_summary_aggregates_mcp_calls_without_persisting_payloads():
         "client_duration_ms": 0.0,
         "returned_bytes": 400,
         "source_bytes": 1200,
+        "response_bytes": 202,
         "cache_hits": 1,
         "max_returned_bytes": 400,
+        "max_response_bytes": 186,
         "command_calls_after_failure": 1,
+        "repeated_tools": [],
         "by_tool": [
             {
                 "server": "codexteam-context",
@@ -244,6 +247,7 @@ def test_summary_aggregates_mcp_calls_without_persisting_payloads():
                 "client_duration_ms": 0.0,
                 "returned_bytes": 400,
                 "source_bytes": 1200,
+                "response_bytes": 186,
                 "cache_hits": 1,
             },
             {
@@ -255,6 +259,7 @@ def test_summary_aggregates_mcp_calls_without_persisting_payloads():
                 "client_duration_ms": 0.0,
                 "returned_bytes": 0,
                 "source_bytes": 0,
+                "response_bytes": 16,
                 "cache_hits": 0,
             },
         ],
@@ -263,6 +268,26 @@ def test_summary_aggregates_mcp_calls_without_persisting_payloads():
     assert "private-project" not in serialized
     assert "private-result" not in serialized
     assert "private-query" not in serialized
+
+
+def test_summary_identifies_repeated_mcp_tools():
+    call = {
+        "type": "item.completed",
+        "item": {
+            "type": "mcp_tool_call",
+            "server": "playwright",
+            "tool": "browser_snapshot",
+            "result": {"content": [{"type": "text", "text": "page"}]},
+            "status": "completed",
+        },
+    }
+
+    mcp = summarize(jsonl(call, call))["activity"]["mcp"]
+
+    assert mcp["repeated_tools"] == [
+        {"server": "playwright", "tool": "browser_snapshot", "calls": 2}
+    ]
+    assert mcp["response_bytes"] == 86
 
 
 def test_summary_reads_internal_rollout_mcp_and_usage_events():
@@ -348,6 +373,8 @@ def test_summary_reads_internal_rollout_mcp_and_usage_events():
     assert mcp["client_duration_ms"] == 1152.392
     assert mcp["returned_bytes"] == 4551
     assert mcp["source_bytes"] == 78051
+    assert mcp["response_bytes"] > 0
+    assert mcp["max_response_bytes"] > 0
     assert mcp["by_tool"][0]["tool"] == "get_task_context"
     assert mcp["by_tool"][1]["failed_calls"] == 1
 

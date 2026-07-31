@@ -19,7 +19,7 @@ Required scope includes handoff ID, team ID, task ID, attempt ID, role, profile,
 
 ## Role Policy V1
 
-Machine-readable schema: `schemas/role-policy-v1.json`. Canonical TOML manifests live under `roles/` and reject unknown fields. The launcher pins the normalized policy plus digest per attempt. Policy defaults may change for a future draft but cannot change an existing continuation.
+Machine-readable schema: `schemas/role-policy-v1.json`. Canonical TOML manifests live under `roles/` and reject unknown fields. The optional `mcp_servers` array is a role-specific allowlist; omission means no MCP access and remains digest-compatible with older v1 snapshots. The launcher pins the normalized policy plus digest per attempt, explicitly disables configured servers outside that allowlist for each worker process, and reports allowed, effective, and missing names. Policy defaults may change for a future draft but cannot change an existing continuation.
 
 Canonical wire roles are `architect`, `developer`, `documenter`, `feature_planner`, `git_steward`, `leader`, `reviewer`, `tester`, and `ux_designer`. Feature Planner uses `feature_planner`; the user-facing Test Engineer retains `tester` for result compatibility, Local Git Steward uses `git_steward`, and UX Designer uses `ux_designer`.
 
@@ -39,6 +39,7 @@ The Python validator performs additional semantic checks for canonical IDs, UTC 
 
 ## Command Exit Codes
 
+- `local-docs-index.py`: `0` valid preview/update/current verification; `1` index content is stale; `2` invalid manifest, source, index, or unsafe path.
 - `init-project.py`: `0` success; `2` invalid input or unsafe path.
 - `update-tasks.py`: `0` success/no change; `2` invalid ledger or update.
 - `verify-result.py`: `0` valid; `1` invalid JSON/contract; `2` expectation mismatch.
@@ -50,6 +51,15 @@ The Python validator performs additional semantic checks for canonical IDs, UTC 
 - `git-steward.py`: `0` valid inspection/preview/applied boundary; `2` invalid plan, stale evidence, repository mismatch, unsafe Git state, or failed commit verification.
 - `spawn-subagent.sh`: `0` draft ready or valid final result; `1` failed/correction needed; `2` invalid invocation or session scope; `3` interrupted by timeout or opt-in Run Guard with session retained when possible.
 - `close-loop.sh`: `0` closed/already closed; `1` invalid result/artifact/state; `2` independent verification failure.
+
+## Local Documentation MCP
+
+`local-docs` exposes exactly `list_doc_sources`, `search_docs`, and `read_doc`.
+All three are read-only, idempotent, offline, and bounded. Search results return
+only indexed excerpts plus exact source IDs and locators; `read_doc` accepts no
+filesystem path. The manifest and ignored SQLite index use schema version `1`.
+Index updates remain a separate preview-first CLI operation and are not MCP
+tools.
 
 ## Mutation Rule
 

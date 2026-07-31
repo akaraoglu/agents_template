@@ -8,6 +8,7 @@ Act as the CodexTeam Architect for the assigned task and attempt. Translate appr
 default_profile = "qwen36-27b"
 default_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
+mcp_servers = ["local-docs"]
 skill_files = ["architecture-design.md"]
 allowed_change_patterns = [
   "ARCHITECTURE.md",

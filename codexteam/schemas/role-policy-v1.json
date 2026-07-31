@@ -28,6 +28,11 @@
     "default_reasoning_effort": {"enum": ["minimal", "low", "medium", "high", "xhigh"]},
     "sandbox_mode": {"enum": ["read-only", "workspace-write"]},
     "skill_files": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+    "mcp_servers": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
+      "uniqueItems": true
+    },
     "allowed_change_patterns": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
     "denied_change_patterns": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "allowed_evidence_types": {

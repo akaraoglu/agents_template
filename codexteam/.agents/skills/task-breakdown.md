@@ -59,8 +59,27 @@ This is one evidence pipeline, not seven fresh investigations. The Git Steward d
 
 ## Task Handoff Contract
 
+Every new task handoff must begin with this human-facing summary:
+
+```markdown
+## Short Description
+
+- Type: Bug fix
+- Summary: Fix the repository chooser placement that prevents pointer and keyboard input.
+- Outcome: Users can select local repositories again without changing backend or security contracts.
+```
+
+Choose one purpose type: `Feature`, `Bug fix`, `Design`, `Architecture`,
+`Planning`, `Test`, `Review`, `Documentation`, or `Delivery`. Type describes
+the work, not the assigned agent role. Summary states the concrete problem or
+work in one plain sentence. Outcome states the intended human-visible or project
+result in one plain sentence without prescribing implementation. Do not copy the
+title, include implementation minutiae, or hide scope and acceptance requirements
+in this summary.
+
 Each task file must include:
 
+- Short Description: purpose type, concrete summary, and intended outcome.
 - Objective: one concrete outcome.
 - Responsible AI: stable owner label, role, and default capability profile.
 - Context: docs and files the worker must read first.
@@ -73,6 +92,45 @@ Each task file must include:
 - Reporting: what evidence to write back.
 
 The Context field defaults to `BRIEF.md`, this handoff, and a short list of named files or upstream artifacts. The Reporting field must make evidence reusable by the next role: exact commands, observed results, and safe project-relative artifact paths. Do not require a downstream role to rerun a passing check solely to recreate evidence.
+
+## Task Capsule Pilot
+
+Use this only when the operator or task handoff explicitly says
+`TASK CAPSULE PILOT`. It is an opt-in experiment for a medium Developer task,
+not a new requirement for every handoff.
+
+After the canonical task ID exists, bind the top-level Lead session to that
+task before capsule preparation so existing Lead metrics include authoring
+cost. Write the private capsule to
+`.codexteam/runtime/task-capsules/Txxx.md`, then put that exact path, its
+SHA-256, and `TASK CAPSULE PILOT` in the canonical handoff. Capsule preparation
+has a three-tool-call budget: reuse accepted architecture/planner evidence,
+inspect only named files, and use one `sha256sum` call for source/test hashes.
+If three calls cannot establish a safe map, leave the uncertainty explicit
+instead of broadening the scan.
+
+Create a 2–4 KB capsule from existing bounded inspection. Include:
+
+- Repository path, HEAD, and content hashes for every named source/test file
+- Behavior, non-goals, and stop conditions
+- Exact source symbols or line anchors and dependency direction
+- Related tests with a reason for each
+- Verification commands, clearly marked as not yet run
+- Uncertainties and one permitted focused expansion
+
+The capsule supplements the canonical handoff; it is not authority, completion
+evidence, or permission to hide a dependency. The Developer verifies all named
+hashes and the handoff-pinned capsule hash, starts from the capsule instead of
+broad discovery, and reports any stale or missing context. Do not build or
+expand a source-context MCP merely to create the capsule. Compare the task's
+existing Lead metrics with the Developer attempt metrics and record tool calls,
+failures, latency, cached/uncached input, command-output bytes, correction
+turns, and integration defects for the pilot.
+
+Do not accept a capsule-cost conclusion when the task has no Lead metric entry,
+the binding baseline was reset, or one entry spans multiple canonical tasks.
+The live tracker checkpoints cross-task transitions immediately; a missing or
+conflated entry is a measurement failure, not zero-cost authoring.
 
 ## Expected Output
 
@@ -88,6 +146,8 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 ## Validation
 
 - Every acceptance criterion is covered by at least one task.
+- Every new task has a specific Type, Summary, and Outcome that a human can
+  understand without opening implementation details.
 - No task requires hidden knowledge from chat only.
 - No task is so broad that verification is unclear.
 - Feature Planner proposals use temporary labels until the Project Lead accepts and converts them into canonical tasks.
@@ -102,6 +162,8 @@ The Context field defaults to `BRIEF.md`, this handoff, and a short list of name
 ## Common Mistakes
 
 - Creating vague tasks like "finish app."
+- Using an agent role as the task Type or repeating the title instead of
+  summarizing the work and its intended outcome.
 - Using generic role-only ownership such as "Agent" instead of a stable responsible AI label.
 - Splitting by file instead of by user-visible behavior.
 - Splitting one small functional slice across several Developers without an observed need.

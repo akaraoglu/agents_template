@@ -11,6 +11,8 @@ Operator commands are thin wrappers around `src/codexteam_tools/`.
 - `sync-project-guidance.py`: preview, check, or refresh managed role references in an initialized project.
 - `run-test-gate.py`: dry-run, execute, or validate the project Development and Integration Gates from TOML argument arrays.
 - `git-steward.py`: inspect a verified Git boundary, pin authorization, and create one exact local commit after explicit `--apply`.
+- `local-docs-index.py`: preview, atomically update, or verify the deterministic offline documentation index.
+- `local-docs-mcp.py`: serve the fixed three-tool offline read-only documentation MCP over STDIO.
 - `close-loop.sh`: independently verify and close one task.
 - `run-e2e-fibonacci-test.sh`: run or preview the historical five-role Fibonacci Tree CLI compatibility canary.
 - `../.agents/scripts/spawn-subagent.sh`: run one `draft`, `feedback`, or `final` turn in a persistent local Codex session.

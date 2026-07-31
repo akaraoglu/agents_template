@@ -26,7 +26,9 @@ If the endpoint fails inside the parent but succeeds on the host, run the launch
 
 Authenticated OpenAI workers are not supported through this nested subprocess route because their credential-bearing Codex home is outside the parent writable root. Run them from the host-level E2E surface instead. Never use `--trust-parent-sandbox` from an ordinary terminal.
 
-MCP is not required to spawn a local worker. A global `codex mcp list` does not prove the configuration copied into an attempt-private Codex home; inspect only the exact attempt home when its named stderr reports MCP startup.
+MCP is not required to spawn a local worker. Check `mcp_allowed_servers`, `mcp_effective_servers`, and `mcp_missing_servers` in the dry-run, `session.json`, or `turn-state.json`; a global `codex mcp list` alone does not prove role access. Authenticated OpenAI workers execute against the source Codex home, while local workers use the attempt-private copy, so the launcher enforces the same role allowlist through per-process `-c mcp_servers.<name>.enabled=<bool>` overrides.
+
+If a non-interactive Playwright navigation reports `user cancelled MCP tool call`, verify that the server keeps its narrow `enabled_tools` list and `browser_navigate` has `approval_mode = "approve"`. Do not switch the whole server to unconditional approval. If Leader GitHub reads fail, verify `gh auth status`, credential inheritance, and one live read before starting another GitHub-dependent Lead attempt; never store a token in repository or role files.
 
 ## Prompt Text Executes in the Shell
 
