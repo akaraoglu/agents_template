@@ -17,6 +17,7 @@ if str(SRC) not in sys.path:
 
 from codexteam_tools.context_mcp import modern_meta
 from codexteam_tools.paths import normalize_task_id, validate_identifier
+from codexteam_tools.roles import load_role_policy
 
 
 class StdioClient:
@@ -142,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     task_id = normalize_task_id(args.task)
     attempt_id = validate_identifier(args.attempt, label="attempt ID")
+    role_policy = load_role_policy(args.role)
     projects_root = args.projects_root.resolve(strict=True)
     project = (projects_root / args.project).resolve(strict=True)
     project.relative_to(projects_root)
@@ -557,13 +559,46 @@ def main(argv: list[str] | None = None) -> int:
                 sort_keys=True,
             ).encode()
         )
+        allowed_tool_names = set(
+            role_policy.tools_for_server("codexteam-context")
+        )
+        if "codexteam-context" not in role_policy.mcp_servers:
+            effective_tools: list[dict[str, Any]] = []
+        elif allowed_tool_names:
+            effective_tools = [
+                tool
+                for tool in listed["result"]["tools"]
+                if tool.get("name") in allowed_tool_names
+            ]
+        else:
+            effective_tools = listed["result"]["tools"]
+        effective_schema_bytes = len(
+            json.dumps(
+                effective_tools,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        )
         report: dict[str, Any] = {
             "protocol": discovery["result"]["supportedVersions"][0],
             "project": args.project,
             "task": task_id,
+            "role": role_policy.role,
             "repeats": args.repeats,
             "tool_schema_bytes": schema_bytes,
             "tool_schema_estimated_tokens": _estimated_tokens(schema_bytes),
+            "effective_tool_names": [
+                tool["name"]
+                for tool in effective_tools
+            ],
+            "effective_tool_schema_bytes": effective_schema_bytes,
+            "effective_tool_schema_estimated_tokens": _estimated_tokens(
+                effective_schema_bytes
+            ),
+            "tool_schema_reduction_percent": _percent_reduction(
+                schema_bytes,
+                effective_schema_bytes,
+            ),
             "token_estimate_note": "Estimated at 4 UTF-8 bytes/token; not provider billing usage.",
             "scenarios": {},
         }

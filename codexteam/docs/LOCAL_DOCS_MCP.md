@@ -31,7 +31,9 @@ adapters. The indexer defaults to preview and writes only with `--update`:
 Updates collect sources in stable order, split bounded sections, compute one
 content digest, build a temporary SQLite FTS5 database, set mode `0600`, and
 atomically replace the ignored index. Verification recomputes approved local
-sources and compares metadata without modifying the index.
+sources and compares metadata without modifying the index. Each MCP query reads
+the digest and documents through the same read-only connection, so a long-running
+server cannot pair new content with provenance cached before an atomic update.
 
 ## Source Adapters
 

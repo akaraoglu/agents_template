@@ -27,6 +27,7 @@ def test_project_dry_run_is_complete_and_does_not_write(tmp_path: Path):
     assert ".codexteam/skills/integration-testing.md" in plan.files
     assert ".codexteam/skills/verification.md" in plan.files
     assert ".codexteam/skills/subagent-orchestration.md" in plan.files
+    assert ".codexteam/skills/team-context-mcp.md" in plan.files
     assert ".codexteam/skills/codexteam-self-improvement.md" in plan.files
     assert ".codexteam/skills/feature-planning.md" in plan.files
     assert ".codexteam/skills/ux-ui-design.md" in plan.files
@@ -62,9 +63,12 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
     assert "Project `AGENTS.md` contains common project rules" in (
         plan.project_dir / ".codexteam" / "README.md"
     ).read_text()
-    assert "Do not repeat the same command or failure path" in (
-        plan.project_dir / "AGENTS.md"
-    ).read_text()
+    project_agents = (plan.project_dir / "AGENTS.md").read_text()
+    assert "Do not repeat the same command or failure path" in project_agents
+    assert "Start with its exact context targets" in project_agents
+    assert "historical results only when" in project_agents
+    assert "the handoff targets them" in project_agents
+    assert "Read `BRIEF.md`, `PROJECT.md`, `CURRENT_TASK.md`, and" not in project_agents
     tasks = parse_task_document((plan.project_dir / "TASKS.md").read_text())
     assert tasks.row("T001").status == "In Progress"
     assert tasks.row("T002").owner == "architect-01"

@@ -92,3 +92,35 @@
   explicit reset, and delivered-project cleanup removes only exact-project stale
   bindings. Added a metadata-only closure rule for lifecycle files written after
   a Local Git Steward milestone commit.
+- 2026-07-31: Added pinned per-server MCP tool subsets to role-policy v1 and rolled
+  bounded `codexteam-context` access to Developer, Test Engineer, Reviewer, and Git
+  Steward. The launcher now applies `enabled_tools` on every turn and records allowed
+  and effective subsets. Four deterministic Git GUI benchmarks showed 58-77% lower
+  tool-schema size, 99.4% less output for repository search, 97.6% less output for
+  attempt summaries, and about 60% less output for change summaries; focused gate and
+  result commands remain preferable when they are already smaller.
+- 2026-07-31: Fixed live `local-docs` provenance after atomic index replacement.
+  Every list, search, and read now obtains the current digest from the same read-only
+  connection as its content and rejects a replaced symlink or invalid index metadata.
+- 2026-07-31: Reviewed completed Git GUI task T191 as the first Developer rollout
+  candidate. Its session received the intended context server and three-tool subset
+  but made zero MCP calls, then accumulated 7.1 million input tokens across 62 shell
+  commands, including several early 19-39 KB discovery reads. Tightened context-heavy
+  routing, added question-oriented handoff targets and a soft six-call pre-edit
+  checkpoint, stopped redundant guidance searches, and added bounded
+  `get_change_summary` access to future Developer attempts. A fresh isolated
+  `gpt54-mini` Developer canary selected that tool exactly once with no shell call and
+  returned five paths from a 487-change worktree in 696 bytes and 17.3 ms.
+- 2026-07-31: Corrected MCP routing after Git GUI T193 guessed an absolute workspace
+  as the `project` argument, received one failed context call, and fell back to 31 shell
+  commands. New worker attempts now receive a launcher-derived, session-pinned project
+  binding and schemas that omit `project`; Lead and legacy attempts remain unbound.
+  Hard discovery interruption remains deferred until three bound tasks are measured.
+- 2026-07-31: Measured Git GUI T195 as the first bound-routing task. Its project-bound
+  `get_task_context` call succeeded without a project argument in 33 ms, but a broad
+  Context reading list and missing source/test locators still led to 150 KB of planning
+  command output; the Planned Lane agent also used the unrelated capsule checkpoint.
+  Removed capsule instructions from the default Developer bundle, isolated them in an
+  opt-in playbook, standardized ordinary discovery on `CONTEXT GAP`, and required exact
+  question/file/locator/use Context Targets. MCP structured targets remain deferred
+  until T196 and T197 are measured.

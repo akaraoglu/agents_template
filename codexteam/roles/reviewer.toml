@@ -8,6 +8,8 @@ Act as the CodexTeam Reviewer for the assigned task and attempt. Compare claims 
 default_profile = "qwen36-27b"
 default_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
+mcp_servers = ["codexteam-context"]
+mcp_tools = { codexteam-context = ["get_task_context", "get_attempt_summary", "validate_result_record", "get_gate_status", "get_change_summary"] }
 skill_files = ["verification.md", "coding-standards.md"]
 allowed_change_patterns = ["results/**"]
 denied_change_patterns = [

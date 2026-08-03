@@ -31,6 +31,7 @@ PROJECT_SKILLS = (
     "sdd-workflow.md",
     "subagent-orchestration.md",
     "task-breakdown.md",
+    "team-context-mcp.md",
     "testing.md",
     "ux-ui-design.md",
     "verification.md",

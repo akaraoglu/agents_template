@@ -50,3 +50,26 @@
 - Do not call a milestone repository fully closed when the milestone commit contains an
   active Git Steward task and final delivery files remain modified afterward. Commit
   the narrowly scoped closure metadata separately.
+- Do not equate named filenames with bounded context. When a worker would still read
+  several complete upstream artifacts, scan the repository, or print a large dirty
+  status, route the question through one bounded `codexteam-context` call. Skip MCP
+  only for sufficient exact headings, symbols, short ranges, or a smaller
+  authoritative command, and never duplicate a sufficient response with broad shell
+  discovery.
+- Do not make a worker search the project or personal memory for role skills already
+  injected and pinned in its attempt guidance bundle.
+- Do not cache local-document index provenance across an atomic index replacement.
+  Read the digest and requested content through the same read-only SQLite connection
+  so a live MCP process cannot attribute new documents to an old index.
+- Do not make a worker guess `codexteam-context` project identity from a workspace path
+  or pass an absolute path as `project`. The launcher owns the binding and bound worker
+  schemas omit the argument; a failed guessed call must not trigger broad rediscovery.
+- Do not pair precise Context Targets with a conflicting instruction to read several
+  whole milestone artifacts. State accepted facts in Context and give exact source,
+  test, and evidence locators with their intended use.
+- Do not expose capsule checkpoint instructions to every Developer. T195 was a Planned
+  Lane task but returned `CAPSULE CHECKPOINT`, showing that two conditional protocols
+  in the default bundle were ambiguous. Inject the capsule playbook only for its pilot.
+- Do not rely on only the outer Integration Gate timeout for live browser subprocesses.
+  Close protocol handles in `finally`, give each named smoke an inner deadline, bound
+  child-process waits, and keep a negative timeout and port-release canary.

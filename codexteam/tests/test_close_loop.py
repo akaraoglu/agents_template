@@ -38,6 +38,20 @@ def project_with_result(
 def test_close_loop_updates_task_and_project_state(tmp_path: Path, result_factory):
     project = project_with_result(tmp_path, result_factory)
     original_brief = (project / "BRIEF.md").read_text()
+    current_path = project / "CURRENT_TASK.md"
+    current_path.write_text(
+        current_path.read_text()
+        .replace(
+            "- Objective: Finalize requirements and the project skeleton.",
+            "- Objective: Finalize requirements and the project skeleton.\n"
+            "  stale objective continuation",
+        )
+        .replace(
+            "- Next Action: Review the handoff and complete its acceptance criteria.",
+            "- Next Action: Review the handoff and complete its acceptance criteria.\n"
+            "  stale next-action continuation",
+        )
+    )
     plan, result, tasks_text = prepare_close_loop(project, "T001", [sys.executable, "-c", "print('verified')"])
     assert execute_close_loop(plan, result, tasks_text, timeout_seconds=10)
     row = parse_task_document((project / "TASKS.md").read_text()).row("T001")
@@ -49,6 +63,9 @@ def test_close_loop_updates_task_and_project_state(tmp_path: Path, result_factor
     current_task = (project / "CURRENT_TASK.md").read_text()
     assert "Task ID: T002" in current_task
     assert "Status: In Progress" in current_task
+    assert "Responsible AI: architect-01" in current_task
+    assert "stale objective continuation" not in current_task
+    assert "stale next-action continuation" not in current_task
     brief = (project / "BRIEF.md").read_text()
     assert "- Phase: implementation" in brief
     assert "- Active task: `T002` — Design the code and project architecture" in brief
@@ -151,6 +168,7 @@ def test_last_task_generates_delivery(tmp_path: Path, result_factory, monkeypatc
     execute_close_loop(plan, result, tasks_text, timeout_seconds=10)
     assert (project / "DELIVERY.md").is_file()
     assert "Status: DELIVERED" in (project / "PROJECT_STATE.md").read_text()
+    assert "Responsible AI: None" in (project / "CURRENT_TASK.md").read_text()
     brief = (project / "BRIEF.md").read_text()
     assert "- Phase: delivery complete" in brief
     assert "- Active task: None" in brief
@@ -198,6 +216,7 @@ def test_default_t005_reviewer_is_activated_instead_of_delivering_after_t004(
     current_task = (project / "CURRENT_TASK.md").read_text()
     assert "Task ID: T005" in current_task
     assert "Status: In Progress" in current_task
+    assert "Responsible AI: reviewer-01" in current_task
     assert not (project / "DELIVERY.md").exists()
 
 

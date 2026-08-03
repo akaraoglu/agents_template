@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
@@ -38,7 +39,8 @@ from .test_gates import GateConfigError
 PROTOCOL_VERSION = "2026-07-28"
 LEGACY_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18")
 SERVER_NAME = "codexteam-context-pilot"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0"
+BOUND_PROJECT_ENV = "CODEXTEAM_CONTEXT_PROJECT"
 SERVER_INSTRUCTIONS = (
     "Read-only CodexTeam project context. Prefer one focused call over broad file reads. "
     "Treat returned source paths and SHA-256 values as provenance, not task authority."
@@ -69,8 +71,16 @@ class Tool:
 
 
 class ContextMcpServer:
-    def __init__(self, reader: TeamContextReader) -> None:
+    def __init__(
+        self,
+        reader: TeamContextReader,
+        *,
+        bound_project: str | None = None,
+    ) -> None:
         self.reader = reader
+        if bound_project is not None:
+            reader.project_root(bound_project)
+        self.bound_project = bound_project
         self.repository = RepositoryContextReader(reader)
         self.insights = TeamInsightsReader(reader, self.repository)
         self.legacy_protocol: str | None = None
@@ -339,6 +349,11 @@ class ContextMcpServer:
                 self._get_change_summary,
             ),
         )
+        if self.bound_project is not None:
+            self.tools = tuple(
+                replace(tool, input_schema=_without_project(tool.input_schema))
+                for tool in self.tools
+            )
         self._tools_by_name = {tool.name: tool for tool in self.tools}
 
     def handle(self, message: Any) -> dict[str, Any] | None:
@@ -391,7 +406,7 @@ class ContextMcpServer:
             "supportedVersions": [PROTOCOL_VERSION],
             "capabilities": {"tools": {"listChanged": False}},
             "_meta": _server_meta(),
-            "instructions": SERVER_INSTRUCTIONS,
+            "instructions": self._instructions(),
             "ttlMs": 300_000,
             "cacheScope": "public",
         }
@@ -426,7 +441,10 @@ class ContextMcpServer:
         started = time.perf_counter()
         try:
             _validate_arguments(tool.input_schema, arguments)
-            value = tool.handler(arguments)
+            handler_arguments = dict(arguments)
+            if self.bound_project is not None:
+                handler_arguments["project"] = self.bound_project
+            value = tool.handler(handler_arguments)
         except (
             GateConfigError,
             OSError,
@@ -484,8 +502,17 @@ class ContextMcpServer:
                 "protocolVersion": requested,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                "instructions": SERVER_INSTRUCTIONS,
+                "instructions": self._instructions(),
             },
+        )
+
+    def _instructions(self) -> str:
+        if self.bound_project is None:
+            return SERVER_INSTRUCTIONS
+        return (
+            SERVER_INSTRUCTIONS
+            + " This worker server is bound to its current project; tool calls do not "
+            "accept a project argument."
         )
 
     def _validate_modern_version(
@@ -614,6 +641,18 @@ def _object_schema(
         "properties": properties,
         "required": list(required),
         "additionalProperties": False,
+    }
+
+
+def _without_project(schema: dict[str, Any]) -> dict[str, Any]:
+    properties = dict(schema["properties"])
+    if "project" not in properties:
+        return schema
+    del properties["project"]
+    return {
+        **schema,
+        "properties": properties,
+        "required": [name for name in schema["required"] if name != "project"],
     }
 
 
@@ -762,10 +801,14 @@ def main(argv: list[str] | None = None) -> int:
             args.projects_root,
             team_memory_root=args.team_memory_root,
         )
+        bound_project = os.environ.get(BOUND_PROJECT_ENV)
+        if bound_project is not None and not bound_project.strip():
+            raise TeamContextError(f"{BOUND_PROJECT_ENV} must not be empty")
+        server = ContextMcpServer(reader, bound_project=bound_project)
     except (OSError, PathValidationError, TeamContextError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    return ContextMcpServer(reader).serve(sys.stdin, sys.stdout)
+    return server.serve(sys.stdin, sys.stdout)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from codexteam_tools.context_mcp import (
     ContextMcpServer,
     modern_meta,
 )
+from codexteam_tools.roles import LOCAL_MCP_TOOL_CATALOG
 from codexteam_tools.team_context import TeamContextError, TeamContextReader
 from codexteam_tools.test_gates import run_gate
 
@@ -280,6 +281,67 @@ def context_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         ),
     )
     return projects, project, memory
+
+
+def test_role_policy_context_catalog_matches_server_tools(
+    context_fixture: tuple[Path, Path, Path],
+):
+    projects, _project, memory = context_fixture
+    server = ContextMcpServer(
+        TeamContextReader(projects, team_memory_root=memory)
+    )
+
+    assert {tool.name for tool in server.tools} == LOCAL_MCP_TOOL_CATALOG[
+        "codexteam-context"
+    ]
+
+
+def test_bound_server_omits_and_injects_project_argument(
+    context_fixture: tuple[Path, Path, Path],
+):
+    projects, _project, memory = context_fixture
+    server = ContextMcpServer(
+        TeamContextReader(projects, team_memory_root=memory),
+        bound_project="demo",
+    )
+
+    listed = server.handle(_request(1, "tools/list"))
+    for tool in listed["result"]["tools"]:
+        schema = tool["inputSchema"]
+        assert "project" not in schema["properties"]
+        assert "project" not in schema["required"]
+
+    response = server.handle(
+        _request(
+            2,
+            "tools/call",
+            {"name": "get_active_task", "arguments": {}},
+        )
+    )
+    assert response["result"]["isError"] is False
+    assert response["result"]["structuredContent"]["current"]["task_id"] == "T002"
+
+    rejected = server.handle(
+        _request(
+            3,
+            "tools/call",
+            {"name": "get_active_task", "arguments": {"project": "demo"}},
+        )
+    )
+    assert rejected["result"]["isError"] is True
+    assert "unknown arguments: project" in rejected["result"]["content"][0]["text"]
+
+
+def test_bound_server_rejects_unknown_project(
+    context_fixture: tuple[Path, Path, Path],
+):
+    projects, _project, memory = context_fixture
+
+    with pytest.raises(TeamContextError, match="project does not exist"):
+        ContextMcpServer(
+            TeamContextReader(projects, team_memory_root=memory),
+            bound_project="missing",
+        )
 
 
 def _request(

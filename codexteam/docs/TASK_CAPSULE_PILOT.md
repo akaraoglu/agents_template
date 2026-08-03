@@ -5,6 +5,9 @@
 Task capsules remain an opt-in experiment for medium Developer tasks. The
 two-task read-only pilot justifies a live-task pilot, but not a source-context
 MCP, universal capsule generation, or reduced Integration Gate coverage.
+The operational procedure now lives only in
+`.agents/playbooks/task-capsule-pilot.md`; default Developer guidance does not
+include the capsule checkpoint contract.
 
 ## Contract
 
@@ -31,6 +34,10 @@ For a live pilot, the Lead:
 3. Writes `.codexteam/runtime/task-capsules/Txxx.md`.
 4. Adds `TASK CAPSULE PILOT`, the exact capsule path, and capsule SHA-256 to the
    canonical handoff before spawning the Developer.
+
+The first draft must inject the complete file set documented by the playbook.
+The launcher's `--skill-file` option replaces rather than extends the default
+bundle, so injecting the capsule playbook alone is invalid.
 
 The Developer verifies the capsule digest and all named source/test hashes.
 Combined cost uses the existing project-local `lead-metrics.json` task entry

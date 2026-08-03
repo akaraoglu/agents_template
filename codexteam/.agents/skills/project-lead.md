@@ -13,13 +13,28 @@ For a cold start in `/home/alik/workspace/agent_template/codexteam`, the root Co
 ## Inputs Needed
 
 - User request or project goal
-- `BRIEF.md` and the active task handoff
+- The active task handoff and its exact context targets
+- `BRIEF.md` only when orientation or an explicit handoff target requires it
 - The exact requirements, source files, and evidence artifacts named by that handoff
 - Canonical management documents when planning, assigning, or closing state
 - Worker draft and handoff-scoped project files
 - Current verification evidence
 
-Do not make every role rediscover the repository. For an active assignment, start with the brief, the handoff, and the files or artifacts that the handoff names. Expand context only when an observable gap requires it.
+Do not make every role rediscover the repository. For an active assignment,
+start with the handoff and its exact targets. Add the brief or canonical
+management documents only for roles that own orientation, planning, or
+lifecycle state, or when the handoff names them. Expand context only when a
+concrete dependency, contradiction, or failing verification requires it.
+
+For a context-heavy handoff, keep `Context` to concise accepted facts and add two
+to five `Context Targets`. Each target states the question, exact file, heading,
+symbol, selector, or test name, and how the answer affects implementation. A
+Developer handoff names at least one source and one focused test target unless it
+creates them. Do not assign whole prior architecture, planning, task, or result
+artifacts; use no directory globs or generic filename lists as targets. Omit this
+section only when the exact source and test locators are already sufficient in the
+handoff. Do not ask a worker to infer or pass an MCP project argument; the launcher
+binds its context server from the exact workspace.
 
 For existing project, task, attempt, gate, change, repository-search, memory, or
 cost state, load `.agents/skills/team-context-mcp.md` and begin with the smallest
@@ -58,10 +73,10 @@ canonical task IDs and handoffs.
 
 ## Workflow
 
-1. On cold start, route the request through `AGENTS.md` and `.agents/LEAD_BOOT.md`. For an existing project, use the routed context MCP skill to identify the active state, then inspect only the brief, handoff, and named files or evidence needed for the decision. Do not begin with repo-wide rediscovery.
+1. On cold start, route the request through `AGENTS.md` and `.agents/LEAD_BOOT.md`. For an existing project, use the routed context MCP skill to identify the active state, then inspect only the handoff and named files or evidence needed for the decision. Read the brief when orientation is required. Do not begin with repo-wide rediscovery.
 2. Resolve missing requirements internally when the approved specification provides enough evidence; ask the operator only when a material choice or showstopper truly requires them.
 3. Decide whether accepted design needs Feature Planner decomposition. If so, accept or revise its `results/` artifact before creating implementation tasks; never let the planner implement, activate tasks, spawn workers, or approve its own proposal.
-4. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff.
+4. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff. For context-heavy work, include question-oriented `Context Targets` with exact locators and intended use; remove broad reading lists that contradict them.
 5. Review the worker's draft and changed files independently before accepting it.
 6. Return one consolidated feedback message only for an observable defect: a failed criterion, contradictory file or command output, missing required artifact, invalid result field, or unsupported completion claim. State what is accepted, what must change, why, and what must remain unchanged. Do not block acceptance for preference-only rewrites or speculative improvements. Store the prompt at one stable project-runtime path and pass that exact path to the launcher.
    When a worker reports repeated unchanged evidence, keep the same task, attempt, profile, and thread. Treat the checkpoint as diagnostic evidence, then provide one materially different diagnostic or the missing dependency. Repetition is justified only after relevant state changed, for an explicit determinism check, for a known bounded transient, or with an approved changed setup.
@@ -114,6 +129,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Feature Planner is used only after architecture acceptance for materially multi-part implementation; the Project Lead owns task IDs and plan acceptance.
 - Feedback cites observable defects or ground truth.
 - Small-slice roles receive the brief, their handoff, and named artifacts instead of a generic repository-wide reading assignment.
+- Context-heavy handoffs identify exact questions and headings, symbols, or bounded paths instead of requiring several whole upstream artifacts.
 - Development and Integration Gate evidence is reused by the Reviewer and Documenter unless a concrete gap requires another check.
 - Architect output is approved by the Project Lead and audited for conformance by the Reviewer.
 - Git Steward is invoked only at a verified boundary, stages explicit approved paths, and never performs a remote action.

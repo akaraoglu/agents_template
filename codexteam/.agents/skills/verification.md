@@ -18,7 +18,12 @@ Use for draft review, final-result inspection, every task closure, and delivery 
 
 ## Workflow
 
-1. Identify the exact claims and acceptance criteria under review.
+1. Identify the exact claims and acceptance criteria under review. When
+   `codexteam-context` is available, begin with `get_task_context` if the review boundary
+   is not already exact. Use `get_attempt_summary`, `validate_result_record`,
+   `get_gate_status`, and `get_change_summary` only for the corresponding review question.
+   Do not repeat a sufficient MCP response with broad shell discovery. Treat every summary
+   as an orientation aid, then inspect the named source and evidence required for the claim.
 2. Inspect declared files and artifacts rather than trusting summaries.
 3. Compare each claim with the actual artifact content. Artifact existence, schema validity, and another agent's acceptance are not substitutes for this comparison.
 4. Run the smallest relevant command, then broader checks when shared behavior or delivery is affected. Include at least one exact-output or golden comparison for output-format requirements that the existing suite does not fully assert.

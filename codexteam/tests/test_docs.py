@@ -329,6 +329,22 @@ def test_project_lead_context_mcp_workflow_is_discoverable_and_bounded():
     assert "one narrow fallback" in skill
 
 
+def test_context_target_guidance_requires_exact_source_and_test_locators():
+    lead = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "project-lead.md"
+    ).read_text(encoding="utf-8")
+    breakdown = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "task-breakdown.md"
+    ).read_text(encoding="utf-8")
+
+    assert "question, exact file" in lead
+    assert "one source and one focused test target" in lead
+    assert "Question:" in breakdown
+    assert "Target:" in breakdown
+    assert "Use:" in breakdown
+    assert "a filename alone or `results/**` is not a target" in breakdown
+
+
 def test_project_test_gate_template_defines_distinct_owners_and_ci_parity():
     content = (
         CODEXTEAM_ROOT / "templates" / "project" / "management" / "TEST_GATES.md"

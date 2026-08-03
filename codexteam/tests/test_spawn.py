@@ -64,11 +64,12 @@ def successful_process(message: str, *, thread_id: str = THREAD_ID) -> spawn.Pro
     return spawn.ProcessResult(0, event_stream(message, thread_id=thread_id), "", 0.2)
 
 
-def configure_mcp_servers(source_home: Path) -> None:
+def configure_mcp_servers(source_home: Path, projects_root: Path) -> None:
     (source_home / "config.toml").write_text(
-        """
+        f"""
 [mcp_servers.codexteam-context]
 command = "context-server"
+args = ["--projects-root", {json.dumps(str(projects_root))}]
 
 [mcp_servers.github-readonly]
 command = "github-server"
@@ -197,14 +198,20 @@ def test_role_policy_enforces_mcp_servers_with_per_process_overrides(
 ):
     developer_args = request_args(tmp_path, monkeypatch)
     source_home = Path(spawn.os.environ["CODEX_HOME"])
-    configure_mcp_servers(source_home)
+    configure_mcp_servers(source_home, Path(developer_args.workspace).parent)
 
     developer = spawn.prepare_request(developer_args)
     developer_command = spawn.build_command(developer, spawn.prepare_turn(developer))
-    assert developer.effective_mcp_servers == ("local-docs",)
+    assert developer.effective_mcp_servers == (
+        "codexteam-context",
+        "local-docs",
+    )
     assert developer.missing_mcp_servers == ()
+    assert developer.mcp_context_project == "workspace"
     assert mcp_overrides(developer_command) == {
-        "mcp_servers.codexteam-context.enabled=false",
+        "mcp_servers.codexteam-context.enabled=true",
+        'mcp_servers.codexteam-context.enabled_tools=["get_task_context","search_repository","get_gate_status","get_change_summary"]',
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="workspace"',
         "mcp_servers.github-readonly.enabled=false",
         "mcp_servers.playwright.enabled=false",
         "mcp_servers.local-docs.enabled=true",
@@ -214,9 +221,15 @@ def test_role_policy_enforces_mcp_servers_with_per_process_overrides(
         request_args(tmp_path, monkeypatch, role="tester")
     )
     tester_command = spawn.build_command(tester, spawn.prepare_turn(tester))
-    assert tester.effective_mcp_servers == ("playwright",)
+    assert tester.effective_mcp_servers == (
+        "codexteam-context",
+        "playwright",
+    )
+    assert tester.mcp_context_project == "workspace"
     assert mcp_overrides(tester_command) == {
-        "mcp_servers.codexteam-context.enabled=false",
+        "mcp_servers.codexteam-context.enabled=true",
+        'mcp_servers.codexteam-context.enabled_tools=["get_task_context","get_change_summary","get_gate_status"]',
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="workspace"',
         "mcp_servers.github-readonly.enabled=false",
         "mcp_servers.playwright.enabled=true",
         "mcp_servers.local-docs.enabled=false",
@@ -230,6 +243,7 @@ def test_role_policy_enforces_mcp_servers_with_per_process_overrides(
         "codexteam-context",
         "github-readonly",
     )
+    assert leader.mcp_context_project is None
     assert mcp_overrides(leader_command) == {
         "mcp_servers.codexteam-context.enabled=true",
         "mcp_servers.github-readonly.enabled=true",
@@ -249,6 +263,39 @@ def test_role_policy_enforces_mcp_servers_with_per_process_overrides(
         "mcp_servers.local-docs.enabled=true",
     }
 
+    reviewer = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="reviewer")
+    )
+    reviewer_command = spawn.build_command(reviewer, spawn.prepare_turn(reviewer))
+    assert reviewer.effective_mcp_servers == ("codexteam-context",)
+    assert reviewer.mcp_context_project == "workspace"
+    assert mcp_overrides(reviewer_command) == {
+        "mcp_servers.codexteam-context.enabled=true",
+        'mcp_servers.codexteam-context.enabled_tools=["get_task_context","get_attempt_summary","validate_result_record","get_gate_status","get_change_summary"]',
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="workspace"',
+        "mcp_servers.github-readonly.enabled=false",
+        "mcp_servers.playwright.enabled=false",
+        "mcp_servers.local-docs.enabled=false",
+    }
+
+    git_steward = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="git_steward")
+    )
+    git_steward_command = spawn.build_command(
+        git_steward,
+        spawn.prepare_turn(git_steward),
+    )
+    assert git_steward.effective_mcp_servers == ("codexteam-context",)
+    assert git_steward.mcp_context_project == "workspace"
+    assert mcp_overrides(git_steward_command) == {
+        "mcp_servers.codexteam-context.enabled=true",
+        'mcp_servers.codexteam-context.enabled_tools=["get_task_context","get_change_summary","get_gate_status"]',
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="workspace"',
+        "mcp_servers.github-readonly.enabled=false",
+        "mcp_servers.playwright.enabled=false",
+        "mcp_servers.local-docs.enabled=false",
+    }
+
 
 def test_role_mcp_policy_reports_missing_server_without_enabling_it(
     tmp_path: Path, monkeypatch
@@ -258,8 +305,156 @@ def test_role_mcp_policy_reports_missing_server_without_enabling_it(
     )
 
     assert request.effective_mcp_servers == ()
-    assert request.missing_mcp_servers == ("playwright",)
+    assert request.missing_mcp_servers == (
+        "codexteam-context",
+        "playwright",
+    )
     assert mcp_overrides(spawn.build_command(request, spawn.prepare_turn(request))) == set()
+
+
+def test_mcp_tool_subsets_are_persisted_in_session_and_turn_state(
+    tmp_path: Path,
+    monkeypatch,
+):
+    args = request_args(tmp_path, monkeypatch, role="reviewer")
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    configure_mcp_servers(source_home, Path(args.workspace).parent)
+    request = spawn.prepare_request(args)
+    request.result_dir.mkdir()
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+
+    _outcome, code = spawn.run_spawn(request)
+
+    assert code == 0
+    session = json.loads(request.session_path.read_text())
+    state = json.loads((request.session_dir / "turn-state.json").read_text())
+    expected = {
+        "codexteam-context": [
+            "get_task_context",
+            "get_attempt_summary",
+            "validate_result_record",
+            "get_gate_status",
+            "get_change_summary",
+        ]
+    }
+    assert session["mcp_allowed_tools"] == expected
+    assert session["mcp_effective_tools"] == expected
+    assert state["mcp_allowed_tools"] == expected
+    assert state["mcp_effective_tools"] == expected
+    assert session["mcp_context_project"] == "workspace"
+    assert state["mcp_context_project"] == "workspace"
+
+
+def test_context_binding_is_pinned_across_continuation_turns(
+    tmp_path: Path,
+    monkeypatch,
+):
+    args = request_args(tmp_path, monkeypatch)
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    configure_mcp_servers(source_home, Path(args.workspace).parent)
+    draft = spawn.prepare_request(args)
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+    _outcome, code = spawn.run_spawn(draft)
+    assert code == 0
+
+    feedback = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            phase="feedback",
+            prompt="FEEDBACK: REVISE",
+        )
+    )
+    command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
+
+    assert feedback.mcp_context_project == "workspace"
+    assert (
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="workspace"'
+        in mcp_overrides(command)
+    )
+
+
+def test_legacy_continuation_remains_unbound(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    configure_mcp_servers(source_home, Path(args.workspace).parent)
+    draft = spawn.prepare_request(args)
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+    _outcome, code = spawn.run_spawn(draft)
+    assert code == 0
+    session = json.loads(draft.session_path.read_text())
+    del session["mcp_context_project"]
+    draft.session_path.write_text(json.dumps(session))
+
+    feedback = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            phase="feedback",
+            prompt="FEEDBACK: REVISE",
+        )
+    )
+
+    assert feedback.mcp_context_project is None
+    assert not any(
+        "CODEXTEAM_CONTEXT_PROJECT" in override
+        for override in mcp_overrides(
+            spawn.build_command(feedback, spawn.prepare_turn(feedback))
+        )
+    )
+
+
+def test_context_binding_rejects_tampered_session(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    configure_mcp_servers(source_home, Path(args.workspace).parent)
+    draft = spawn.prepare_request(args)
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+    _outcome, code = spawn.run_spawn(draft)
+    assert code == 0
+    session = json.loads(draft.session_path.read_text())
+    session["mcp_context_project"] = "different-project"
+    draft.session_path.write_text(json.dumps(session))
+
+    with pytest.raises(ValueError, match="session MCP context project mismatch"):
+        spawn.prepare_request(
+            request_args(
+                tmp_path,
+                monkeypatch,
+                phase="feedback",
+                prompt="FEEDBACK: REVISE",
+            )
+        )
+
+
+def test_context_binding_rejects_workspace_outside_configured_projects_root(
+    tmp_path: Path,
+    monkeypatch,
+):
+    args = request_args(tmp_path, monkeypatch)
+    configured_root = tmp_path / "different-projects"
+    configured_root.mkdir()
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    configure_mcp_servers(source_home, configured_root)
+
+    with pytest.raises(ValueError, match="must be a direct child"):
+        spawn.prepare_request(args)
 
 
 def test_worker_environment_disables_project_bytecode_caches(tmp_path: Path, monkeypatch):

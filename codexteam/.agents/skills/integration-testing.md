@@ -18,6 +18,11 @@ Use after a Developer draft and development-gate evidence exist, before the Deve
 ## Workflow
 
 1. Derive expectations from approved project truth, not from the current implementation output.
+   When `codexteam-context` is available and the handoff does not already provide sufficient
+   exact evidence, use `get_task_context` for the assignment boundary, `get_change_summary`
+   to identify the changed surface, and `get_gate_status` for gate configuration or
+   freshness. Do not repeat a sufficient result with a broad repository scan. Open the
+   returned exact source, tests, and artifacts before making an acceptance claim.
 2. Map acceptance criteria and affected existing behavior to integration, regression, negative, lifecycle, concurrency, security, browser, or environment checks as applicable.
 3. Inspect existing tests before editing. Add or modify Test Engineer-owned tests and controlled fixtures only when the handoff authorizes the paths. When a browser is necessary, use the role-allowed Playwright inspection tools for a bounded observation and prefer `browser_find` over a full snapshot when one text target is sufficient. Do not use screenshots, form input, clicks, uploads, keyboard input, page evaluation, or arbitrary browser code in the inspection-only pilot.
 4. For every changed assertion or golden value, record the requirement, accepted decision, or confirmed test defect that justifies the change.

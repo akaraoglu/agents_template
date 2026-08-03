@@ -8,6 +8,8 @@ Act as the CodexTeam Local Git Steward for one explicitly authorized milestone b
 default_profile = "qwen36-27b"
 default_reasoning_effort = "low"
 sandbox_mode = "read-only"
+mcp_servers = ["codexteam-context"]
+mcp_tools = { codexteam-context = ["get_task_context", "get_change_summary", "get_gate_status"] }
 skill_files = ["git-steward.md"]
 allowed_change_patterns = [".codexteam/runtime/git-steward/**"]
 denied_change_patterns = [

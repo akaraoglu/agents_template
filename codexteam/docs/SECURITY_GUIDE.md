@@ -14,7 +14,15 @@
 - Run subagents in a new process session and terminate the process group on timeout.
 - Use a temporary `CODEX_HOME` with mode `0700` and copy only local profile/config/catalog files.
 - Snapshot the workspace before and after each worker turn and reject paths outside the selected role's mechanical change boundary.
-- Treat the pinned role policy's `mcp_servers` as an allowlist and explicitly disable every other configured server for each worker process.
+- Treat the pinned role policy's `mcp_servers` as an allowlist, apply its
+  server-specific `mcp_tools` subset, and explicitly disable every other configured
+  server for each worker process. Reject unknown tools for locally owned servers.
+- Keep `codexteam-context` local and read-only. Developer, Test Engineer, Reviewer,
+  and Git Steward receive only role-specific bounded subsets; MCP output never
+  replaces source inspection, test execution, result verification, or Git authorization.
+- Bind each new worker MCP process to the launcher-derived direct-child project and
+  omit `project` from its schemas. Keep Lead unbound for deliberate multi-project reads,
+  and fail closed on root mismatch, symlinks, or changed pinned binding.
 - Keep Playwright isolated, headless, image-free, and limited to the inspection pilot tools; browser observations never replace deterministic test-gate evidence.
 - Keep GitHub MCP digest-pinned, server-enforced read-only, and host-allowlisted to bounded read tools. Allow it only for the Leader after authentication verification; keep it disabled for every other role.
 - Keep `local-docs` on STDIO with no network or subprocess imports and exactly three read-only tools. Its MCP process opens the ignored mode-`0600` index read-only; only the separate preview-first indexer may atomically replace it from manifest-approved, symlink-free local sources.

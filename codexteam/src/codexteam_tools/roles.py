@@ -20,6 +20,32 @@ REASONING_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 SANDBOX_MODES = {"read-only", "workspace-write"}
 ROLE_NAME_PATTERN = re.compile(r"codexteam_[a-z][a-z0-9_]{1,63}")
 MCP_SERVER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+MCP_TOOL_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}")
+LOCAL_MCP_TOOL_CATALOG = {
+    "codexteam-context": frozenset(
+        {
+            "get_active_task",
+            "get_project_overview",
+            "list_tasks",
+            "get_task_handoff",
+            "get_task_context",
+            "get_attempt_summary",
+            "get_gate_status",
+            "validate_result_record",
+            "get_cost_hotspots",
+            "search_team_memory",
+            "search_repository",
+            "get_change_summary",
+        }
+    ),
+    "local-docs": frozenset(
+        {
+            "list_doc_sources",
+            "search_docs",
+            "read_doc",
+        }
+    ),
+}
 REQUIRED_POLICY_FIELDS = {
     "schema_version",
     "role",
@@ -34,7 +60,7 @@ REQUIRED_POLICY_FIELDS = {
     "denied_change_patterns",
     "allowed_evidence_types",
 }
-OPTIONAL_POLICY_FIELDS = {"mcp_servers"}
+OPTIONAL_POLICY_FIELDS = {"mcp_servers", "mcp_tools"}
 POLICY_FIELDS = REQUIRED_POLICY_FIELDS | OPTIONAL_POLICY_FIELDS
 
 
@@ -58,6 +84,8 @@ class RolePolicy:
     allowed_evidence_types: tuple[str, ...]
     mcp_servers: tuple[str, ...]
     mcp_servers_declared: bool
+    mcp_tools: tuple[tuple[str, tuple[str, ...]], ...]
+    mcp_tools_declared: bool
     digest: str
     source_path: Path
 
@@ -66,6 +94,9 @@ class RolePolicy:
         if any(fnmatchcase(normalized, pattern) for pattern in self.denied_change_patterns):
             return False
         return any(fnmatchcase(normalized, pattern) for pattern in self.allowed_change_patterns)
+
+    def tools_for_server(self, server: str) -> tuple[str, ...]:
+        return dict(self.mcp_tools).get(server, ())
 
     def snapshot(self) -> dict[str, Any]:
         value = {
@@ -85,6 +116,11 @@ class RolePolicy:
         }
         if self.mcp_servers_declared:
             value["mcp_servers"] = list(self.mcp_servers)
+        if self.mcp_tools_declared:
+            value["mcp_tools"] = {
+                server: list(tools)
+                for server, tools in self.mcp_tools
+            }
         return value
 
 
@@ -229,6 +265,30 @@ def role_policy_from_mapping(
             "mcp_servers must use names containing only letters, digits, hyphens, "
             "or underscores: " + ", ".join(invalid_mcp_servers)
         )
+    mcp_tools_declared = "mcp_tools" in data
+    mcp_tools = (
+        _mcp_tool_mapping(data.get("mcp_tools"), errors)
+        if mcp_tools_declared
+        else ()
+    )
+    unlisted_tool_servers = sorted(
+        server for server, _tools in mcp_tools if server not in mcp_servers
+    )
+    if unlisted_tool_servers:
+        errors.append(
+            "mcp_tools servers must also appear in mcp_servers: "
+            + ", ".join(unlisted_tool_servers)
+        )
+    for server, tools in mcp_tools:
+        catalog = LOCAL_MCP_TOOL_CATALOG.get(server)
+        if catalog is None:
+            continue
+        unknown_tools = sorted(set(tools) - catalog)
+        if unknown_tools:
+            errors.append(
+                f"mcp_tools for {server} contain unknown locally owned tools: "
+                + ", ".join(unknown_tools)
+            )
 
     if errors:
         raise RolePolicyError(f"invalid role policy {source_path}: " + "; ".join(errors))
@@ -249,6 +309,11 @@ def role_policy_from_mapping(
     }
     if mcp_servers_declared:
         canonical["mcp_servers"] = list(mcp_servers)
+    if mcp_tools_declared:
+        canonical["mcp_tools"] = {
+            server: list(tools)
+            for server, tools in mcp_tools
+        }
     digest = hashlib.sha256(
         json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -267,6 +332,8 @@ def role_policy_from_mapping(
         allowed_evidence_types=evidence_types,
         mcp_servers=mcp_servers,
         mcp_servers_declared=mcp_servers_declared,
+        mcp_tools=mcp_tools,
+        mcp_tools_declared=mcp_tools_declared,
         digest=digest,
         source_path=source_path,
     )
@@ -360,6 +427,39 @@ def _pattern_tuple(
         if pattern.startswith("/") or "\\" in pattern or ".." in pattern.split("/"):
             errors.append(f"unsafe {field} pattern: {pattern!r}")
     return patterns
+
+
+def _mcp_tool_mapping(
+    value: Any,
+    errors: list[str],
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    if not isinstance(value, dict):
+        errors.append("mcp_tools must be an object mapping servers to tool lists")
+        return ()
+    if not value:
+        errors.append("mcp_tools cannot be empty")
+        return ()
+    entries: list[tuple[str, tuple[str, ...]]] = []
+    for server in sorted(value):
+        if not isinstance(server, str) or not MCP_SERVER_PATTERN.fullmatch(server):
+            errors.append(f"invalid mcp_tools server name: {server!r}")
+            continue
+        tools = _string_tuple(
+            value[server],
+            f"mcp_tools.{server}",
+            errors,
+            required=True,
+        )
+        invalid_tools = sorted(
+            tool for tool in tools if not MCP_TOOL_PATTERN.fullmatch(tool)
+        )
+        if invalid_tools:
+            errors.append(
+                f"mcp_tools.{server} contains invalid tool names: "
+                + ", ".join(invalid_tools)
+            )
+        entries.append((server, tools))
+    return tuple(entries)
 
 
 def _normalize_relative_file(value: str) -> str:

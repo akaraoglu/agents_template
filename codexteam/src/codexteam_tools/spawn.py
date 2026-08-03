@@ -49,6 +49,8 @@ ROLE_POLICY_FILENAME = "role-policy.json"
 GUIDANCE_MANIFEST_FILENAME = "guidance-manifest.json"
 TURN_STATE_FILENAME = "turn-state.json"
 WORKSPACE_SCAN_EXCLUDES = (".git", ".codexteam/runtime")
+CONTEXT_MCP_SERVER = "codexteam-context"
+CONTEXT_PROJECT_ENV = "CODEXTEAM_CONTEXT_PROJECT"
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,8 @@ class SpawnRequest:
     configured_mcp_servers: tuple[str, ...]
     effective_mcp_servers: tuple[str, ...]
     missing_mcp_servers: tuple[str, ...]
+    effective_mcp_tools: tuple[tuple[str, tuple[str, ...]], ...]
+    mcp_context_project: str | None
     add_dirs: tuple[Path, ...]
     trust_parent_sandbox: bool
     run_guard: bool
@@ -150,14 +154,19 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         label="session directory",
     )
     session_path = session_dir / "session.json"
+    existing_session = (
+        _load_session(session_path)
+        if phase != "draft" and session_path.is_file()
+        else None
+    )
     role_policy_path = session_dir / ROLE_POLICY_FILENAME
     if phase != "draft" and role_policy_path.is_file():
         role_policy = load_role_policy_snapshot(role_policy_path, expected_role=args.role)
     else:
         role_policy = load_role_policy(args.role)
     profile_value = args.profile
-    if profile_value is None and phase != "draft" and session_path.is_file():
-        profile_value = _load_session(session_path).get("model_profile")
+    if profile_value is None and existing_session is not None:
+        profile_value = existing_session.get("model_profile")
     profile = validate_profile(profile_value or role_policy.default_profile)
 
     prompt = _read_prompt(args.prompt_file, args.prompt)
@@ -173,12 +182,26 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     source_codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve(
         strict=False
     )
-    configured_mcp_servers = _configured_mcp_servers(source_codex_home / "config.toml")
+    codex_config_path = source_codex_home / "config.toml"
+    configured_mcp_servers = _configured_mcp_servers(codex_config_path)
     effective_mcp_servers = tuple(
         server for server in role_policy.mcp_servers if server in configured_mcp_servers
     )
     missing_mcp_servers = tuple(
         server for server in role_policy.mcp_servers if server not in configured_mcp_servers
+    )
+    effective_mcp_tools = tuple(
+        (server, tools)
+        for server, tools in role_policy.mcp_tools
+        if server in effective_mcp_servers
+    )
+    mcp_context_project = _mcp_context_project(
+        config_path=codex_config_path,
+        workspace=workspace,
+        role=args.role,
+        phase=phase,
+        effective_mcp_servers=effective_mcp_servers,
+        existing_session=existing_session,
     )
     profile_file = source_codex_home / f"{profile}.config.toml"
     if not profile_file.is_file():
@@ -232,6 +255,8 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         configured_mcp_servers=configured_mcp_servers,
         effective_mcp_servers=effective_mcp_servers,
         missing_mcp_servers=missing_mcp_servers,
+        effective_mcp_tools=effective_mcp_tools,
+        mcp_context_project=mcp_context_project,
         add_dirs=add_dirs,
         trust_parent_sandbox=trust_parent_sandbox,
         run_guard=run_guard,
@@ -577,21 +602,91 @@ def build_command(
 
 
 def _configured_mcp_servers(config_path: Path) -> tuple[str, ...]:
+    return tuple(sorted(_configured_mcp_server_table(config_path)))
+
+
+def _configured_mcp_server_table(config_path: Path) -> dict[str, dict[str, Any]]:
     if not config_path.is_file():
-        return ()
+        return {}
     try:
         value = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ValueError(f"invalid Codex base configuration: {config_path}: {exc}") from exc
     servers = value.get("mcp_servers")
     if servers is None:
-        return ()
+        return {}
     if not isinstance(servers, dict) or any(
         not isinstance(name, str) or not isinstance(config, dict)
         for name, config in servers.items()
     ):
         raise ValueError(f"Codex base mcp_servers must be a table: {config_path}")
-    return tuple(sorted(servers))
+    return servers
+
+
+def _mcp_context_project(
+    *,
+    config_path: Path,
+    workspace: Path,
+    role: str,
+    phase: str,
+    effective_mcp_servers: tuple[str, ...],
+    existing_session: dict[str, Any] | None,
+) -> str | None:
+    if CONTEXT_MCP_SERVER not in effective_mcp_servers or role == "leader":
+        return None
+    if phase != "draft" and existing_session is not None:
+        if "mcp_context_project" not in existing_session:
+            return None
+        stored = existing_session.get("mcp_context_project")
+        if not isinstance(stored, str) or not stored:
+            raise ValueError("session mcp_context_project must be a non-empty string")
+    else:
+        stored = None
+
+    projects_root = _context_projects_root(config_path)
+    if workspace.parent != projects_root:
+        raise ValueError(
+            "codexteam-context worker workspace must be a direct child of its configured "
+            f"projects root: workspace={workspace}, projects_root={projects_root}"
+        )
+    project = validate_identifier(workspace.name, label="MCP context project")
+    project_entry = projects_root / project
+    if project_entry.is_symlink() or project_entry.resolve(strict=True) != workspace:
+        raise ValueError(
+            f"codexteam-context worker project is missing or unsafe: {project_entry}"
+        )
+    if stored is not None and stored != project:
+        raise ValueError(
+            "session MCP context project mismatch: "
+            f"expected {project!r}, found {stored!r}"
+        )
+    return project
+
+
+def _context_projects_root(config_path: Path) -> Path:
+    servers = _configured_mcp_server_table(config_path)
+    config = servers.get(CONTEXT_MCP_SERVER)
+    if config is None:
+        raise ValueError("codexteam-context is not configured")
+    args = config.get("args")
+    if not isinstance(args, list) or any(not isinstance(item, str) for item in args):
+        raise ValueError(
+            "codexteam-context configuration must expose --projects-root in its args"
+        )
+    roots: list[str] = []
+    for index, argument in enumerate(args):
+        if argument == "--projects-root" and index + 1 < len(args):
+            roots.append(args[index + 1])
+        elif argument.startswith("--projects-root="):
+            roots.append(argument.split("=", 1)[1])
+    if len(roots) != 1 or not roots[0]:
+        raise ValueError(
+            "codexteam-context configuration must contain exactly one --projects-root"
+        )
+    raw_root = Path(roots[0]).expanduser()
+    if not raw_root.is_absolute():
+        raise ValueError("codexteam-context --projects-root must be absolute")
+    return ensure_existing_workspace(raw_root)
 
 
 def _mcp_override_args(request: SpawnRequest) -> list[str]:
@@ -603,6 +698,26 @@ def _mcp_override_args(request: SpawnRequest) -> list[str]:
             (
                 "-c",
                 f"mcp_servers.{server}.enabled={enabled}",
+            )
+        )
+    for server, tools in request.effective_mcp_tools:
+        arguments.extend(
+            (
+                "-c",
+                (
+                    f"mcp_servers.{server}.enabled_tools="
+                    + json.dumps(list(tools), separators=(",", ":"))
+                ),
+            )
+        )
+    if request.mcp_context_project is not None:
+        arguments.extend(
+            (
+                "-c",
+                (
+                    f"mcp_servers.{CONTEXT_MCP_SERVER}.env.{CONTEXT_PROJECT_ENV}="
+                    + json.dumps(request.mcp_context_project)
+                ),
             )
         )
     return arguments
@@ -644,12 +759,19 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
     for path in request.skill_files:
         skills.append(f"\n[GUIDANCE: {path.name}]\n{path.read_text(encoding='utf-8').strip()}\n")
     handoff = build_handoff(request)
+    context_binding = ""
+    if request.mcp_context_project is not None:
+        context_binding = (
+            "The codexteam-context server is already bound to this workspace. "
+            "Its tools omit the project argument; do not discover or supply one.\n"
+        )
     return (
         "[CODEXTEAM HANDOFF V1]\n"
         f"{json.dumps(handoff, indent=2)}\n"
         f"Role policy: {request.role_policy.name} v{request.role_policy.schema_version} "
         f"({request.role_policy.digest[:12]}).\n"
-        "You are the responsible AI for this task and logical attempt. Work only inside the assigned workspace "
+        + context_binding
+        + "You are the responsible AI for this task and logical attempt. Work only inside the assigned workspace "
         "and additional explicitly writable directories.\n"
         "Read relevant files before editing. Run task-relevant verification. Do not invent evidence.\n"
         f"Return a conversational draft headed 'DRAFT {request.task_id}/{request.attempt_id}' with sections "
@@ -1078,6 +1200,15 @@ def main(argv: list[str] | None = None) -> int:
                         "mcp_allowed_servers": list(request.role_policy.mcp_servers),
                         "mcp_effective_servers": list(request.effective_mcp_servers),
                         "mcp_missing_servers": list(request.missing_mcp_servers),
+                        "mcp_allowed_tools": {
+                            server: list(tools)
+                            for server, tools in request.role_policy.mcp_tools
+                        },
+                        "mcp_effective_tools": {
+                            server: list(tools)
+                            for server, tools in request.effective_mcp_tools
+                        },
+                        "mcp_context_project": request.mcp_context_project,
                         "reasoning_effort": _session_reasoning_effort(request, turn.session),
                         "reasoning_effort_override": request.reasoning_effort_override,
                         "workspace": str(request.workspace),
@@ -1330,6 +1461,14 @@ def _validate_session_scope(request: SpawnRequest, session: dict[str, Any]) -> N
     if policy_mismatches:
         raise ValueError("session role policy mismatch: " + "; ".join(policy_mismatches))
     if (
+        "mcp_context_project" in session
+        and session.get("mcp_context_project") != request.mcp_context_project
+    ):
+        raise ValueError(
+            "session MCP context project mismatch: expected "
+            f"{request.mcp_context_project!r}, found {session.get('mcp_context_project')!r}"
+        )
+    if (
         "instruction_bundle_digest" in session
         and session.get("instruction_bundle_digest") != request.guidance_digest
     ):
@@ -1394,6 +1533,14 @@ def _session_record(
         "mcp_allowed_servers": list(request.role_policy.mcp_servers),
         "mcp_effective_servers": list(request.effective_mcp_servers),
         "mcp_missing_servers": list(request.missing_mcp_servers),
+        "mcp_allowed_tools": {
+            server: list(tools)
+            for server, tools in request.role_policy.mcp_tools
+        },
+        "mcp_effective_tools": {
+            server: list(tools)
+            for server, tools in request.effective_mcp_tools
+        },
         "workspace_root": str(request.workspace),
         "trust_parent_sandbox": request.trust_parent_sandbox,
         "thread_id": thread_id,
@@ -1405,6 +1552,8 @@ def _session_record(
         "updated_at": now,
         "turns": turns,
     }
+    if request.mcp_context_project is not None:
+        record["mcp_context_project"] = request.mcp_context_project
     if final_result_path is not None:
         record["final_result_path"] = final_result_path
     return record
@@ -1486,9 +1635,19 @@ def _write_turn_state(
         "mcp_allowed_servers": list(request.role_policy.mcp_servers),
         "mcp_effective_servers": list(request.effective_mcp_servers),
         "mcp_missing_servers": list(request.missing_mcp_servers),
+        "mcp_allowed_tools": {
+            server: list(tools)
+            for server, tools in request.role_policy.mcp_tools
+        },
+        "mcp_effective_tools": {
+            server: list(tools)
+            for server, tools in request.effective_mcp_tools
+        },
         "changed_paths": list(changed_paths),
         "errors": errors or [],
     }
+    if request.mcp_context_project is not None:
+        state["mcp_context_project"] = request.mcp_context_project
     if process is not None:
         state["duration_seconds"] = round(process.duration_seconds, 3)
         state["exit_code"] = process.exit_code
@@ -1555,6 +1714,7 @@ def _turn_outcome(
         "role_policy_version": request.role_policy.schema_version,
         "role_policy_digest": request.role_policy.digest,
         "instruction_bundle_digest": request.guidance_digest,
+        "mcp_context_project": request.mcp_context_project,
         "thread_id": thread_id,
         "turn_count": turn.number,
         "session_path": str(request.session_path),

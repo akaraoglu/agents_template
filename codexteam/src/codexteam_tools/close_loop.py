@@ -154,6 +154,7 @@ def execute_close_loop(
         task_values = {
             "Task ID": "None",
             "Status": "Completed",
+            "Responsible AI": "None",
             "Objective": "All planned tasks are complete.",
             "Handoff": "None",
             "Next Action": "Review DONE_REPORT.md and RESULT.md.",
@@ -184,6 +185,7 @@ def execute_close_loop(
         task_values = {
             "Task ID": next_row.task_id,
             "Status": next_row.status,
+            "Responsible AI": next_row.owner,
             "Objective": next_row.description,
             "Handoff": f"`management/tasks/{next_row.task_id}.md`",
             "Next Action": "Read the handoff and satisfy its completion criteria.",
@@ -233,19 +235,28 @@ class VerificationFailure(RuntimeError):
 
 def update_bullets(text: str, values: dict[str, str]) -> str:
     lines = text.splitlines()
+    updated: list[str] = []
     found: set[str] = set()
-    for index, line in enumerate(lines):
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        replacement = None
         for key, value in values.items():
             if line.startswith(f"- {key}:"):
-                lines[index] = f"- {key}: {value}"
+                replacement = f"- {key}: {value}"
                 found.add(key)
                 break
+        updated.append(replacement if replacement is not None else line)
+        index += 1
+        if replacement is not None:
+            while index < len(lines) and lines[index].startswith(("  ", "\t")):
+                index += 1
     missing = [key for key in values if key not in found]
     if missing:
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.extend(f"- {key}: {values[key]}" for key in missing)
-    return "\n".join(lines).rstrip() + "\n"
+        if updated and updated[-1].strip():
+            updated.append("")
+        updated.extend(f"- {key}: {values[key]}" for key in missing)
+    return "\n".join(updated).rstrip() + "\n"
 
 
 def build_parser() -> argparse.ArgumentParser:

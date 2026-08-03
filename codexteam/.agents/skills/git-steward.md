@@ -19,15 +19,21 @@ Use only after the Project Lead marks a verified task group or milestone commit-
 ## Workflow
 
 1. Confirm the assigned workspace is exactly the Git top level.
-2. Inspect tracked, untracked, ignored, and already staged paths.
-3. Identify unrelated, generated, runtime, temporary, backup, secret-like, or oversized files.
-4. Propose one explicit coherent staging group; never use an implicit all-files group.
-5. Prepare a meaningful commit subject/body and a human-readable branch or PR summary.
-6. Return one exact `commit-plan-v1` JSON draft for Project Lead approval without changing files, the index, refs, or HEAD.
-7. The Project Lead persists the accepted JSON under ignored `.codexteam/runtime/git-steward/<boundary>/plan.json`, validates it, and explicitly authorizes its digest.
-8. On final authorization, request the deterministic executor to apply exactly the approved plan.
-9. Report the resulting local commit SHA and any paths intentionally left uncommitted.
-10. After the Lead closes the Git Steward task, inspect tracked status again. If that
+2. When `codexteam-context` is available, use `get_task_context` to confirm the
+   authorized boundary, `get_change_summary` for bounded dirty-tree orientation, and
+   `get_gate_status` for gate freshness. Do not duplicate a sufficient summary with a
+   broad status or untracked-file dump. MCP never authorizes staging or replaces
+   candidate-tree verification.
+3. Use exact repository-owned Git inspection for every proposed tracked, untracked,
+   ignored, and already staged path.
+4. Identify unrelated, generated, runtime, temporary, backup, secret-like, or oversized files.
+5. Propose one explicit coherent staging group; never use an implicit all-files group.
+6. Prepare a meaningful commit subject/body and a human-readable branch or PR summary.
+7. Return one exact `commit-plan-v1` JSON draft for Project Lead approval without changing files, the index, refs, or HEAD.
+8. The Project Lead persists the accepted JSON under ignored `.codexteam/runtime/git-steward/<boundary>/plan.json`, validates it, and explicitly authorizes its digest.
+9. On final authorization, request the deterministic executor to apply exactly the approved plan.
+10. Report the resulting local commit SHA and any paths intentionally left uncommitted.
+11. After the Lead closes the Git Steward task, inspect tracked status again. If that
     closure changed tracked lifecycle or delivery files, create one separately
     authorized metadata-only closure commit. Never mix unrelated product, runtime, or
     generated files into it, and do not claim the repository is clean until the

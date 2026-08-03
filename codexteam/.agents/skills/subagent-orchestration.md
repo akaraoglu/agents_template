@@ -31,7 +31,19 @@ For one coherent thin slice, keep the core identities proportional:
 - Documenter: optional delivery text based on accepted evidence and review disposition, without repo-wide rediscovery or gratuitous test reruns.
 - Local Git Steward (`git_steward`): read-only commit planning at a verified boundary; the deterministic executor alone creates one local commit.
 
-Each role starts from `BRIEF.md`, its active handoff, and the exact files or upstream artifacts named there. Recommend medium reasoning effort for routine fast-lane turns. Increase it only for observed complexity or risk. Preserve the full workflow for larger projects, multiple independent slices, migrations, security-sensitive work, or parallel Developer ownership.
+Each role starts from its active handoff and exact context targets. The Lead and
+roles that own planning or lifecycle state receive broader canonical context
+only when their assignment needs it. A context-heavy handoff provides two to
+five question-oriented targets with an exact file, heading, symbol, selector,
+or test name and intended use; it does not assign whole upstream artifacts,
+directory globs, or generic filename lists for rediscovery. Developer work
+includes source and focused-test targets unless it creates them. A worker may
+expand beyond named targets only after a concrete missing dependency,
+contradiction, or failing verification identifies the need, and reports that
+reason. Recommend medium reasoning effort for routine fast-lane turns. Increase
+it only for observed complexity or risk. Preserve the full workflow for larger
+projects, multiple independent slices, migrations, security-sensitive work, or
+parallel Developer ownership.
 
 ## Default Routing, Not Role Ownership
 
@@ -54,15 +66,28 @@ The responsible role owns the task. A model profile is a capability choice; chan
 
 Inject the smallest role-specific guidance bundle that covers the task. Large generic bundles increase local-model context cost and can obscure the active contract. Use one consolidated feedback message per review round.
 
+The Task Capsule pilot is not part of the default Developer bundle. For an
+explicitly approved `TASK CAPSULE PILOT`, follow
+`.agents/playbooks/task-capsule-pilot.md` and inject its complete file set as
+documented there. Do not expose capsule checkpoint instructions to ordinary or
+Planned Lane attempts.
+
 ## Instruction Layers and Role Policies
 
 Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, permitted evidence types, and optional MCP server allowlist.
 
 Precedence is: explicit Project Lead CLI override, pinned role-policy default, then profile configuration for settings not fixed above. `--profile` is optional for a new draft because the role supplies a default. Keep explicit overrides stable across an attempt.
 
-The first draft stores `role-policy.json`, each selected skill, and `guidance-manifest.json` beside the private session. Feedback and final turns load this complete pinned bundle, not newly edited defaults. Policy and guidance digests must agree across handoff, session, turn state, and result processing. Existing attempts therefore do not acquire a newly allowed MCP server mid-session.
+The first draft stores `role-policy.json`, each selected skill, and `guidance-manifest.json` beside the private session. Feedback and final turns load this complete pinned bundle, not newly edited defaults. Policy and guidance digests must agree across handoff, session, turn state, and result processing. Existing attempts therefore do not acquire a newly allowed MCP server or tool mid-session.
 
-For every worker process, the launcher explicitly disables each configured MCP server that the pinned role policy does not allow. A named but unconfigured server is reported in dry-run, session, and turn state instead of being silently enabled. The current browser pilot exposes only bounded Playwright inspection tools to the Test Engineer. The Leader alone receives the read-only CodexTeam context and authenticated GitHub read-only servers; all other roles keep GitHub disabled.
+For every worker process, the launcher explicitly disables each configured MCP server that the pinned role policy does not allow and applies any server-specific `enabled_tools` subset from that policy. Allowed and effective servers and tool subsets are reported in dry-run, session, and turn state. A named but unconfigured server is reported instead of being silently enabled. Developer, Test Engineer, Reviewer, and Git Steward receive only their bounded `codexteam-context` subsets; the browser pilot remains limited to the Test Engineer, Architect and Developer retain `local-docs`, and authenticated GitHub stays Leader-only.
+
+For a new non-Leader attempt with `codexteam-context`, the launcher derives the
+project identifier from the exact workspace and configured projects root, binds the
+server process to that project, removes `project` from its exposed tool schemas, and
+pins the binding in session and turn state. It fails closed when the workspace is not
+a direct, symlink-free child of that root. Lead access remains unbound. A continuation
+created before project binding stays unbound so a live attempt is not changed midway.
 
 Role change patterns are a broad mechanical backstop. The handoff's Allowed Paths may be narrower and remains authoritative for assignment review. A post-turn forbidden write leaves the attempt `correction_needed`; it does not silently accept or revert the file.
 
@@ -82,7 +107,12 @@ Do not add a new task type, agent, result schema, launcher phase, or planning do
 
 ## Workflow
 
-1. Read `BRIEF.md`, the active handoff, and the exact requirement sections, files, and upstream artifacts named by that handoff. Read broader management or source context only when planning, closing state, or resolving an observable conflict; do not require repo-wide rediscovery from every role.
+1. Read `BRIEF.md`, the active handoff, and its exact requirement sections,
+   source symbols, bounded paths, and upstream evidence targets. For
+   context-heavy work, route the first unresolved question through the role's
+   smallest allowed context tool. Read broader management or source context
+   only when planning, closing state, or resolving an observable conflict; do
+   not require repo-wide rediscovery from every role.
 2. Confirm dependencies and approvals, then assign exactly one responsible AI, profile, and attempt ID.
    Reuse the exact initializer project path and ID; do not manually reconstruct them. Confirm the project contract and selected handoff exist before previewing a spawn.
 3. Preview and start the draft turn:

@@ -23,6 +23,7 @@ from codexteam_tools.local_docs_mcp import (
     modern_meta,
 )
 from codexteam_tools.paths import PathValidationError
+from codexteam_tools.roles import LOCAL_MCP_TOOL_CATALOG
 
 
 def _write(path: Path, text: str) -> None:
@@ -94,6 +95,15 @@ def _request(
         "method": method,
         "params": {"_meta": modern_meta(), **(params or {})},
     }
+
+
+def test_role_policy_local_docs_catalog_matches_server_tools(tmp_path: Path):
+    _manifest_path, reader = _built_reader(tmp_path)
+    server = LocalDocsMcpServer(reader)
+
+    assert {tool.name for tool in server.tools} == LOCAL_MCP_TOOL_CATALOG[
+        "local-docs"
+    ]
 
 
 def test_text_adapter_is_deterministic_and_hard_excludes_runtime(
@@ -205,6 +215,35 @@ def test_update_verify_search_and_read_are_bounded(tmp_path: Path) -> None:
     absent = reader.search_docs("React hooks", limit=3)
     assert absent["matches"] == []
     assert absent["minimum_match_terms"] == 2
+
+
+def test_live_reader_uses_replaced_index_content_and_matching_digest(
+    tmp_path: Path,
+) -> None:
+    manifest, reader = _built_reader(tmp_path)
+    original = reader.search_docs("Development Gate", limit=1)
+    _write(
+        tmp_path / "docs" / "guide.md",
+        """# Project Guide
+
+## Role-filtered context
+
+Workers receive bounded context tools without broad repository discovery.
+""",
+    )
+    updated = collect_index(load_config(manifest))
+    write_index(updated)
+
+    searched = reader.search_docs("bounded context tools", limit=1)
+    sources = reader.list_doc_sources()
+    match = searched["matches"][0]
+    read = reader.read_doc(match["source_id"], match["locator"])
+
+    assert updated.sha256 != original["index_sha256"]
+    assert searched["index_sha256"] == updated.sha256
+    assert sources["index_sha256"] == updated.sha256
+    assert read["index_sha256"] == updated.sha256
+    assert "broad repository discovery" in read["content"]
 
 
 def test_reader_rejects_unapproved_source_locator_and_bounds(

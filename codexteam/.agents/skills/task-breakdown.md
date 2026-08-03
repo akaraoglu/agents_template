@@ -82,7 +82,10 @@ Each task file must include:
 - Short Description: purpose type, concrete summary, and intended outcome.
 - Objective: one concrete outcome.
 - Responsible AI: stable owner label, role, and default capability profile.
-- Context: docs and files the worker must read first.
+- Context: concise accepted facts and the reason additional context is needed; do
+  not use it as a broad reading list.
+- Context Targets, for context-heavy work: question-oriented exact files and
+  headings, symbols, selectors, or test names that prevent whole-artifact rediscovery.
 - Scope: what is included and excluded.
 - Allowed paths: where the worker may edit.
 - Required outputs: files or state that must exist when done.
@@ -91,46 +94,37 @@ Each task file must include:
 - Stop conditions: when to stop and ask instead of guessing.
 - Reporting: what evidence to write back.
 
-The Context field defaults to `BRIEF.md`, this handoff, and a short list of named files or upstream artifacts. The Reporting field must make evidence reusable by the next role: exact commands, observed results, and safe project-relative artifact paths. Do not require a downstream role to rerun a passing check solely to recreate evidence.
+The worker already receives the handoff and common project guidance. Carry a short
+accepted fact in `Context` when it prevents rereading; do not assign several whole
+design, plan, task, or result artifacts there. For context-heavy work, add two to
+five `Context Targets` in this form:
 
-## Task Capsule Pilot
+```markdown
+## Context Targets
 
-Use this only when the operator or task handoff explicitly says
-`TASK CAPSULE PILOT`. It is an opt-in experiment for a medium Developer task,
-not a new requirement for every handoff.
+- Question: Which committed-content states are required?
+  Target: `docs/architecture/M29.md` — `Content states and bounds`
+  Use: Preserve the accepted state model while changing presentation.
+- Question: Which runner boundary must remain unchanged?
+  Target: `internal/git/runner.go` — `validateCatFileExact`
+  Use: Keep validation behavior and its existing callers unchanged.
+- Question: Which focused regression proves the boundary?
+  Target: `internal/git/runner_test.go` — `TestValidateCatFileExactRejectsRange`
+  Use: Extend this test only if the accepted behavior changes.
+```
 
-After the canonical task ID exists, bind the top-level Lead session to that
-task before capsule preparation so existing Lead metrics include authoring
-cost. Write the private capsule to
-`.codexteam/runtime/task-capsules/Txxx.md`, then put that exact path, its
-SHA-256, and `TASK CAPSULE PILOT` in the canonical handoff. Capsule preparation
-has a three-tool-call budget: reuse accepted architecture/planner evidence,
-inspect only named files, and use one `sha256sum` call for source/test hashes.
-If three calls cannot establish a safe map, leave the uncertainty explicit
-instead of broadening the scan.
+Every Developer handoff names at least one source target and one focused test
+target unless the task explicitly creates those files. Each target states how
+its answer affects the implementation. A locator must be narrow enough to use
+directly; a filename alone or `results/**` is not a target. Carry accepted
+decisions into the handoff when a short factual statement is enough. The
+Reporting field must make evidence reusable by the next role: exact commands,
+observed results, and safe project-relative artifact paths. Do not require a
+downstream role to rerun a passing check solely to recreate evidence.
 
-Create a 2–4 KB capsule from existing bounded inspection. Include:
-
-- Repository path, HEAD, and content hashes for every named source/test file
-- Behavior, non-goals, and stop conditions
-- Exact source symbols or line anchors and dependency direction
-- Related tests with a reason for each
-- Verification commands, clearly marked as not yet run
-- Uncertainties and one permitted focused expansion
-
-The capsule supplements the canonical handoff; it is not authority, completion
-evidence, or permission to hide a dependency. The Developer verifies all named
-hashes and the handoff-pinned capsule hash, starts from the capsule instead of
-broad discovery, and reports any stale or missing context. Do not build or
-expand a source-context MCP merely to create the capsule. Compare the task's
-existing Lead metrics with the Developer attempt metrics and record tool calls,
-failures, latency, cached/uncached input, command-output bytes, correction
-turns, and integration defects for the pilot.
-
-Do not accept a capsule-cost conclusion when the task has no Lead metric entry,
-the binding baseline was reset, or one entry spans multiple canonical tasks.
-The live tracker checkpoints cross-task transitions immediately; a missing or
-conflated entry is a measurement failure, not zero-cost authoring.
+Task capsules are not default Developer context. Load
+`.agents/playbooks/task-capsule-pilot.md` only for an explicitly approved
+`TASK CAPSULE PILOT` experiment.
 
 ## Expected Output
 
@@ -152,7 +146,10 @@ conflated entry is a measurement failure, not zero-cost authoring.
 - No task is so broad that verification is unclear.
 - Feature Planner proposals use temporary labels until the Project Lead accepts and converts them into canonical tasks.
 - Each task file has enough information for a different agent to run it safely.
-- Context names the necessary files and upstream evidence instead of assigning repository-wide rediscovery.
+- Context states accepted facts instead of a broad reading list; Context Targets
+  provide exact locators and intended use.
+- Developer work names at least one source and one focused test target unless it
+  explicitly creates them.
 - Shared-helper tasks name inherited consumers and contract tests that must pass
   without granting later roles authority to weaken those expectations.
 - Both gate artifacts and Test Engineer failure classifications can flow to the Reviewer and Documenter without being translated or recreated.
@@ -169,6 +166,7 @@ conflated entry is a measurement failure, not zero-cost authoring.
 - Splitting one small functional slice across several Developers without an observed need.
 - Invoking the Feature Planner for a small explicit slice or before architecture decisions are settled.
 - Asking every role to read all documents, rediscover the same files, or rerun already sufficient evidence.
+- Calling a filename, directory glob, or whole results tree a bounded Context Target.
 - Hiding critical requirements in task descriptions only.
 - Treating a presentation requirement as permission to change an accepted
   shared projection/domain contract, or omitting that contract's focused test

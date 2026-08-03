@@ -9,7 +9,8 @@ default_profile = "qwen36-27b"
 default_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 skill_files = ["integration-testing.md", "verification.md"]
-mcp_servers = ["playwright"]
+mcp_servers = ["codexteam-context", "playwright"]
+mcp_tools = { codexteam-context = ["get_task_context", "get_change_summary", "get_gate_status"] }
 allowed_change_patterns = [
   "web/browser-*.js",
   "tests/integration/**",

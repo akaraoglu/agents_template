@@ -45,3 +45,25 @@
   milestone commit. Those changes require a separately authorized metadata-only
   closure commit; the committed HEAD must not be described as fully delivered while
   its lifecycle files still show the Steward task active.
+- Role-policy v1 may pin a non-empty `mcp_tools` subset for an allowed server.
+  Developer, Test Engineer, Reviewer, and Git Steward receive bounded
+  `codexteam-context` subsets on future attempts; existing attempts keep their pinned
+  server and tool policy. Context tools orient discovery, while exact source reads,
+  test gates, result checks, and deterministic Git verification remain authoritative.
+- Developer context is considered heavy when it requires several upstream artifacts,
+  repository-wide symbol discovery, dependency or gate resolution, or shared-worktree
+  triage. Heavy discovery starts with one routed context call; exact headings and
+  symbols may still use a smaller direct read. Developers receive
+  `get_change_summary` for bounded dirty-worktree inspection, and pre-edit discovery
+  uses a soft six-call checkpoint rather than a hard task limit.
+- New non-Leader attempts using `codexteam-context` are bound by the launcher to the
+  exact direct-child workspace project. Worker schemas omit `project`; Lead remains
+  unbound for multi-project orchestration, and legacy attempts remain unbound. Measure
+  three tasks before considering any separate hard discovery-interruption behavior.
+- Ordinary Developer attempts use one discovery protocol and one `CONTEXT GAP`
+  checkpoint. The Task Capsule checkpoint is isolated in an explicitly injected
+  playbook and must not appear in Planned Lane or ordinary attempt guidance.
+- Context-heavy handoffs use two to five exact Context Targets. Each target states a
+  question, file, narrow locator, and intended implementation use; Developer work also
+  names a source and focused-test target unless it creates them. Broad Context reading
+  lists, directory globs, and whole result trees are not bounded handoffs.

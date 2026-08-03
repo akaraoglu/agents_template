@@ -33,6 +33,19 @@
       "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
       "uniqueItems": true
     },
+    "mcp_tools": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$"
+        },
+        "uniqueItems": true
+      }
+    },
     "allowed_change_patterns": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
     "denied_change_patterns": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "allowed_evidence_types": {

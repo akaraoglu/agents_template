@@ -447,6 +447,7 @@ class LocalDocsReader:
 
     def list_doc_sources(self) -> dict[str, Any]:
         with self._connect() as connection:
+            index_sha256 = self._index_sha256(connection)
             rows = connection.execute(
                 """
                 SELECT source_id, adapter, version, root_label,
@@ -456,7 +457,7 @@ class LocalDocsReader:
                 """
             ).fetchall()
         return {
-            "index_sha256": self.sha256,
+            "index_sha256": index_sha256,
             "sources": [
                 {
                     "id": row["source_id"],
@@ -522,6 +523,7 @@ class LocalDocsReader:
             LIMIT ?
         """
         with self._connect() as connection:
+            index_sha256 = self._index_sha256(connection)
             if selected_sources:
                 known = {
                     row[0]
@@ -573,7 +575,7 @@ class LocalDocsReader:
         ]
         return {
             "query": clean_query,
-            "index_sha256": self.sha256,
+            "index_sha256": index_sha256,
             "matches": matches,
             "truncated": truncated,
             "minimum_match_terms": minimum_match_terms,
@@ -596,6 +598,7 @@ class LocalDocsReader:
                 f"max_chars must be between 200 and {MAX_READ_CHARS}"
             )
         with self._connect() as connection:
+            index_sha256 = self._index_sha256(connection)
             row = connection.execute(
                 """
                 SELECT source_id, locator, title, section, version,
@@ -621,16 +624,31 @@ class LocalDocsReader:
             "total_chars": len(content),
             "sha256": row["sha256"],
             "source_bytes": row["source_bytes"],
-            "index_sha256": self.sha256,
+            "index_sha256": index_sha256,
         }
 
     def _connect(self) -> sqlite3.Connection:
+        if self.index_path.is_symlink() or not self.index_path.is_file():
+            raise LocalDocsError(
+                f"index must remain a regular non-symlink file: {self.index_path}"
+            )
         connection = sqlite3.connect(
             f"file:{self.index_path.as_posix()}?mode=ro",
             uri=True,
         )
         connection.row_factory = sqlite3.Row
         return connection
+
+    def _index_sha256(self, connection: sqlite3.Connection) -> str:
+        metadata = dict(connection.execute("SELECT key, value FROM metadata"))
+        if metadata.get("schema_version") != str(INDEX_SCHEMA_VERSION):
+            raise LocalDocsError(
+                f"unsupported local docs index schema: {metadata.get('schema_version')!r}"
+            )
+        digest = metadata.get("sha256")
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise LocalDocsError("local docs index has an invalid sha256")
+        return digest
 
 
 def _text_documents(

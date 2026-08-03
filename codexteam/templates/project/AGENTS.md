@@ -1,6 +1,10 @@
 # Project Agent Rules
 
-Read `BRIEF.md`, `PROJECT.md`, `CURRENT_TASK.md`, and the active task handoff before editing.
+Read the active task handoff before acting. Start with its exact context targets.
+Read `BRIEF.md`, `PROJECT.md`, `CURRENT_TASK.md`, or historical results only when
+the handoff targets them or the assigned role owns planning or lifecycle state.
+Expand beyond named targets only after a concrete missing dependency,
+contradiction, or failing verification identifies the need, and record why.
 Use the smallest relevant workflow under `.codexteam/skills/`.
 
 `AGENTS.md` supplies common project rules to every worker. The launcher-selected role policy supplies the worker's specific Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. The complete role and skill bundle is pinned for the task attempt under ignored runtime state. Managed reference copies are under `.codexteam/roles/`; they do not override an active attempt.

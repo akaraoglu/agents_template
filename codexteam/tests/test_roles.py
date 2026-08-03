@@ -7,6 +7,7 @@ import pytest
 
 from codexteam_tools.roles import (
     DEFAULT_ROLES_ROOT,
+    LOCAL_MCP_TOOL_CATALOG,
     RolePolicyError,
     load_all_role_policies,
     load_role_policy,
@@ -39,14 +40,59 @@ def test_all_canonical_role_policies_are_unique_and_complete():
         "codexteam-context",
         "github-readonly",
     )
-    assert load_role_policy("tester").mcp_servers == ("playwright",)
+    assert load_role_policy("tester").mcp_servers == (
+        "codexteam-context",
+        "playwright",
+    )
     assert load_role_policy("architect").mcp_servers == ("local-docs",)
-    assert load_role_policy("developer").mcp_servers == ("local-docs",)
+    assert load_role_policy("developer").mcp_servers == (
+        "codexteam-context",
+        "local-docs",
+    )
+    assert load_role_policy("reviewer").mcp_servers == ("codexteam-context",)
+    assert load_role_policy("git_steward").mcp_servers == ("codexteam-context",)
     assert all(
         not policy.mcp_servers
         for policy in policies
-        if policy.role not in {"architect", "developer", "leader", "tester"}
+        if policy.role not in {
+            "architect",
+            "developer",
+            "git_steward",
+            "leader",
+            "reviewer",
+            "tester",
+        }
     )
+    assert load_role_policy("developer").tools_for_server("codexteam-context") == (
+        "get_task_context",
+        "search_repository",
+        "get_gate_status",
+        "get_change_summary",
+    )
+    assert load_role_policy("tester").tools_for_server("codexteam-context") == (
+        "get_task_context",
+        "get_change_summary",
+        "get_gate_status",
+    )
+    assert load_role_policy("reviewer").tools_for_server("codexteam-context") == (
+        "get_task_context",
+        "get_attempt_summary",
+        "validate_result_record",
+        "get_gate_status",
+        "get_change_summary",
+    )
+    assert load_role_policy("git_steward").tools_for_server(
+        "codexteam-context"
+    ) == (
+        "get_task_context",
+        "get_change_summary",
+        "get_gate_status",
+    )
+    for policy in policies:
+        for server, tools in policy.mcp_tools:
+            catalog = LOCAL_MCP_TOOL_CATALOG.get(server)
+            if catalog is not None:
+                assert set(tools) <= catalog
 
 
 def test_role_policy_snapshot_digest_is_stable(tmp_path: Path):
@@ -65,13 +111,13 @@ def test_role_policy_snapshot_digest_is_stable(tmp_path: Path):
 
 
 def test_legacy_role_policy_snapshot_without_mcp_servers_remains_valid(tmp_path: Path):
-    policy = load_role_policy("reviewer")
+    policy = load_role_policy("documenter")
     assert policy.mcp_servers == ()
     assert policy.mcp_servers_declared is False
     snapshot = tmp_path / "role-policy.json"
     snapshot.write_text(json.dumps(policy.snapshot()))
 
-    loaded = load_role_policy_snapshot(snapshot, expected_role="reviewer")
+    loaded = load_role_policy_snapshot(snapshot, expected_role="documenter")
 
     assert loaded.snapshot() == policy.snapshot()
     assert "mcp_servers" not in loaded.snapshot()
@@ -92,13 +138,64 @@ def test_invalid_mcp_server_name_is_rejected(tmp_path: Path):
     manifest = roles / "developer.toml"
     manifest.write_text(
         manifest.read_text().replace(
-            'mcp_servers = ["local-docs"]',
+            'mcp_servers = ["codexteam-context", "local-docs"]',
             'mcp_servers = ["unsafe.server"]',
         )
     )
 
     with pytest.raises(RolePolicyError, match="mcp_servers must use names"):
         load_role_policy("developer", roles_root=roles)
+
+
+def test_mcp_tool_server_must_be_allowed(tmp_path: Path):
+    roles = tmp_path / "roles"
+    shutil.copytree(DEFAULT_ROLES_ROOT, roles)
+    manifest = roles / "developer.toml"
+    manifest.write_text(
+        manifest.read_text().replace(
+            'mcp_servers = ["codexteam-context", "local-docs"]',
+            'mcp_servers = ["local-docs"]',
+        )
+    )
+
+    with pytest.raises(
+        RolePolicyError,
+        match="mcp_tools servers must also appear in mcp_servers",
+    ):
+        load_role_policy("developer", roles_root=roles)
+
+
+def test_unknown_locally_owned_mcp_tool_is_rejected(tmp_path: Path):
+    roles = tmp_path / "roles"
+    shutil.copytree(DEFAULT_ROLES_ROOT, roles)
+    manifest = roles / "developer.toml"
+    manifest.write_text(
+        manifest.read_text().replace(
+            '"get_gate_status"',
+            '"invented_context_tool"',
+        )
+    )
+
+    with pytest.raises(
+        RolePolicyError,
+        match="unknown locally owned tools: invented_context_tool",
+    ):
+        load_role_policy("developer", roles_root=roles)
+
+
+def test_empty_mcp_tool_mapping_is_rejected(tmp_path: Path):
+    roles = tmp_path / "roles"
+    shutil.copytree(DEFAULT_ROLES_ROOT, roles)
+    manifest = roles / "reviewer.toml"
+    manifest.write_text(
+        manifest.read_text().replace(
+            'mcp_tools = { codexteam-context = ["get_task_context", "get_attempt_summary", "validate_result_record", "get_gate_status", "get_change_summary"] }',
+            "mcp_tools = {}",
+        )
+    )
+
+    with pytest.raises(RolePolicyError, match="mcp_tools cannot be empty"):
+        load_role_policy("reviewer", roles_root=roles)
 
 
 def test_role_policy_symlinks_are_rejected(tmp_path: Path):
@@ -179,6 +276,9 @@ def test_developer_planned_lane_is_conditional_and_same_session():
     orchestration = (
         root / ".agents/skills/subagent-orchestration.md"
     ).read_text(encoding="utf-8")
+    capsule_playbook = (
+        root / ".agents/playbooks/task-capsule-pilot.md"
+    ).read_text(encoding="utf-8")
 
     assert "When the handoff explicitly contains `PLANNED LANE`" in (
         developer.developer_instructions
@@ -187,6 +287,15 @@ def test_developer_planned_lane_is_conditional_and_same_session():
     assert "exact `PLAN ACCEPTED`" in developer.developer_instructions
     assert "PLAN Txxx/att-xxx" in implementation
     assert "same session" in implementation
+    assert "CONTEXT GAP" in implementation
+    assert "CAPSULE CHECKPOINT" not in implementation
+    assert "Do not search personal memory" in implementation
+    assert "CAPSULE CHECKPOINT" in capsule_playbook
+    assert "Do not combine it with `PLANNED LANE`" in capsule_playbook
+    assert sum(
+        line.lstrip().startswith("--skill-file")
+        for line in capsule_playbook.splitlines()
+    ) == 3
     assert "run Chromium after implementation by default" in development_testing
     assert "Test Engineer owns the broader Chromium" in development_testing
     assert "Treat the next `DRAFT` as the implementation draft" in orchestration
