@@ -10,3 +10,4 @@ Record mistakes, outdated assumptions, and corrected guidance that future agents
 - Keep improvement plans minimal and ordered around the single highest-impact problem. Do not present a broad backlog as one implementation proposal.
 - End every plan with a criticism section that questions its assumptions, complexity, risks, and evidence. Discuss the plan and its criticism with the user before implementation.
 - Do not duplicate changing CodexTeam paths, role defaults, or model routing in root memory. Use the current toolkit code and role manifests as execution authority and keep subsystem rationale in CodexTeam memory.
+- Do not pair a long-running worker poll with a shorter outer tool yield. Use one 60-120 second blocking poll and inspect evidence only after terminal status unless a concrete failure requires diagnosis.

@@ -90,6 +90,14 @@ canonical task IDs and handoffs.
 14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
 15. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
 
+When a launched worker is still running, use one blocking poll of 60 to 120 seconds
+instead of repeated short status turns. Do not combine an inner `write_stdin` poll
+with a shorter outer `functions.exec` yield and then add `functions.wait`; that
+creates two Lead model cycles for one observation. Set the outer yield longer than
+the inner poll so the worker result returns once. Inspect the draft, diff, and gates
+only after the worker reaches a terminal state, unless a concrete stall or failure
+requires diagnosis.
+
 After activating or resuming a project task, bind the top-level Lead session once with
 `./scripts/track-lead-task.py bind --project ./projects/<project-id> --task <task-id>`. Never run
 this bind command from a spawned worker or nested Codex process. Normal close-loop
@@ -163,6 +171,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Accepting a review that attributes checks to an artifact that contains only a smaller unit-test run
 - Treating `DELIVERED` state as proof while scratch files or an acceptance-level output defect remain
 - Narrating every poll and rereading full result/event blobs until a small project consumes a large context
+- Nesting a worker poll inside a shorter outer yield, which turns one wait into repeated Lead model cycles
 - Letting `BRIEF.md` drift after task or milestone transitions
 - Marking an assignment in `TASKS.md` while leaving `CURRENT_TASK.md` at `Planned`
 - Solving a communication or document-quality problem by adding a one-off control script
