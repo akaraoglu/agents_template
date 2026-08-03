@@ -130,7 +130,13 @@ During execution, inspect project-local state with `./scripts/subagent-status.py
 
 After each process returns, the launcher writes one private `<turn>.metrics.json` beside the JSONL. Use the WebUI for per-turn token deltas, tool/failure counts, output volume, repeats, largest-command previews, and the ten most expensive completed drafts. For historical sessions, preview `./scripts/backfill-turn-metrics.py <project-root>` before adding `--write`; do not overwrite existing sidecars unless explicitly repairing the metrics schema.
 
-Use the opt-in `--run-guard` only when an unchanged command-failure loop is a material risk. It interrupts after three consecutive identical failed command results, records the redacted reason, and preserves a captured thread for same-attempt feedback. A different command, file-change event, or passing command resets the streak. It is not a token, time, or general retry limit; do not enable it merely because a task is difficult.
+Use the opt-in `--run-guard` when a failure loop or unbounded discovery is a material
+risk. It interrupts after three consecutive identical failed command results, after a
+single command result exceeds 32 KiB, or when broad repository discovery follows a
+successful `codexteam-context` call. Full event output remains in the private turn
+JSONL; the interruption preserves a captured thread for same-attempt feedback. Resume
+with a scoped command or a concrete `CONTEXT GAP`. It is not a token, time, tool-count,
+or general retry limit; do not enable it merely because a task is difficult.
 
 Before the first live draft, test the Ollama endpoint from the same execution surface; `--dry-run` validates only the command and session paths. If Ollama is reachable inside a Codex `workspace-write` Project Lead, select a local profile and add `--trust-parent-sandbox` to draft and every resumed turn. If it is reachable only from the host, run the launcher from an approved host-level surface and omit that flag on every turn so the worker keeps its normal sandbox. Authenticated OpenAI workers also require the host-level route because their source Codex home is outside the parent writable boundary. MCP is not required. Follow `.agents/playbooks/nested-worker-sandbox.md` for diagnostics and attempt rules.
 
@@ -220,6 +226,12 @@ Use `jq '{status, summary, file_changes, evidence, errors, warnings, limitations
 
 Pass evidence forward instead of recreating it: the Architect records requirement-linked design; an optional Feature Planner records accepted decomposition boundaries; the Developer records Development Gate evidence; the Test Engineer records test changes, exact Integration Gate commands, observations, classifications, and artifact paths; the Reviewer evaluates architecture, source, test changes, both gates, and expectation integrity; the optional Documenter cites accepted evidence and review disposition. A downstream role runs another command only when independence requires it or an observable evidence gap exists.
 
+Honor the gate `execution_surface` from the handoff. Workers run only `worker` gates.
+When Integration is `lead_host`, the Test Engineer prepares and classifies the checks
+but requests the Project Lead to run the exact configured gate. At acceptance, create
+the content-addressed gate snapshot with `--snapshot-task` and `--snapshot-attempt`;
+downstream roles cite that immutable path instead of the rolling gate file.
+
 After canonical closure, invoke Local Git Steward only when the Project Lead has named an important-task or milestone boundary. Inspect first, review an explicit commit-plan JSON, authorize that exact digest and path set, then let the deterministic executor re-run the Integration Gate against the candidate tree and create one local commit. The role and executor have no push, merge, tag, release, publication, or remote-PR authority.
 
 Evidence reuse does not permit evidence inflation. If an artifact contains only a seven-test unit run, the Reviewer may claim only that seven-test run passed. Determinism, exact rendering, error streams, or range coverage require those observations in the artifact or a focused additional check. Artifact existence is not content verification.
@@ -274,6 +286,8 @@ Evidence reuse does not permit evidence inflation. If an artifact contains only 
 - Emitting local-offset timestamps or commands as evidence artifact paths in result-v1
 - Reconstructing a similar-looking feedback filename instead of reusing the stable prompt path
 - Printing complete result output tails after the validator already returned a concise success
+- Running a `lead_host` gate inside a worker, or citing the rolling gate file as immutable acceptance evidence
+- Repeating broad `rg --files`, `find .`, or unscoped Git discovery after a successful context MCP response
 - Claiming checks that are described in a draft but absent from the accepted evidence artifact
 - Finalizing a Developer before resolving a Test Engineer product defect, or accepting integration evidence produced before the last Developer revision
 - Weakening an assertion or golden expectation solely to make current implementation output pass

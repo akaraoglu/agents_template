@@ -12,7 +12,7 @@ Use only after the Project Lead marks a verified task group or milestone commit-
 
 - Exact standalone repository root, current branch, and expected HEAD
 - Project Lead boundary authorization and approved task IDs
-- Current Integration Gate or architecture-review evidence
+- Immutable accepted Integration Gate snapshot or architecture-review evidence
 - Repository `management/GIT_POLICY.md`
 - Current status and diffs
 
@@ -55,6 +55,7 @@ Use only the repository-owned Git Steward inspection and plan commands. The dete
 ## Validation
 
 - Repository root, branch, HEAD, authorization, and gate evidence agree.
+- Product boundaries cite the accepted task-attempt gate snapshot, not only the rolling gate status file.
 - The committed path set exactly matches the approved plan.
 - The committed tree is the verified candidate tree.
 - Unrelated paths remain untouched and unstaged.

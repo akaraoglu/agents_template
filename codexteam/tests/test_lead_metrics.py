@@ -153,13 +153,16 @@ class TestWrite:
             (project / ".codexteam" / "runtime" / "lead-metrics.json").read_text()
         )
         assert data["schema_version"] == "1.0"
+        assert data["metric_scope"] == "lead_orchestration"
         assert "generated_at" in data
         record = data["tasks"]["T001"]
+        assert record["metric_scope"] == "lead_orchestration"
         assert record["profile"] == "gpt-4.1-mini"
         assert record["provider"] == "openai_cloud"
         assert record["duration_seconds"] == 234
         assert record["input_tokens"] == 50_000
         assert record["cached_input_tokens"] == 40_000
+        assert record["uncached_input_tokens"] == 10_000
         assert record["output_tokens"] == 8_000
 
     def test_updates_existing_task(self, project):

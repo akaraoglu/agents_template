@@ -147,6 +147,7 @@ def summarize_turn(
 
     return {
         "schema_version": SCHEMA_VERSION,
+        "metric_scope": "worker_turn",
         "task_id": task_id,
         "attempt_id": attempt_id,
         "agent_role": role,

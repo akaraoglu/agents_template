@@ -224,6 +224,25 @@ def context_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         ),
     )
     _write(
+        project / ".codexteam/runtime/lead-metrics.json",
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "metric_scope": "lead_orchestration",
+                "tasks": {
+                    "T002": {
+                        "metric_scope": "lead_orchestration",
+                        "input_tokens": 700,
+                        "cached_input_tokens": 500,
+                        "uncached_input_tokens": 200,
+                        "output_tokens": 30,
+                        "duration_seconds": 20.0,
+                    }
+                },
+            }
+        ),
+    )
+    _write(
         project / "results/T002-att-001.json",
         json.dumps(
             {
@@ -457,7 +476,12 @@ def test_gate_status_validates_current_workspace_and_reports_staleness(
 
     current = reader.get_gate_status("demo")
     assert [gate["current"] for gate in current["gates"]] == [True, True]
+    assert [gate["execution_surface"] for gate in current["gates"]] == [
+        "worker",
+        "worker",
+    ]
     assert current["gates"][1]["record"]["status"] == "passed"
+    assert current["gates"][1]["record"]["execution_surface"] == "worker"
     assert current["gates"][1]["configured_commands"]
 
     _write(project / "src/main.py", "changed\n")
@@ -554,6 +578,12 @@ def test_attempt_result_and_cost_insights_avoid_raw_transcripts(
     )
     assert hotspots["matched_turns"] == 1
     assert hotspots["hotspots"][0]["usage_delta"]["input_tokens"] == 500
+    assert hotspots["usage_totals"]["worker_turns"]["input_tokens"] == 500
+    assert hotspots["usage_totals"]["lead_orchestration"]["input_tokens"] == 700
+    assert hotspots["usage_totals"]["combined"]["input_tokens"] == 1200
+    assert hotspots["usage_totals"]["combined"]["uncached_input_tokens"] == 300
+    assert hotspots["usage_totals"]["worker_turns"]["duration_seconds"] == 12.5
+    assert hotspots["usage_totals"]["combined"]["duration_seconds"] == 32.5
     assert hotspots["largest_commands"][0]["output_bytes"] == 1500
     assert hotspots["repeated_commands"][0]["repeat_count"] == 2
 

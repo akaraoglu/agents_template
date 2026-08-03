@@ -126,6 +126,10 @@ class TeamContextReader:
             "development": config.development_timeout,
             "integration": config.integration_timeout,
         }
+        surfaces = {
+            "development": config.development_surface,
+            "integration": config.integration_surface,
+        }
         for gate in GATES:
             record_path = gate_record_path(root, gate)
             record = self._read_record(root, record_path)
@@ -143,6 +147,7 @@ class TeamContextReader:
                     "gate": gate,
                     "configured_commands": [list(argv) for argv in commands[gate]],
                     "timeout_seconds": timeouts[gate],
+                    "execution_surface": surfaces[gate],
                     "record": _compact_gate_record(record),
                     "current": current,
                     "freshness_error": freshness_error,
@@ -452,6 +457,7 @@ def _compact_gate_record(record: dict[str, Any] | None) -> dict[str, Any] | None
         "duration_seconds": record.get("duration_seconds"),
         "configuration_digest": record.get("configuration_digest"),
         "workspace_digest": record.get("workspace_digest"),
+        "execution_surface": record.get("execution_surface", "worker"),
         "failures": failures,
     }
 

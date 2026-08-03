@@ -547,9 +547,16 @@ class TeamInsightsReader:
             )
         )
         selected = records[:limit]
+        worker_totals = _worker_cost_totals(value for _, value in records)
+        lead_totals = _lead_usage_totals(root, task_id=task_id)
         return {
             "project": project,
             "filters": {"task_id": task_id, "phase": phase},
+            "usage_totals": {
+                "worker_turns": worker_totals,
+                "lead_orchestration": lead_totals,
+                "combined": _combine_usage_totals(worker_totals, lead_totals),
+            },
             "metrics_files_scanned": files_scanned,
             "metrics_bytes_scanned": bytes_scanned,
             "matched_turns": len(records),
@@ -931,6 +938,64 @@ def _usage_totals(values: Any) -> dict[str, int]:
         for key, amount in _usage_delta(value).items():
             if isinstance(amount, int) and not isinstance(amount, bool) and amount >= 0:
                 totals[key] += amount
+    return dict(sorted(totals.items()))
+
+
+def _worker_cost_totals(values: Any) -> dict[str, int | float]:
+    records = list(values)
+    totals: dict[str, int | float] = _usage_totals(records)
+    duration = sum(
+        float(turn["duration_seconds"])
+        for value in records
+        if isinstance(value.get("turn"), dict)
+        for turn in (value["turn"],)
+        if isinstance(turn.get("duration_seconds"), (int, float))
+        and not isinstance(turn["duration_seconds"], bool)
+        and turn["duration_seconds"] >= 0
+    )
+    if duration:
+        totals["duration_seconds"] = round(duration, 3)
+    return dict(sorted(totals.items()))
+
+
+def _lead_usage_totals(root: Path, *, task_id: str | None) -> dict[str, int | float]:
+    path = root / ".codexteam" / "runtime" / "lead-metrics.json"
+    value = _read_json_object(path)
+    tasks = value.get("tasks") if isinstance(value, dict) else None
+    if not isinstance(tasks, dict):
+        return {}
+    totals: Counter[str] = Counter()
+    for current_task, record in tasks.items():
+        if task_id is not None and current_task != task_id:
+            continue
+        if not isinstance(record, dict):
+            continue
+        for key in (
+            "input_tokens",
+            "cached_input_tokens",
+            "uncached_input_tokens",
+            "output_tokens",
+        ):
+            amount = record.get(key)
+            if key == "uncached_input_tokens" and amount is None:
+                input_tokens = record.get("input_tokens")
+                cached_tokens = record.get("cached_input_tokens")
+                if isinstance(input_tokens, int) and isinstance(cached_tokens, int):
+                    amount = input_tokens - cached_tokens
+            if isinstance(amount, int) and not isinstance(amount, bool) and amount >= 0:
+                totals[key] += amount
+        duration = record.get("duration_seconds")
+        if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration >= 0:
+            totals["duration_seconds"] += round(duration, 3)
+    return dict(sorted(totals.items()))
+
+
+def _combine_usage_totals(
+    *values: dict[str, int | float],
+) -> dict[str, int | float]:
+    totals: Counter[str] = Counter()
+    for value in values:
+        totals.update(value)
     return dict(sorted(totals.items()))
 
 

@@ -124,3 +124,9 @@
   opt-in playbook, standardized ordinary discovery on `CONTEXT GAP`, and required exact
   question/file/locator/use Context Targets. MCP structured targets remain deferred
   until T196 and T197 are measured.
+- 2026-08-03: Added compact Lead milestone checkpoints and separated Lead, worker,
+  and combined usage totals. Final turns now pin a role-specific schema, preserve the
+  exact Lead prompt, and normalize launcher-owned identity fields. Gate configuration
+  now declares worker or host execution, with content-addressed accepted snapshots.
+  The opt-in Run Guard also stops a result over 32 KiB and broad discovery after a
+  successful context call while preserving full private diagnostics and resumability.

@@ -40,7 +40,12 @@ After that approval, “handle it yourself” or “end to end” means the Proj
 
 Use `--dry-run` to inspect the exact command, profile, guidance, session path, and final result path without starting Codex. The draft is conversational output and does not create a result.
 
-Use the opt-in `--run-guard` only for turns where an unchanged command-failure loop is a material risk. It streams the private JSONL and stderr files, interrupts after three consecutive identical failed command results, and preserves a captured thread for normal same-attempt feedback. A different command, a file-change event, or a passing command resets the streak. The guard is not a token, time, or general retry limit.
+Use the opt-in `--run-guard` for turns where an unchanged command-failure loop or
+unbounded discovery is a material risk. It streams private diagnostics and interrupts
+after three consecutive identical failed command results, a command result over 32 KiB, or broad repository
+discovery after a successful context MCP call. The full event remains in JSONL and it
+preserves a captured thread for scoped same-attempt feedback. The guard is not a
+token, time, tool-count, or general retry limit.
 
 The role manifest selects the default profile and guidance bundle when `--profile` and `--skill-file` are omitted. Lead overrides are explicit. Draft snapshots the policy and skill contents; policy and instruction-bundle digests are embedded in the handoff, session, turn state, and final launcher outcome. Continuations reject a changed pinned file.
 
@@ -49,8 +54,8 @@ T002 uses `--role architect` to produce `ARCHITECTURE.md` and material ADRs with
 Run gates through the repository-owned executor:
 
 ```bash
-./scripts/run-test-gate.py <project-root> --gate development
-./scripts/run-test-gate.py <project-root> --gate integration
+./scripts/run-test-gate.py <project-root> --gate development --execution-surface worker
+./scripts/run-test-gate.py <project-root> --gate integration --execution-surface <worker-or-lead_host>
 ```
 
 Run `curl -fsS http://127.0.0.1:11434/api/version` from the same execution surface before the live draft. If it succeeds inside the already-sandboxed Project Lead, use a local profile and add `--trust-parent-sandbox` to draft, feedback, and final. If it fails there but succeeds on the host, use the approved host-level launcher on every turn and omit the flag. A successful `--dry-run` does not test model connectivity. See `.agents/playbooks/nested-worker-sandbox.md` for the app-server, `bwrap`, and endpoint failure routes.
@@ -90,7 +95,8 @@ Validation does not prove the work is correct. It proves the result envelope is 
 
 ```bash
 ./scripts/close-loop.sh <project-root> --task T003 -- \
-  ../../scripts/run-test-gate.py . --gate integration
+  ../../scripts/run-test-gate.py . --gate integration \
+  --execution-surface worker --snapshot-task T003 --snapshot-attempt att-001
 ```
 
 The command validates artifacts, runs verification without a shell, records output under `results/`, updates project state, and advances to the next incomplete task. For implemented product behavior, use the configured Integration Gate or an exact wrapper as the closure command. Repeating the same successful close is idempotent.

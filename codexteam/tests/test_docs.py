@@ -35,8 +35,10 @@ def test_machine_schemas_are_valid_json():
         )
     )
     assert set(openai_schema["properties"]["agent_role"]["enum"]) == expected_roles
+    assert openai_schema["properties"]["produced_at"]["pattern"] == "Z$"
     gate_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "gate-record-v1.json").read_text(encoding="utf-8"))
     assert "configuration_digest" in gate_schema["required"]
+    assert "execution_surface" in gate_schema["required"]
 
 
 def test_openai_result_schema_is_a_strict_v1_projection():
@@ -195,6 +197,8 @@ def test_run_guard_is_documented_as_opt_in_and_resumable():
 
     assert "--run-guard" in readme
     assert "three consecutive identical failed command results" in user_guide
+    assert "command result over 32 KiB" in user_guide
+    assert "broad repository" in user_guide
     assert "preserves a captured thread" in user_guide
     assert "timeout or opt-in Run Guard" in contracts
 

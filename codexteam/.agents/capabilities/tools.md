@@ -18,7 +18,10 @@ commands before inventing new ones.
 - Project initialization preview:
   `./scripts/init-project.py "Name" --goal "Goal" --projects-root ./projects --dry-run`
 - Test gates:
-  `./scripts/run-test-gate.py <project> --gate development` or `--gate integration`; configured commands are argument arrays in `management/TEST_GATES.toml` and integration always includes development.
+  `./scripts/run-test-gate.py <project> --gate development --execution-surface worker`
+  or the Integration Gate with its configured `worker`/`lead_host` surface; commands
+  are argument arrays and integration always includes development. At acceptance, add
+  `--snapshot-task <task> --snapshot-attempt <attempt>`.
 - Local milestone Git:
   `./scripts/git-steward.py inspect <project> --boundary <id> --tasks <ids>`; authorization and commit preview by default and require `--apply` to write. The tool requires the project to be the exact Git root and implements no remote action.
 - Subagent preview:
@@ -49,6 +52,9 @@ commands before inventing new ones.
   `jq '{status, summary, file_changes, evidence, errors, warnings, limitations}' <result>`; do not dump captured process tails or full JSONL during routine success handling.
 - Task closure:
   `./scripts/close-loop.sh <project> --task T001 -- <verification-command>`
+- Lead rotation:
+  `./scripts/track-lead-task.py checkpoint --project <project>` emits one compact,
+  ignored resume checkpoint; it is context, not acceptance evidence.
 
 ## Working Rules
 - Prefer `rg` and `rg --files` for search.

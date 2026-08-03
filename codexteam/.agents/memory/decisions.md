@@ -36,7 +36,19 @@
 - New projects are exact standalone Git repositories by default. Initialization creates no commit and invents no Git identity.
 - Local Git Steward runs only at a Project Lead-authorized important-task or milestone boundary. The model is read-only; a deterministic executor validates an exact plan and authorization, re-verifies the candidate tree, stages literal approved paths, and creates one local commit.
 - Local Git Steward has no remote authority. Push, fetch, merge, rebase, tag, release, publication, and remote PR creation remain human actions.
-- Run Guard is opt-in per worker turn and interrupts only three consecutive identical failed command results. It reuses the existing interrupted, exact-thread resume path and is not a token, time, or general retry limit.
+- Run Guard is opt-in per worker turn. It interrupts three consecutive identical
+  failed command results, a command result over 32 KiB, or broad repository discovery
+  after a successful `codexteam-context` call. It preserves full private diagnostics
+  and the exact-thread resume path, and is not a token, time, tool-count, or general
+  retry limit.
+- Lead milestone rotation uses one ignored compact checkpoint with canonical
+  references. Lead, worker, and combined usage remain distinct metrics scopes.
+- Gate execution ownership is explicit in `TEST_GATES.toml`. Workers cannot run a
+  `lead_host` gate; accepted task-attempt evidence is a content-addressed immutable
+  snapshot, while rolling gate files remain current-state views.
+- The launcher preserves each raw Lead prompt and pins a role-specific final result
+  schema. Result identity, UTC production time, and Git Steward's empty change set are
+  launcher-owned fields.
 - Lead task metrics checkpoint cumulative rollout counters at each canonical task
   transition instead of relying only on the final Stop hook. Cross-task binds preserve
   the previous task when possible, explicit reset is required to discard stale state,

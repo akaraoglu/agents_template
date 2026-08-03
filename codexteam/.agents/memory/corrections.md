@@ -73,3 +73,10 @@
 - Do not rely on only the outer Integration Gate timeout for live browser subprocesses.
   Close protocol handles in `finally`, give each named smoke an inner deadline, bound
   child-process waits, and keep a negative timeout and port-release canary.
+- Do not ask a worker to execute a gate configured for `lead_host`, and do not cite a
+  mutable rolling gate file as the accepted task-attempt record.
+- Do not describe Lead-plus-worker usage as worker cost. Preserve both scopes and the
+  combined total.
+- Do not assume a bounded MCP response prevents later broad shell discovery. On
+  guarded turns, interrupt broad discovery after a successful context call and resume
+  from an explicit `CONTEXT GAP` when the bounded result is insufficient.

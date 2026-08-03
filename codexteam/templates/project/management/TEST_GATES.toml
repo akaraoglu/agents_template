@@ -11,11 +11,13 @@ verification_paths = [
 
 [development]
 configured = false
+execution_surface = "worker"
 expected_max_seconds = 300
 commands = []
 
 [integration]
 configured = false
+execution_surface = "worker"
 expected_max_seconds = 900
 includes = ["development"]
 commands = []

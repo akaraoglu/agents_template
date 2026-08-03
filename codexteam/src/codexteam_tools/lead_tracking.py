@@ -12,6 +12,9 @@ from typing import Any, Iterator
 
 from .files import atomic_write_json
 from .lead_metrics import record_lead_usage
+from .paths import contained_path, ensure_existing_workspace
+from .tasks import TaskDocumentError, parse_task_document
+from .test_gates import GateConfigError, validate_current_gate_record
 
 
 TOOLKIT_ROOT = Path(__file__).resolve().parents[2]
@@ -40,9 +43,7 @@ def bind_session(
     reset_existing: bool = False,
 ) -> Path:
     """Bind the active top-level Lead session to one project task."""
-    project = Path(project_value).resolve()
-    if not project.is_dir():
-        raise ValueError(f"project path does not exist: {project}")
+    project = ensure_existing_workspace(project_value)
     session = session_id or os.environ.get("CODEX_THREAD_ID", "").strip()
     if not session:
         raise ValueError("CODEX_THREAD_ID is required on the top-level Lead surface")
@@ -597,3 +598,142 @@ def clear_delivered_project_bindings(
             path.unlink()
             removed.append(path)
     return removed
+
+
+def create_lead_checkpoint(
+    project_value: str | Path,
+    *,
+    generated_at: datetime | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    """Write a compact runtime-only handoff for starting a fresh Lead session."""
+    project = Path(project_value).resolve()
+    if not project.is_dir():
+        raise ValueError(f"project path does not exist: {project}")
+
+    state = _read_bullets(project / "PROJECT_STATE.md")
+    current = _read_bullets(project / "CURRENT_TASK.md")
+    try:
+        tasks = parse_task_document((project / "TASKS.md").read_text(encoding="utf-8"))
+    except (OSError, TaskDocumentError) as exc:
+        raise ValueError(f"cannot read canonical task ledger: {exc}") from exc
+
+    task_value = current.get("Task ID") or state.get("Active Task")
+    task_id = task_value if isinstance(task_value, str) and TASK_ID_RE.fullmatch(task_value) else None
+    if task_id is None:
+        verified = state.get("Last Verified Task")
+        if isinstance(verified, str) and TASK_ID_RE.fullmatch(verified):
+            task_id = verified
+    task_record: dict[str, Any] | None = None
+    if task_id is not None:
+        try:
+            row = tasks.row(task_id)
+        except TaskDocumentError:
+            row = None
+        if row is not None:
+            task_record = {
+                "task_id": row.task_id,
+                "description": row.description,
+                "status": row.status,
+                "owner": row.owner,
+                "verification": row.verification,
+                "evidence": row.evidence,
+            }
+
+    gate = _checkpoint_gate(project)
+    refs = ["PROJECT_STATE.md", "CURRENT_TASK.md", "TASKS.md"]
+    if task_record is not None and task_record["status"] != "Completed":
+        handoff = f"management/tasks/{task_record['task_id']}.md"
+        if (project / handoff).is_file():
+            refs.append(handoff)
+
+    checkpoint = {
+        "schema_version": "1.0",
+        "kind": "lead_milestone_checkpoint",
+        "generated_at": (generated_at or _now()).isoformat().replace("+00:00", "Z"),
+        "project_root": str(project),
+        "project_state": {
+            key: state.get(key)
+            for key in (
+                "Phase",
+                "Status",
+                "Active Task",
+                "Active Milestone",
+                "Last Completed Milestone",
+                "Last Verified Task",
+                "Next Action",
+                "Updated At",
+            )
+            if state.get(key) is not None
+        },
+        "current_task": {
+            key: current.get(key)
+            for key in (
+                "Task ID",
+                "Status",
+                "Milestone",
+                "Responsible AI",
+                "Objective",
+                "Handoff",
+                "Evidence",
+                "Next Action",
+            )
+            if current.get(key) is not None
+        },
+        "task_record": task_record,
+        "integration_gate": gate,
+        "canonical_refs": refs,
+        "usage_note": (
+            "Start a fresh Lead session from these references; this checkpoint is context, "
+            "not acceptance evidence."
+        ),
+    }
+    path = contained_path(
+        project,
+        ".codexteam/runtime/lead-checkpoint.json",
+        label="Lead checkpoint",
+    )
+    if path.is_symlink():
+        raise ValueError(f"Lead checkpoint path cannot be a symlink: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(path, checkpoint)
+    return path, checkpoint
+
+
+def _read_bullets(path: Path) -> dict[str, str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"cannot read canonical project state: {path}") from exc
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        if line.startswith("- ") and ":" in line:
+            key, value = line[2:].split(":", 1)
+            values[key.strip()] = value.strip()
+    return values
+
+
+def _checkpoint_gate(project: Path) -> dict[str, Any] | None:
+    path = project / "results" / "gates" / "integration.json"
+    try:
+        record = validate_current_gate_record(project, "integration")
+        current = True
+        freshness_error = None
+    except (FileNotFoundError, GateConfigError, OSError, ValueError) as exc:
+        current = False
+        freshness_error = str(exc)
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return None
+    if not isinstance(record, dict):
+        return None
+    return {
+        "artifact_ref": "results/gates/integration.json",
+        "status": record.get("status"),
+        "current": current,
+        "freshness_error": freshness_error,
+        "completed_at": record.get("completed_at"),
+        "workspace_digest": record.get("workspace_digest"),
+        "configuration_digest": record.get("configuration_digest"),
+        "execution_surface": record.get("execution_surface"),
+    }

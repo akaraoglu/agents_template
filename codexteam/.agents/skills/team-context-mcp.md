@@ -81,6 +81,9 @@ than repeating the same discovery with broad shell output.
    read and record the fallback reason.
 7. Reuse the resulting facts in worker handoffs and review. Do not make a worker
    rediscover accepted context.
+8. Read cost hotspot `usage_totals` by scope. `worker_turns` comes from worker
+   sidecars, `lead_orchestration` comes from Lead rollout metrics, and `combined` is
+   their sum; do not attribute the combined number to either layer alone.
 
 ## Commands To Run
 

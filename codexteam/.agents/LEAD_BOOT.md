@@ -100,7 +100,8 @@ Close only after an independent project command passes:
 ```bash
 ./scripts/close-loop.sh ./projects/<project-id> \
   --task T003 --result results/T003-att-001.json -- \
-  ../../scripts/run-test-gate.py . --gate integration
+  ../../scripts/run-test-gate.py . --gate integration \
+  --execution-surface worker --snapshot-task T003 --snapshot-attempt att-001
 ```
 
 ### 5. Deliver

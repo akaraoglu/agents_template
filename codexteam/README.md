@@ -82,9 +82,17 @@ Start a developer draft:
 
 Review the draft, then continue the exact session with `--phase feedback`. After acceptance, use `--phase final` with the same team, task, attempt, role, profile, and workspace. Draft and feedback may edit handoff-scoped project files, but they never write the deterministic result; finalization writes that one result after acceptance.
 
-Add `--run-guard` to a turn only when live protection from an unchanged failure loop is warranted. It interrupts after three consecutive identical failed command results, records the reason, and preserves a captured thread for ordinary same-attempt feedback. It is not a token, time, or general retry limit.
+Add `--run-guard` when live protection from an unchanged failure loop or unbounded
+discovery is warranted. It interrupts an exact three-failure repeat, a command result
+over 32 KiB, or broad repository discovery after successful context MCP routing. The
+private JSONL keeps the full event and a captured thread remains resumable. It is not
+a token, time, tool-count, or general retry limit.
 
-For OpenAI-backed profiles, the final turn also receives the existing `schemas/result-v1.json` through Codex's `--output-schema`. Local providers receive the compact contract instructions because their structured-output support is not assumed. In both cases, the launcher validates identity, role boundaries, changed paths, and evidence paths before persisting a result.
+For OpenAI-backed profiles, each final turn receives a session-pinned role-specific
+output schema. The launcher owns and normalizes result identity, UTC timestamp, and
+Git Steward's empty change set before validation. Every turn also preserves the exact
+raw Lead prompt beside its private transcript. Local providers receive the compact
+contract instructions because their structured-output support is not assumed.
 
 Inspect current and stale project-local workers:
 
@@ -121,14 +129,15 @@ Close the task after independent verification:
 
 ```bash
 ./scripts/close-loop.sh ./projects/example \
-  --task T003 -- ../../scripts/run-test-gate.py . --gate integration
+  --task T003 -- ../../scripts/run-test-gate.py . --gate integration \
+  --execution-surface worker --snapshot-task T003 --snapshot-attempt att-001
 ```
 
 Run the configured gates and preview a milestone boundary:
 
 ```bash
-./scripts/run-test-gate.py ./projects/example --gate development
-./scripts/run-test-gate.py ./projects/example --gate integration
+./scripts/run-test-gate.py ./projects/example --gate development --execution-surface worker
+./scripts/run-test-gate.py ./projects/example --gate integration --execution-surface worker
 ./scripts/git-steward.py inspect ./projects/example \
   --boundary milestone-001 --tasks T003,T004,T005 --json
 ```

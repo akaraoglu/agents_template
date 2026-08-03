@@ -133,17 +133,20 @@ def record_lead_usage(
 
     # Merge/replace the single task key
     task_record = {
+        "metric_scope": "lead_orchestration",
         "profile": profile.strip(),
         "provider": provider.strip(),
         "duration_seconds": duration_seconds,
         "input_tokens": input_tokens,
         "cached_input_tokens": cached_input_tokens,
+        "uncached_input_tokens": input_tokens - cached_input_tokens,
         "output_tokens": output_tokens,
     }
     tasks_map[normalised] = task_record
 
     # Update metadata
     data["schema_version"] = "1.0"
+    data["metric_scope"] = "lead_orchestration"
     data["generated_at"] = datetime.now(timezone.utc).isoformat()
 
     # Atomic write

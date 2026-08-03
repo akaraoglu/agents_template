@@ -100,6 +100,14 @@ delivery removes the binding automatically. For a project delivered by an older 
 `./scripts/track-lead-task.py clear-delivered --project ./projects/<project-id>` removes
 only bindings for that exact project and refuses active project state.
 
+At a milestone boundary or before the Lead conversation becomes expensive, run
+`./scripts/track-lead-task.py checkpoint --project ./projects/<project-id>` and start a
+fresh Lead session from the printed resume prompt. The ignored checkpoint contains a
+compact state summary and exact canonical references; it is orientation, not worker
+output or acceptance evidence. Do not reset an active binding merely to rotate the
+Lead conversation. Cost reports keep `lead_orchestration`, `worker_turns`, and
+`combined` totals separate so orchestration cost is not attributed to a worker draft.
+
 ## Self-Improvement Boundary
 
 Workers may report improvement observations; the Project Lead triages them. Do not restart, reassign, split, or create a new attempt merely to apply updated guidance. Existing attempt bundles remain pinned. Prefer updating the closest guidance, allow a `no change` decision, and require independent verification before accepting an executable tool or material behavior change.
@@ -138,6 +146,8 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - No completion claim precedes independent verification.
 - Reviewer claims match the contents of named evidence, not merely artifact existence or another agent's summary.
 - Lead context stays bounded: do not dump output tails, full JSONL, or complete session history after concise validation succeeds.
+- Milestone Lead rotation starts from the generated checkpoint and its canonical references; the checkpoint itself is never cited as acceptance evidence.
+- Cost conclusions distinguish Lead orchestration from worker-turn usage.
 - Remote GitHub reads are bounded to a named decision and never replace local workspace or gate evidence.
 
 ## Common Mistakes

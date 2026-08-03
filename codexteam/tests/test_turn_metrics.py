@@ -86,6 +86,7 @@ def test_summary_records_tool_cycles_deltas_repeats_and_redacted_previews():
 
     summary = summarize(text)
 
+    assert summary["metric_scope"] == "worker_turn"
     assert summary["turn"] == {
         "number": 1,
         "phase": "draft",

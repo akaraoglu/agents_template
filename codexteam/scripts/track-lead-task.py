@@ -14,13 +14,14 @@ sys.path.insert(0, str(SRC))
 from codexteam_tools.lead_tracking import (
     bind_session,
     clear_delivered_project_bindings,
+    create_lead_checkpoint,
     stop_from_stdin,
 )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Bind a Lead session, clear delivered bindings, or capture Stop."
+        description="Bind a Lead session, create a checkpoint, clear delivered bindings, or capture Stop."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     bind = subparsers.add_parser("bind")
@@ -33,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     clear = subparsers.add_parser("clear-delivered")
     clear.add_argument("--project", required=True)
+    checkpoint = subparsers.add_parser("checkpoint")
+    checkpoint.add_argument("--project", required=True)
     subparsers.add_parser("stop")
     args = parser.parse_args(argv)
     if args.command == "stop":
@@ -41,6 +44,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "clear-delivered":
             removed = clear_delivered_project_bindings(args.project)
             print(json.dumps({"removed": [str(path) for path in removed]}))
+            return 0
+        if args.command == "checkpoint":
+            path, checkpoint_data = create_lead_checkpoint(args.project)
+            active = checkpoint_data["project_state"].get("Active Task")
+            print(json.dumps({
+                "checkpoint": str(path),
+                "active_task": active,
+                "resume_prompt": (
+                    f"Continue CodexTeam project {checkpoint_data['project_root']} from "
+                    f"{path}. Read only its canonical_refs, then the active handoff."
+                ),
+            }))
             return 0
         path = bind_session(args.project, args.task, reset_existing=args.reset)
     except (OSError, ValueError) as exc:

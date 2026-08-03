@@ -63,14 +63,18 @@ Remove `--dry-run` only after inspecting the command, session location, and fina
 
 `--profile` is an explicit override. When omitted, the selected role policy supplies its default profile. The precedence is lead CLI override, pinned role-policy default, then profile configuration for values the policy does not set. The first draft snapshots the full policy and selected skill contents under the attempt runtime directory; resumes use that exact instruction bundle. Role policies may narrow an allowed MCP server with `mcp_tools`; the launcher passes that pinned subset as `enabled_tools` and records allowed and effective subsets in dry-run, session, and turn state. For new non-Leader attempts, it also derives `mcp_context_project` from the exact workspace and configured `codexteam-context --projects-root`; the bound worker tools omit the `project` argument. Existing attempts without a pinned binding continue unbound.
 
-Finalization passes the strict `schemas/result-v1-openai.json` projection to OpenAI-backed profiles with `--output-schema`; persisted records remain validated against the backward-compatible result-v1 contract. Local providers receive the same compact required-field instructions without being told to search for an unavailable schema. Contract validation and project-boundary checks run before either result is persisted.
+Finalization passes a session-pinned, role-specific projection of
+`schemas/result-v1-openai.json` to OpenAI-backed profiles with `--output-schema`.
+Its digest is retained in session state so later toolkit changes cannot alter an active
+attempt. Persisted records remain validated against the backward-compatible result-v1
+contract. Local providers receive the same compact required-field instructions.
 
 ## Run Test Gates
 
 ```bash
-./scripts/run-test-gate.py <project> --gate development --dry-run
-./scripts/run-test-gate.py <project> --gate development
-./scripts/run-test-gate.py <project> --gate integration
+./scripts/run-test-gate.py <project> --gate development --execution-surface worker --dry-run
+./scripts/run-test-gate.py <project> --gate development --execution-surface worker
+./scripts/run-test-gate.py <project> --gate integration --execution-surface worker
 ./scripts/run-test-gate.py <project> --gate integration --check-record
 ```
 
@@ -122,13 +126,36 @@ Both mutating commands refuse symlinks and files that do not carry the CodexTeam
 
 ```bash
 ./scripts/close-loop.sh <project> --task T003 \
-  --result results/T003-att-001.json -- \
-  ../../scripts/run-test-gate.py . --gate integration
+  --result results/T003-att-001.json -- ../../scripts/run-test-gate.py . \
+  --gate integration --execution-surface worker \
+  --snapshot-task T003 --snapshot-attempt att-001
 ```
 
 Use `--result` whenever a task has more than one attempt so closure validates the exact accepted result instead of relying on filename ordering.
 
 Arguments after `--` are executed directly from the project root without a shell.
+
+Gate configuration also declares `execution_surface = "worker"` or `"lead_host"`.
+Pass the matching `--execution-surface`; the runner refuses a mismatch before running
+commands. At an accepted boundary, create an immutable record in the same invocation:
+
+```bash
+./scripts/run-test-gate.py ./projects/<project-id> --gate integration \
+  --execution-surface lead_host --snapshot-task T003 --snapshot-attempt att-001
+```
+
+The rolling gate file remains useful for current status. Reviewer and closure evidence
+should cite the returned content-addressed path under `results/gates/accepted/`.
+
+Rotate an expensive Lead conversation at a milestone without losing canonical state:
+
+```bash
+./scripts/track-lead-task.py checkpoint --project ./projects/<project-id>
+```
+
+The printed resume prompt points to an ignored compact checkpoint. It is context only,
+not acceptance evidence. Cost hotspot output reports worker, Lead, and combined usage
+separately.
 
 ## Controlled Fibonacci E2E Canary
 

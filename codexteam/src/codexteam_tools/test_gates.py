@@ -14,11 +14,18 @@ from pathlib import Path
 from typing import Any
 
 from .files import atomic_write_json
-from .paths import contained_path, ensure_existing_workspace
+from .paths import (
+    contained_path,
+    ensure_existing_workspace,
+    normalize_task_id,
+    validate_identifier,
+)
 
 GATES = ("development", "integration")
 CONFIG_PATH = "management/TEST_GATES.toml"
 RECORD_ROOT = "results/gates"
+SNAPSHOT_ROOT = f"{RECORD_ROOT}/accepted"
+EXECUTION_SURFACES = ("worker", "lead_host")
 
 
 class GateConfigError(ValueError):
@@ -32,6 +39,8 @@ class GateConfig:
     integration_commands: tuple[tuple[str, ...], ...]
     development_timeout: int
     integration_timeout: int
+    development_surface: str
+    integration_surface: str
 
 
 def load_gate_config(project: str | Path) -> GateConfig:
@@ -57,6 +66,8 @@ def load_gate_config(project: str | Path) -> GateConfig:
         integration_commands=integration[0],
         development_timeout=development[1],
         integration_timeout=integration[1],
+        development_surface=development[3],
+        integration_surface=integration[3],
     )
 
 
@@ -65,11 +76,22 @@ def run_gate(
     gate: str,
     *,
     dry_run: bool = False,
+    execution_surface: str = "worker",
 ) -> dict[str, Any]:
     if gate not in GATES:
         raise GateConfigError(f"unsupported gate: {gate}")
     root = ensure_existing_workspace(project)
     config = load_gate_config(root)
+    expected_surface = _configured_surface(config, gate)
+    if execution_surface not in EXECUTION_SURFACES:
+        raise GateConfigError(
+            f"execution surface must be one of: {', '.join(EXECUTION_SURFACES)}"
+        )
+    if execution_surface != expected_surface:
+        raise GateConfigError(
+            f"{gate} gate requires execution surface {expected_surface!r}; "
+            f"received {execution_surface!r}"
+        )
     stages = [("development", config.development_commands)]
     timeout = config.development_timeout
     if gate == "integration":
@@ -86,6 +108,7 @@ def run_gate(
             "gate": gate,
             "status": "dry_run",
             "project_root": str(root),
+            "execution_surface": execution_surface,
             "verification_paths": list(config.verification_paths),
             "commands": planned,
         }
@@ -136,6 +159,7 @@ def run_gate(
         "gate": gate,
         "status": status,
         "project_root": str(root),
+        "execution_surface": execution_surface,
         "started_at": started_wall,
         "completed_at": _utc_now(),
         "duration_seconds": round(time.monotonic() - started, 3),
@@ -172,6 +196,9 @@ def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, An
         raise GateConfigError(f"{gate} gate record is not a passing record")
     if record.get("project_root") != str(root):
         raise GateConfigError("gate record project root does not match")
+    expected_surface = _configured_surface(config, gate)
+    if record.get("execution_surface", "worker") != expected_surface:
+        raise GateConfigError(f"{gate} gate record has the wrong execution surface")
     patterns = record.get("verification_paths")
     if not isinstance(patterns, list):
         raise GateConfigError("gate record verification_paths must be a list")
@@ -181,6 +208,52 @@ def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, An
     if current != record.get("workspace_digest"):
         raise GateConfigError(f"{gate} gate record is stale for the current workspace")
     return record
+
+
+def snapshot_current_gate_record(
+    project: str | Path,
+    gate: str,
+    *,
+    task_id: str,
+    attempt_id: str,
+) -> tuple[Path, dict[str, Any]]:
+    """Persist one content-addressed snapshot of a current passing gate."""
+    root = ensure_existing_workspace(project)
+    normalized_task = normalize_task_id(task_id)
+    normalized_attempt = validate_identifier(attempt_id, label="attempt ID")
+    record = validate_current_gate_record(root, gate)
+    record_bytes = json.dumps(
+        record,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    record_sha256 = hashlib.sha256(record_bytes).hexdigest()
+    relative = (
+        f"{SNAPSHOT_ROOT}/{normalized_task}-{normalized_attempt}-{gate}-"
+        f"{record_sha256[:16]}.json"
+    )
+    path = contained_path(root, relative, label="accepted gate snapshot")
+    payload = {
+        "schema_version": "1.0",
+        "kind": "accepted_gate_snapshot",
+        "task_id": normalized_task,
+        "attempt_id": normalized_attempt,
+        "gate": gate,
+        "record_sha256": record_sha256,
+        "record": record,
+    }
+    if path.is_symlink():
+        raise GateConfigError(f"accepted gate snapshot cannot be a symlink: {path}")
+    if path.exists():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise GateConfigError(f"invalid accepted gate snapshot: {path}: {exc}") from exc
+        if current != payload:
+            raise GateConfigError(f"accepted gate snapshot collision: {path}")
+        return path, payload
+    atomic_write_json(path, payload)
+    return path, payload
 
 
 def verification_manifest(project: Path, patterns: tuple[str, ...]) -> dict[str, str]:
@@ -211,6 +284,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gate", required=True, choices=GATES)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-record", action="store_true")
+    parser.add_argument(
+        "--execution-surface",
+        choices=EXECUTION_SURFACES,
+        default="worker",
+    )
+    parser.add_argument("--snapshot-task")
+    parser.add_argument("--snapshot-attempt")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -218,10 +298,33 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if bool(args.snapshot_task) != bool(args.snapshot_attempt):
+            raise GateConfigError(
+                "--snapshot-task and --snapshot-attempt must be supplied together"
+            )
         if args.check_record:
             result = validate_current_gate_record(args.project, args.gate)
         else:
-            result = run_gate(args.project, args.gate, dry_run=args.dry_run)
+            result = run_gate(
+                args.project,
+                args.gate,
+                dry_run=args.dry_run,
+                execution_surface=args.execution_surface,
+            )
+        if args.snapshot_task:
+            if args.dry_run:
+                raise GateConfigError("cannot snapshot a dry-run gate")
+            path, snapshot = snapshot_current_gate_record(
+                args.project,
+                args.gate,
+                task_id=args.snapshot_task,
+                attempt_id=args.snapshot_attempt,
+            )
+            result = dict(result)
+            result["accepted_snapshot"] = {
+                "artifact_ref": path.relative_to(Path(args.project).resolve()).as_posix(),
+                "record_sha256": snapshot["record_sha256"],
+            }
     except (FileNotFoundError, GateConfigError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 2
@@ -232,10 +335,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Status: {result['status']}")
         if "workspace_digest" in result:
             print(f"Workspace digest: {result['workspace_digest']}")
+        snapshot = result.get("accepted_snapshot")
+        if isinstance(snapshot, dict):
+            print(f"Accepted snapshot: {snapshot['artifact_ref']}")
     return 0 if result.get("status") in {"passed", "dry_run"} else 1
 
 
-def _gate_table(value: Any, name: str) -> tuple[tuple[tuple[str, ...], ...], int, tuple[str, ...]]:
+def _gate_table(
+    value: Any,
+    name: str,
+) -> tuple[tuple[tuple[str, ...], ...], int, tuple[str, ...], str]:
     if not isinstance(value, dict):
         raise GateConfigError(f"{name} must be a TOML table")
     if value.get("configured") is not True:
@@ -258,7 +367,12 @@ def _gate_table(value: Any, name: str) -> tuple[tuple[tuple[str, ...], ...], int
     includes_value = value.get("includes", [])
     if not isinstance(includes_value, list) or any(not isinstance(item, str) for item in includes_value):
         raise GateConfigError(f"{name}.includes must be a string array")
-    return tuple(commands), timeout, tuple(includes_value)
+    execution_surface = value.get("execution_surface", "worker")
+    if execution_surface not in EXECUTION_SURFACES:
+        raise GateConfigError(
+            f"{name}.execution_surface must be one of: {', '.join(EXECUTION_SURFACES)}"
+        )
+    return tuple(commands), timeout, tuple(includes_value), execution_surface
 
 
 def _patterns(value: Any) -> tuple[str, ...]:
@@ -286,6 +400,8 @@ def _config_digest(config: GateConfig) -> str:
         "integration_commands": config.integration_commands,
         "development_timeout": config.development_timeout,
         "integration_timeout": config.integration_timeout,
+        "development_surface": config.development_surface,
+        "integration_surface": config.integration_surface,
     }
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -296,6 +412,14 @@ def _excluded(relative: str) -> bool:
     return any(
         relative == prefix or relative.startswith(prefix + "/")
         for prefix in (".git", ".codexteam/runtime", "results/gates")
+    )
+
+
+def _configured_surface(config: GateConfig, gate: str) -> str:
+    return (
+        config.development_surface
+        if gate == "development"
+        else config.integration_surface
     )
 
 

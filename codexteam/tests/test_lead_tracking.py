@@ -10,9 +10,11 @@ from codexteam_tools.lead_tracking import (
     bind_session,
     capture_stop,
     clear_delivered_project_bindings,
+    create_lead_checkpoint,
     set_pending_transition,
     stop_from_stdin,
 )
+from codexteam_tools.project_init import initialize_project
 
 
 def _time(value: str) -> datetime:
@@ -590,6 +592,56 @@ def test_clear_delivered_project_bindings_is_project_scoped(tmp_path: Path):
         assert "Status: DELIVERED" in str(exc)
     else:
         raise AssertionError("active project binding cleanup must be rejected")
+
+
+def test_create_lead_checkpoint_is_compact_runtime_context(tmp_path: Path):
+    project = initialize_project(
+        "Checkpoint Project",
+        "Prove compact Lead recovery.",
+        root=tmp_path,
+        project_id="checkpoint-project",
+    ).project_dir
+
+    path, checkpoint = create_lead_checkpoint(
+        project,
+        generated_at=_time("2026-08-03T10:00:00Z"),
+    )
+
+    assert path == project / ".codexteam/runtime/lead-checkpoint.json"
+    assert checkpoint["kind"] == "lead_milestone_checkpoint"
+    assert checkpoint["generated_at"] == "2026-08-03T10:00:00Z"
+    assert checkpoint["project_state"]["Active Task"] == "T001"
+    assert checkpoint["current_task"]["Task ID"] == "T001"
+    assert checkpoint["task_record"]["task_id"] == "T001"
+    assert checkpoint["canonical_refs"] == [
+        "PROJECT_STATE.md",
+        "CURRENT_TASK.md",
+        "TASKS.md",
+        "management/tasks/T001.md",
+    ]
+    assert checkpoint["integration_gate"] is None
+    assert "not acceptance evidence" in checkpoint["usage_note"]
+    assert json.loads(path.read_text(encoding="utf-8")) == checkpoint
+
+
+def test_create_lead_checkpoint_rejects_runtime_symlink_escape(tmp_path: Path):
+    project = initialize_project(
+        "Checkpoint Symlink",
+        "Reject an escaped runtime write.",
+        root=tmp_path,
+        project_id="checkpoint-symlink",
+    ).project_dir
+    runtime = project / ".codexteam/runtime"
+    external = tmp_path / "external-runtime"
+    external.mkdir()
+    runtime.symlink_to(external, target_is_directory=True)
+
+    try:
+        create_lead_checkpoint(project)
+    except ValueError as exc:
+        assert "escapes workspace root" in str(exc)
+    else:
+        raise AssertionError("escaped Lead checkpoint path must be rejected")
 
 
 def test_stop_stdin_is_fail_open_for_invalid_and_unbound_payloads():

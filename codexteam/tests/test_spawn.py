@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import stat
 from dataclasses import replace
@@ -83,6 +84,20 @@ command = "local-docs-server"
     )
 
 
+def configure_test_gates(workspace: Path, *, integration_surface: str) -> None:
+    management = workspace / "management"
+    management.mkdir(exist_ok=True)
+    (management / "TEST_GATES.toml").write_text(
+        'schema_version = "1.0"\n'
+        'verification_paths = ["src/**", "tests/**"]\n\n'
+        '[development]\nconfigured = true\nexecution_surface = "worker"\n'
+        'expected_max_seconds = 30\ncommands = [["true"]]\n\n'
+        f'[integration]\nconfigured = true\nexecution_surface = "{integration_surface}"\n'
+        'expected_max_seconds = 60\nincludes = ["development"]\n'
+        'commands = [["true"]]\n'
+    )
+
+
 def mcp_overrides(command: list[str]) -> set[str]:
     return {
         command[index + 1]
@@ -135,6 +150,24 @@ def test_handoff_prompt_requires_draft_not_final_result(tmp_path: Path, monkeypa
     assert "DRAFT T002/att-001" in prompt
 
 
+def test_tester_handoff_carries_host_only_gate_routing(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="tester", task="T003")
+    )
+    configure_test_gates(request.workspace, integration_surface="lead_host")
+
+    handoff = spawn.build_handoff(request)
+    prompt = spawn.build_prompt(request, spawn.prepare_turn(request))
+
+    assert handoff["constraints"]["gate_routing"] == {
+        "gate": "integration",
+        "execution_surface": "lead_host",
+        "worker_may_execute": False,
+    }
+    assert "Do not launch it from this worker" in prompt
+    assert "same-digest host record" in prompt
+
+
 def test_final_prompt_relies_on_schema_and_keeps_task_specific_truth(tmp_path: Path, monkeypatch):
     run_draft(tmp_path, monkeypatch)
     request = spawn.prepare_request(
@@ -150,7 +183,9 @@ def test_final_prompt_relies_on_schema_and_keeps_task_specific_truth(tmp_path: P
     assert "requested_followups, errors, warnings, limitations, and produced_at" in prompt
     assert "actual existing project-relative path" in prompt
     assert '"artifact_ref": "<actual existing project-relative evidence artifact>"' not in prompt
-    assert len(prompt) < 1300
+    assert "Allowed evidence types for this role" in prompt
+    assert "normalized by the launcher" in prompt
+    assert len(prompt) < 1600
 
 
 def test_final_command_supplies_result_schema_only_for_openai_final_phase(
@@ -175,9 +210,15 @@ def test_final_command_supplies_result_schema_only_for_openai_final_phase(
     final_command = spawn.build_command(openai_final, final_turn)
     schema_index = final_command.index("--output-schema")
 
-    assert final_command[schema_index + 1] == str(spawn.RESULT_SCHEMA_PATH)
-    assert spawn.RESULT_SCHEMA_PATH.is_file()
-    assert spawn.RESULT_SCHEMA_PATH.name == "result-v1-openai.json"
+    schema_path = final.session_dir / spawn.RESULT_SCHEMA_FILENAME
+    assert final_command[schema_index + 1] == str(schema_path)
+    schema = json.loads(schema_path.read_text())
+    assert schema["properties"]["task_id"]["const"] == "T002"
+    assert schema["properties"]["agent_role"]["const"] == "developer"
+    assert schema["properties"]["evidence"]["items"]["properties"]["type"][
+        "enum"
+    ] == list(final.role_policy.allowed_evidence_types)
+    assert schema["properties"]["produced_at"]["pattern"] == "Z$"
 
 
 def test_initial_command_persists_json_session_without_ephemeral(tmp_path: Path, monkeypatch):
@@ -671,6 +712,10 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
     assert not request.result_path.exists()
     assert stat.S_IMODE(request.session_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(metrics.stat().st_mode) == 0o600
+    prompt_path = Path(outcome["lead_prompt_path"])
+    assert prompt_path.read_text() == "Implement the task.\n"
+    assert stat.S_IMODE(prompt_path.stat().st_mode) == 0o600
+    assert (request.session_dir / spawn.RESULT_SCHEMA_FILENAME).is_file()
     assert stat.S_IMODE(request.codex_home.stat().st_mode) == 0o700
     assert summary["task_id"] == "T002"
     assert summary["attempt_id"] == "att-001"
@@ -779,6 +824,12 @@ def test_completed_final_normalizes_launcher_owned_bookkeeping(
     run_draft(tmp_path, monkeypatch)
     result = result_factory(task_id="T002", role="developer")
     result["result_id"] = ""
+    result["schema_version"] = "0.0"
+    result["team_id"] = "wrong-team"
+    result["task_id"] = "T999"
+    result["agent_role"] = "reviewer"
+    result["attempt_id"] = "wrong-attempt"
+    result["produced_at"] = "not-utc"
     result.pop("requested_followups")
     result["warnings"] = [{"level": "cosmetic", "message": "Minor wording mismatch."}]
     monkeypatch.setattr(
@@ -794,8 +845,96 @@ def test_completed_final_normalizes_launcher_owned_bookkeeping(
 
     assert code == 0
     assert persisted["result_id"] == "res-t002-att-001"
+    assert persisted["schema_version"] == "1.0"
+    assert persisted["team_id"] == "team-1"
+    assert persisted["task_id"] == "T002"
+    assert persisted["agent_role"] == "developer"
+    assert persisted["attempt_id"] == "att-001"
+    assert persisted["produced_at"].endswith("Z")
     assert persisted["requested_followups"] == []
     assert persisted["warnings"] == ["Minor wording mismatch."]
+
+
+def test_git_steward_final_has_role_specific_schema_and_empty_changes(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    draft = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            role="git_steward",
+            task="T220",
+            prompt="Plan the verified local commit.",
+        )
+    )
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("commit facts\n")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T220/att-001\n\nOutcome: planned"),
+    )
+    _, draft_code = spawn.run_spawn(draft)
+    assert draft_code == 0
+
+    schema = json.loads((draft.session_dir / spawn.RESULT_SCHEMA_FILENAME).read_text())
+    assert schema["properties"]["file_changes"]["maxItems"] == 0
+    assert "test_output" not in schema["properties"]["evidence"]["items"][
+        "properties"
+    ]["type"]["enum"]
+
+    result = result_factory(task_id="T220", role="git_steward")
+    result["file_changes"] = [{"path": "src/main.py", "action": "modified"}]
+    result["evidence"][0]["type"] = "artifact"
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            phase="final",
+            role="git_steward",
+            task="T220",
+            prompt="Commit plan accepted.",
+        )
+    )
+
+    persisted, final_code = spawn.run_spawn(final)
+
+    assert final_code == 0
+    assert persisted["file_changes"] == []
+
+
+def test_continuation_uses_session_pinned_result_schema_after_global_change(
+    tmp_path: Path, monkeypatch
+):
+    request, _ = run_draft(tmp_path, monkeypatch)
+    pinned_path = request.session_dir / spawn.RESULT_SCHEMA_FILENAME
+    pinned_before = pinned_path.read_bytes()
+    session = json.loads(request.session_path.read_text())
+    assert session["result_schema_sha256"] == hashlib.sha256(pinned_before).hexdigest()
+
+    changed_global = tmp_path / "changed-global-schema.json"
+    changed_schema = json.loads(spawn.RESULT_SCHEMA_PATH.read_text())
+    changed_schema["title"] = "Future Result Contract"
+    changed_global.write_text(json.dumps(changed_schema))
+    monkeypatch.setattr(spawn, "RESULT_SCHEMA_PATH", changed_global)
+
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="Continue pinned attempt")
+    )
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001\n\nOutcome: continued"),
+    )
+    _, code = spawn.run_spawn(feedback)
+
+    assert code == 0
+    assert pinned_path.read_bytes() == pinned_before
 
 
 def test_invalid_final_writes_no_result_and_session_remains_resumable(tmp_path: Path, monkeypatch):

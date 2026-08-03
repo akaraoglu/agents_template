@@ -25,7 +25,12 @@ Canonical wire roles are `architect`, `developer`, `documenter`, `feature_planne
 
 ## Gate Record V1
 
-Machine-readable schema: `schemas/gate-record-v1.json`. The shell-free gate runner records command results, verification-path manifests, workspace digest, and timestamps under `results/gates/`. Integration always runs Development first.
+Machine-readable schema: `schemas/gate-record-v1.json`. The shell-free gate runner
+records its configured `execution_surface`, command results, verification-path
+manifests, workspace digest, and timestamps under `results/gates/`. Integration always
+runs Development first. Rolling gate files describe current status. An accepted
+task-attempt boundary uses `--snapshot-task` and `--snapshot-attempt` to create one
+content-addressed immutable wrapper under `results/gates/accepted/`.
 
 ## Local Commit Contracts V1
 

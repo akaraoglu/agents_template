@@ -39,9 +39,11 @@ from .turn_metrics import (
     summarize_turn,
     write_summary,
 )
+from .test_gates import GateConfigError, load_gate_config
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 RESULT_SCHEMA_PATH = CODEXTEAM_ROOT / "schemas" / "result-v1-openai.json"
+RESULT_SCHEMA_FILENAME = "result-schema.json"
 PHASES = ("draft", "feedback", "final")
 REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 SESSION_SCHEMA_VERSION = "1.0"
@@ -94,6 +96,7 @@ class SpawnRequest:
 @dataclass(frozen=True)
 class TurnContext:
     number: int
+    lead_prompt_path: Path
     message_path: Path
     events_path: Path
     stderr_path: Path
@@ -301,6 +304,7 @@ def prepare_turn(request: SpawnRequest) -> TurnContext:
     stem = f"{turn_number:03d}-{request.phase}"
     return TurnContext(
         number=turn_number,
+        lead_prompt_path=turns_dir / f"{stem}.lead-prompt.md",
         message_path=turns_dir / f"{stem}.txt",
         events_path=turns_dir / f"{stem}.jsonl",
         stderr_path=turns_dir / f"{stem}.stderr.txt",
@@ -311,20 +315,23 @@ def prepare_turn(request: SpawnRequest) -> TurnContext:
 
 def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict[str, Any], int]:
     turn = prepare_turn(request)
-    _prepare_session_storage(request, initial=turn.is_initial)
+    _prepare_session_storage(request, initial=turn.is_initial, session=turn.session)
     turn.message_path.parent.mkdir(parents=True, exist_ok=True)
     turn.message_path.parent.chmod(0o700)
     before_workspace = snapshot_workspace(request.workspace)
     _write_turn_state(request, turn, status="running")
 
     command = build_command(request, turn, executable=executable)
+    worker_prompt = build_prompt(request, turn)
+    atomic_write_text(turn.lead_prompt_path, request.prompt.rstrip() + "\n")
+    turn.lead_prompt_path.chmod(0o600)
     environment = os.environ.copy()
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment["CODEX_HOME"] = str(_execution_codex_home(request))
     environment["CODEX_SQLITE_HOME"] = str(request.codex_home)
     process = run_process(
         command,
-        prompt=build_prompt(request, turn),
+        prompt=worker_prompt,
         timeout_seconds=request.timeout_seconds,
         env=environment,
         cwd=request.workspace,
@@ -590,7 +597,7 @@ def build_command(
         "--skip-git-repo-check",
         "--json",
         *(
-            ["--output-schema", str(RESULT_SCHEMA_PATH)]
+            ["--output-schema", str(_result_schema_path(request))]
             if request.phase == "final" and request.model_provider == "openai"
             else []
         ),
@@ -751,7 +758,15 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
             "requested_followups, errors, warnings, limitations, and produced_at.\n"
             "Every created or modified file and every evidence artifact_ref must be an actual existing "
             "project-relative path. Summarize relevant commands in evidence summary, never artifact_ref. Use empty arrays "
-            "when there are no entries.\n\n"
+            "when there are no entries. "
+            f"Allowed evidence types for this role: {', '.join(request.role_policy.allowed_evidence_types)}.\n"
+            + (
+                "The Git Steward model changed no project files; file_changes must be empty because the "
+                "deterministic executor owns Git mutation.\n"
+                if request.role == "git_steward"
+                else ""
+            )
+            + "Runtime identity, UTC produced_at, and process output are normalized by the launcher.\n\n"
             f"[PROJECT LEAD DECISION]\n{request.prompt.strip()}\n"
         )
 
@@ -765,12 +780,27 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
             "The codexteam-context server is already bound to this workspace. "
             "Its tools omit the project argument; do not discover or supply one.\n"
         )
+    gate_routing = _gate_routing(request)
+    gate_note = ""
+    if gate_routing is not None:
+        if gate_routing["worker_may_execute"]:
+            gate_note = (
+                f"Configured {gate_routing['gate']} gate execution surface: worker. "
+                "Run it only when the task handoff requires it.\n"
+            )
+        else:
+            gate_note = (
+                f"Configured {gate_routing['gate']} gate execution surface: lead_host. "
+                "Do not launch it from this worker; request one same-digest host record from "
+                "the Project Lead and independently classify that evidence.\n"
+            )
     return (
         "[CODEXTEAM HANDOFF V1]\n"
         f"{json.dumps(handoff, indent=2)}\n"
         f"Role policy: {request.role_policy.name} v{request.role_policy.schema_version} "
         f"({request.role_policy.digest[:12]}).\n"
         + context_binding
+        + gate_note
         + "You are the responsible AI for this task and logical attempt. Work only inside the assigned workspace "
         "and additional explicitly writable directories.\n"
         "Read relevant files before editing. Run task-relevant verification. Do not invent evidence.\n"
@@ -810,6 +840,7 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
             "additional_writable_directories": [str(path) for path in request.add_dirs],
             "trust_parent_sandbox": request.trust_parent_sandbox,
             "timeout_seconds": request.timeout_seconds,
+            "gate_routing": _gate_routing(request),
         },
         "completion_criteria": [
             "Run task-relevant verification.",
@@ -819,6 +850,28 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
     }
     validate_handoff(handoff)
     return handoff
+
+
+def _gate_routing(request: SpawnRequest) -> dict[str, Any] | None:
+    gate = "development" if request.role == "developer" else (
+        "integration" if request.role == "tester" else None
+    )
+    if gate is None:
+        return None
+    try:
+        config = load_gate_config(request.workspace)
+    except (FileNotFoundError, GateConfigError, OSError, ValueError):
+        return None
+    surface = (
+        config.development_surface
+        if gate == "development"
+        else config.integration_surface
+    )
+    return {
+        "gate": gate,
+        "execution_surface": surface,
+        "worker_may_execute": surface == "worker",
+    }
 
 
 def snapshot_workspace(workspace: Path) -> dict[str, str]:
@@ -1172,7 +1225,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--run-guard",
         action="store_true",
-        help="Interrupt three consecutive identical failed commands and preserve the resumable thread",
+        help=(
+            "Interrupt repeated failures, oversized command output, or broad discovery "
+            "after bounded context, preserving the resumable thread"
+        ),
     )
     parser.add_argument("--result-dir", default="results")
     parser.add_argument("--dry-run", action="store_true")
@@ -1215,8 +1271,10 @@ def main(argv: list[str] | None = None) -> int:
                         "trust_parent_sandbox": request.trust_parent_sandbox,
                         "run_guard": request.run_guard,
                         "session_path": str(request.session_path),
+                        "lead_prompt_path": str(turn.lead_prompt_path),
                         "turn_path": str(turn.message_path),
                         "stderr_path": str(turn.stderr_path),
+                        "result_schema_path": str(_result_schema_path(request)),
                         "result_path": str(request.result_path),
                         "skills": [str(path) for path in request.skill_files],
                     },
@@ -1359,7 +1417,12 @@ def _load_pinned_skill_files(session_dir: Path) -> tuple[Path, ...]:
     return pinned
 
 
-def _prepare_session_storage(request: SpawnRequest, *, initial: bool) -> None:
+def _prepare_session_storage(
+    request: SpawnRequest,
+    *,
+    initial: bool,
+    session: dict[str, Any] | None,
+) -> None:
     if initial:
         request.session_dir.mkdir(parents=True, exist_ok=False)
         request.session_dir.chmod(0o700)
@@ -1367,6 +1430,7 @@ def _prepare_session_storage(request: SpawnRequest, *, initial: bool) -> None:
         request.codex_home.chmod(0o700)
         atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
         request.role_policy_path.chmod(0o600)
+        _write_result_schema(request)
         _snapshot_skill_files(request)
         source = request.profile_file.parent
         base_config = source / "config.toml"
@@ -1383,8 +1447,67 @@ def _prepare_session_storage(request: SpawnRequest, *, initial: bool) -> None:
     if not request.role_policy_path.is_file():
         atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
         request.role_policy_path.chmod(0o600)
+    _ensure_result_schema(request, session=session)
     if not (request.session_dir / GUIDANCE_MANIFEST_FILENAME).is_file():
         _snapshot_skill_files(request)
+
+
+def _result_schema_path(request: SpawnRequest) -> Path:
+    return request.session_dir / RESULT_SCHEMA_FILENAME
+
+
+def _role_result_schema(request: SpawnRequest) -> dict[str, Any]:
+    schema = json.loads(RESULT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    properties = schema["properties"]
+    for field, value in (
+        ("schema_version", "1.0"),
+        ("team_id", request.team_id),
+        ("task_id", request.task_id),
+        ("agent_role", request.role),
+        ("attempt_id", request.attempt_id),
+    ):
+        properties[field] = {"type": "string", "const": value}
+    properties["evidence"]["items"]["properties"]["type"]["enum"] = list(
+        request.role_policy.allowed_evidence_types
+    )
+    properties["produced_at"]["pattern"] = "Z$"
+    if request.role == "git_steward":
+        properties["file_changes"]["maxItems"] = 0
+    return schema
+
+
+def _write_result_schema(request: SpawnRequest) -> None:
+    path = _result_schema_path(request)
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"result schema already exists: {path}")
+    atomic_write_json(path, _role_result_schema(request))
+    path.chmod(0o600)
+
+
+def _ensure_result_schema(
+    request: SpawnRequest,
+    *,
+    session: dict[str, Any] | None,
+) -> None:
+    path = _result_schema_path(request)
+    if not path.exists():
+        _write_result_schema(request)
+        return
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"result schema is missing or unsafe: {path}")
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid pinned result schema: {path}: {exc}") from exc
+    if not isinstance(current, dict) or current.get("$schema") is None:
+        raise ValueError(f"invalid pinned result schema contract: {path}")
+    expected_digest = session.get("result_schema_sha256") if session else None
+    actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if expected_digest is not None:
+        if not isinstance(expected_digest, str) or actual_digest != expected_digest:
+            raise ValueError(f"pinned result schema digest mismatch: {path}")
+    elif current != _role_result_schema(request):
+        raise ValueError(f"legacy pinned result schema mismatch: {path}")
 
 
 def _execution_codex_home(request: SpawnRequest) -> Path:
@@ -1524,6 +1647,9 @@ def _session_record(
         "role_policy_version": request.role_policy.schema_version,
         "role_policy_digest": request.role_policy.digest,
         "instruction_bundle_digest": request.guidance_digest,
+        "result_schema_sha256": hashlib.sha256(
+            _result_schema_path(request).read_bytes()
+        ).hexdigest(),
         "model": request.model,
         "model_provider": request.model_provider,
         "model_catalog_json": request.model_catalog_json,
@@ -1714,11 +1840,15 @@ def _turn_outcome(
         "role_policy_version": request.role_policy.schema_version,
         "role_policy_digest": request.role_policy.digest,
         "instruction_bundle_digest": request.guidance_digest,
+        "result_schema_sha256": hashlib.sha256(
+            _result_schema_path(request).read_bytes()
+        ).hexdigest(),
         "mcp_context_project": request.mcp_context_project,
         "thread_id": thread_id,
         "turn_count": turn.number,
         "session_path": str(request.session_path),
         "turn_path": str(turn.message_path),
+        "lead_prompt_path": str(turn.lead_prompt_path),
         "events_path": str(turn.events_path),
         "metrics_path": str(metrics_path(turn.events_path)),
         "stderr_path": str(turn.stderr_path),
@@ -1736,6 +1866,18 @@ def _result_from_message(
     validation_errors: list[str] = []
     for candidate in reversed(candidates):
         candidate = dict(candidate)
+        candidate.update(
+            {
+                "schema_version": "1.0",
+                "team_id": request.team_id,
+                "task_id": request.task_id,
+                "agent_role": request.role,
+                "attempt_id": request.attempt_id,
+                "produced_at": datetime.now(timezone.utc)
+                .isoformat(timespec="seconds")
+                .replace("+00:00", "Z"),
+            }
+        )
         if not isinstance(candidate.get("result_id"), str) or not candidate["result_id"].strip():
             candidate["result_id"] = f"res-{request.task_id.lower()}-{request.attempt_id}"
         if candidate.get("status") == "completed":
@@ -1755,6 +1897,8 @@ def _result_from_message(
             "stderr_tail": process.stderr[-2_000:],
             "duration_seconds": round(process.duration_seconds, 3),
         }
+        if request.role == "git_steward":
+            candidate["file_changes"] = []
         try:
             validate_result(
                 candidate,

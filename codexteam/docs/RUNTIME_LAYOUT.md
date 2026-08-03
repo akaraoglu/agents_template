@@ -37,7 +37,22 @@ The default projects root for a cold-start Project Lead is `/home/alik/workspace
   results/
 ```
 
-Each logical task attempt stores a private Codex home, exact thread ID, replayable model settings, pinned `role-policy.json`, pinned `guidance/` files, `guidance-manifest.json`, and turn artifacts under `.codexteam/runtime/sessions/<team>/<task>/<attempt>/`. Every turn persists `<turn>.jsonl`, `<turn>.txt`, `<turn>.stderr.txt`, and `<turn>.metrics.json`; guarded turns flush JSONL and stderr while the process runs, while ordinary turns keep the buffered path. The metrics sidecar is generated once after the process returns and records cumulative and delta usage, tool/failure counts, command-output byte volume, repeats, MCP response volume and repeated tools, and redacted previews of the three largest commands. It does not store command output, MCP arguments, or MCP response content. `session.json` and `turn-state.json` record the pinned role's allowed MCP servers and tool subsets plus the configured servers and subsets that were effective or missing for that process. New bound worker attempts also record `mcp_context_project`; the launcher reuses that exact value on continuation turns, while legacy sessions without it remain unbound. `session.json` also records stable scope, policy identity, instruction-bundle digest, and turn count. `turn-state.json` is written as `running` before execution and replaced with the terminal observation afterward. Run Guard reuses the existing `interrupted` state and preserves a captured thread for feedback; it adds no result or lifecycle state. The generated `.gitignore` excludes this directory. Final results and gate records remain under `results/`.
+Each logical task attempt stores a private Codex home, exact thread ID, replayable
+model settings, pinned `role-policy.json`, role-specific `result-schema.json`, pinned
+`guidance/` files, `guidance-manifest.json`, and turn artifacts under
+`.codexteam/runtime/sessions/<team>/<task>/<attempt>/`. Every turn persists the exact
+raw `<turn>.lead-prompt.md` plus `<turn>.jsonl`, `<turn>.txt`, `<turn>.stderr.txt`, and
+`<turn>.metrics.json`. Guarded turns flush JSONL and stderr while the process runs;
+ordinary turns keep the buffered path. Metrics are generated once after return and
+record cumulative and delta usage, tool/failure counts, command-output volume,
+repeats, MCP response volume, and redacted previews of the three largest commands.
+They do not store command output, MCP arguments, or MCP response content.
+`session.json` and `turn-state.json` record pinned MCP policy and effective subsets.
+New bound worker attempts also record `mcp_context_project`; legacy sessions remain
+unbound. Run Guard preserves a captured thread and full private JSONL when it
+interrupts. Ignored `.codexteam/runtime/lead-checkpoint.json` holds a compact Lead
+rotation checkpoint and is not acceptance evidence. Rolling gates remain under
+`results/gates/`; immutable accepted snapshots live under `results/gates/accepted/`.
 
 Git Steward authorization, commit records, and generated PR summaries live under ignored `.codexteam/runtime/git-steward/<boundary>/`. The Web UI reads completed commit records but cannot create or authorize them.
 

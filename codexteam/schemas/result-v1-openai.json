@@ -120,6 +120,6 @@
     "errors": {"type": "array", "items": {"type": "string"}},
     "warnings": {"type": "array", "items": {"type": "string"}},
     "limitations": {"type": "array", "items": {"type": "string"}},
-    "produced_at": {"type": "string"}
+    "produced_at": {"type": "string", "pattern": "Z$"}
   }
 }
