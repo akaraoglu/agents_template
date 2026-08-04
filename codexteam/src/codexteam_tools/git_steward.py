@@ -15,7 +15,7 @@ from typing import Any
 
 from .files import atomic_write_json, atomic_write_text
 from .paths import contained_path, ensure_existing_workspace, normalize_task_id, safe_relative_path, validate_identifier
-from .test_gates import GateConfigError, run_gate, validate_current_gate_record
+from .test_gates import GateConfigError, load_gate_config, run_gate, validate_current_gate_record
 
 HEX_OBJECT = re.compile(r"[a-f0-9]{40,64}")
 PROHIBITED_PARTS = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
@@ -94,7 +94,8 @@ def validate_commit_plan(plan: Any, project: Path) -> dict[str, Any]:
         "task_ids", "paths", "excluded_paths", "verification", "commit_subject",
         "commit_body", "pr_title", "pr_summary", "warnings",
     }
-    unknown = sorted(set(plan) - required)
+    optional = {"untrack_paths"}
+    unknown = sorted(set(plan) - required - optional)
     missing = sorted(required - set(plan))
     errors: list[str] = []
     if unknown:
@@ -127,21 +128,38 @@ def validate_commit_plan(plan: Any, project: Path) -> dict[str, Any]:
                 errors.append("task_ids must be unique canonical task IDs")
         except (AttributeError, ValueError) as exc:
             errors.append(str(exc))
-    for field, required_paths in (("paths", True), ("excluded_paths", False)):
+    normalized_paths: dict[str, list[str]] = {}
+    for field, required_paths in (("paths", True), ("excluded_paths", False), ("untrack_paths", False)):
+        if field == "untrack_paths" and field not in plan:
+            continue
         values = plan.get(field)
         if not isinstance(values, list) or (required_paths and not values):
             errors.append(f"{field} must be {'a non-empty' if required_paths else 'an'} array")
             continue
-        if len(values) != len(set(values)):
-            errors.append(f"{field} cannot contain duplicates")
+        seen: set[str] = set()
+        normalized_values: list[str] = []
         for value in values:
             try:
                 normalized = safe_relative_path(value, label=field).as_posix()
+                normalized_values.append(normalized)
+                if normalized in seen:
+                    errors.append(f"{field} cannot contain duplicates")
+                seen.add(normalized)
                 reason = _unsafe_reason(normalized)
-                if field == "paths" and reason:
+                if field in {"paths", "untrack_paths"} and reason:
                     errors.append(f"unsafe approved path {normalized!r}: {reason}")
             except (AttributeError, ValueError) as exc:
                 errors.append(str(exc))
+        normalized_paths[field] = normalized_values
+    untrack_paths = normalized_paths.get("untrack_paths", [])
+    if untrack_paths:
+        path_overlap = sorted(set(untrack_paths) & set(normalized_paths.get("paths", [])))
+        excluded_overlap = sorted(set(untrack_paths) & set(normalized_paths.get("excluded_paths", [])))
+        if path_overlap:
+            errors.append("approved and untrack paths overlap: " + ", ".join(path_overlap))
+        if excluded_overlap:
+            errors.append("excluded and untrack paths overlap: " + ", ".join(excluded_overlap))
+        errors.extend(_validate_untrack_paths(project, tuple(untrack_paths)))
     verification = plan.get("verification")
     if not isinstance(verification, dict):
         errors.append("verification must be an object")
@@ -197,6 +215,8 @@ def authorize_plan(
         "verification": verification,
         "authorized_at": _utc_now(),
     }
+    if "untrack_paths" in plan:
+        authorization["untrack_paths"] = plan["untrack_paths"]
     destination = _runtime_path(root, plan["boundary_id"], "authorization.json")
     if apply:
         atomic_write_json(destination, authorization)
@@ -227,6 +247,7 @@ def commit_authorized_plan(
         "branch": plan["branch"],
         "head_before": plan["expected_head"],
         "approved_paths": plan["paths"],
+        "untrack_paths": plan.get("untrack_paths", []),
         "verification": verification,
     }
     destination = _runtime_path(root, plan["boundary_id"], "commit-record.json")
@@ -243,6 +264,9 @@ def commit_authorized_plan(
     index_backup = index_path.read_bytes() if index_path.is_file() else None
     try:
         _stage_paths(root, tuple(plan["paths"]))
+        untrack_paths = tuple(plan.get("untrack_paths", []))
+        _untrack_paths(root, untrack_paths)
+        _verify_untracked_paths(root, untrack_paths)
         staged_tree = _git(root, "write-tree").stdout.strip()
         if staged_tree != candidate_tree:
             raise GitStewardError("real staged tree differs from the verified candidate tree")
@@ -266,7 +290,8 @@ def commit_authorized_plan(
     if tree_after != candidate_tree:
         raise GitStewardError("committed tree differs from the verified candidate tree")
     committed_paths = _commit_paths(root, head_after)
-    if set(committed_paths) != set(plan["paths"]):
+    expected_paths = set(plan["paths"]) | set(plan.get("untrack_paths", []))
+    if set(committed_paths) != expected_paths:
         raise GitStewardError("committed path set differs from the approved plan")
     record = {
         "schema_version": "1.0",
@@ -374,16 +399,23 @@ def _validate_plan_against_repository(root: Path, plan: dict[str, Any]) -> None:
     available = tracked | untracked
     approved = set(plan["paths"])
     excluded = set(plan["excluded_paths"])
+    untrack = set(plan.get("untrack_paths", []))
     overlap = sorted(approved & excluded)
     if overlap:
         raise GitStewardError("approved and excluded paths overlap: " + ", ".join(overlap))
+    overlap = sorted(approved & untrack)
+    if overlap:
+        raise GitStewardError("approved and untrack paths overlap: " + ", ".join(overlap))
+    overlap = sorted(excluded & untrack)
+    if overlap:
+        raise GitStewardError("excluded and untrack paths overlap: " + ", ".join(overlap))
     missing = sorted(approved - available)
     if missing:
         raise GitStewardError("approved paths are not current changes: " + ", ".join(missing))
     unknown_excluded = sorted(excluded - available)
     if unknown_excluded:
         raise GitStewardError("excluded paths are not current changes: " + ", ".join(unknown_excluded))
-    unclassified = sorted(available - approved - excluded)
+    unclassified = sorted(available - approved - excluded - untrack)
     if unclassified:
         raise GitStewardError("commit plan leaves changed paths unclassified: " + ", ".join(unclassified))
 
@@ -435,6 +467,9 @@ def _candidate_tree_and_verification(root: Path, plan: dict[str, Any]) -> tuple[
         else:
             _git(root, "read-tree", plan["expected_head"], env=env)
         _stage_paths(root, tuple(plan["paths"]), env=env)
+        untrack_paths = tuple(plan.get("untrack_paths", []))
+        _untrack_paths(root, untrack_paths, env=env)
+        _verify_untracked_paths(root, untrack_paths, env=env)
         tree = _git(root, "write-tree", env=env).stdout.strip()
     if plan["verification"]["kind"] == "architecture":
         return tree, {"status": "not_applicable", "kind": "architecture"}
@@ -448,7 +483,11 @@ def _candidate_tree_and_verification(root: Path, plan: dict[str, Any]) -> tuple[
         candidate_root = Path(temporary) / "worktree"
         _git(root, "worktree", "add", "--detach", str(candidate_root), candidate)
         try:
-            record = run_gate(candidate_root, "integration")
+            record = run_gate(
+                candidate_root,
+                "integration",
+                execution_surface=load_gate_config(candidate_root).integration_surface,
+            )
         finally:
             _git(root, "worktree", "remove", "--force", str(candidate_root), allow_failure=True)
             _git(root, "worktree", "prune", allow_failure=True)
@@ -471,6 +510,54 @@ def _stage_paths(root: Path, paths: tuple[str, ...], env: dict[str, str] | None 
             result = _git(root, "rm", "--cached", "--ignore-unmatch", "--", relative, env=env, allow_failure=True)
             if result.returncode != 0:
                 raise GitStewardError(f"failed to stage deleted path: {relative}")
+
+
+def _untrack_paths(root: Path, paths: tuple[str, ...], env: dict[str, str] | None = None) -> None:
+    if not paths:
+        return
+    result = _git(root, "rm", "--cached", "--", *paths, env=env, allow_failure=True)
+    if result.returncode != 0:
+        raise GitStewardError(result.stderr.strip() or "failed to untrack approved paths")
+
+
+def _verify_untracked_paths(
+    root: Path,
+    paths: tuple[str, ...],
+    *,
+    env: dict[str, str] | None = None,
+) -> None:
+    tracked = _tracked_paths(root, env=env)
+    for relative in paths:
+        path = contained_path(root, relative, label="untrack path")
+        if not path.is_file():
+            raise GitStewardError(f"untrack path is no longer a file on disk: {relative}")
+        if relative in tracked:
+            raise GitStewardError(f"untrack path remains in the index: {relative}")
+
+
+def _validate_untrack_paths(root: Path, paths: tuple[str, ...]) -> list[str]:
+    tracked = _tracked_paths(root)
+    errors: list[str] = []
+    for relative in paths:
+        path = contained_path(root, relative, label="untrack path")
+        if path.is_dir():
+            errors.append(f"untrack path cannot select a directory: {relative}")
+        elif not path.is_file():
+            errors.append(f"untrack path is missing: {relative}")
+        if relative not in tracked:
+            errors.append(f"untrack path is not tracked: {relative}")
+        if not _is_ignored(root, relative):
+            errors.append(f"untrack path is not ignored: {relative}")
+    return errors
+
+
+def _tracked_paths(root: Path, *, env: dict[str, str] | None = None) -> set[str]:
+    return set(_name_list(_git(root, "ls-files", "-z", env=env).stdout))
+
+
+def _is_ignored(root: Path, relative: str) -> bool:
+    result = _git(root, "check-ignore", "--no-index", "--quiet", "--", relative, allow_failure=True)
+    return result.returncode == 0
 
 
 def _load_authorization(root: Path, path_value: str | Path) -> dict[str, Any]:
@@ -500,6 +587,8 @@ def _match_authorization(plan: dict[str, Any], authorization: dict[str, Any]) ->
         "approved_paths": plan["paths"],
         "verification": plan["verification"],
     }
+    if "untrack_paths" in plan:
+        expected["untrack_paths"] = plan["untrack_paths"]
     mismatches = [key for key, value in expected.items() if authorization.get(key) != value]
     if mismatches:
         raise GitStewardError("authorization does not match the plan: " + ", ".join(mismatches))
