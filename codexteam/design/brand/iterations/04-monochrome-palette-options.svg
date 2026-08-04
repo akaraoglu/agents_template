@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">CodexTeam monochrome palette options</title>
+  <desc id="desc">Neutral, cool, and mineral near-black and off-white palette pairs applied to the corrected CodexTeam identity.</desc>
+  <defs>
+    <g id="mark">
+      <path d="M48 12H20L12 20V44L20 52H48" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M24 24H48M36 24V44" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
+    </g>
+  </defs>
+  <rect width="1600" height="900" fill="#E9EAEC"/>
+  <text x="80" y="90" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="30" font-weight="750" fill="#191B1F">Monochrome palette options</text>
+  <text x="80" y="126" font-family="ui-monospace, monospace" font-size="16" fill="#686C72">NEAR-BLACK + OFF-WHITE / NO ACCENT COLOR</text>
+
+  <g transform="translate(80 184)">
+    <rect width="448" height="580" rx="4" fill="#191B1F"/>
+    <text x="32" y="50" fill="#F2F3F5" font-family="ui-monospace, monospace" font-size="14" font-weight="700">A / NEUTRAL / RECOMMENDED</text>
+    <g transform="translate(32 94) scale(2.1)" color="#F2F3F5"><use href="#mark"/></g>
+    <text x="182" y="178" fill="#F2F3F5" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="42" font-weight="650">Codex<tspan font-weight="800">Team</tspan></text>
+    <line x1="32" y1="236" x2="416" y2="236" stroke="#F2F3F5"/>
+    <text x="32" y="286" fill="#F2F3F5" font-family="ui-monospace, monospace" font-size="14">COAL  #191B1F</text>
+    <text x="32" y="318" fill="#F2F3F5" font-family="ui-monospace, monospace" font-size="14">MIST  #F2F3F5</text>
+    <rect x="32" y="364" width="384" height="152" fill="#F2F3F5"/>
+    <g transform="translate(50 396)" color="#191B1F"><use href="#mark"/></g>
+    <text x="132" y="442" fill="#191B1F" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="30" font-weight="650">Codex<tspan font-weight="800">Team</tspan></text>
+  </g>
+
+  <g transform="translate(576 184)">
+    <rect width="448" height="580" rx="4" fill="#171A1F"/>
+    <text x="32" y="50" fill="#F3F6F8" font-family="ui-monospace, monospace" font-size="14" font-weight="700">B / COOL</text>
+    <g transform="translate(32 94) scale(2.1)" color="#F3F6F8"><use href="#mark"/></g>
+    <text x="182" y="178" fill="#F3F6F8" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="42" font-weight="650">Codex<tspan font-weight="800">Team</tspan></text>
+    <line x1="32" y1="236" x2="416" y2="236" stroke="#F3F6F8"/>
+    <text x="32" y="286" fill="#F3F6F8" font-family="ui-monospace, monospace" font-size="14">CARBON  #171A1F</text>
+    <text x="32" y="318" fill="#F3F6F8" font-family="ui-monospace, monospace" font-size="14">ICE     #F3F6F8</text>
+    <rect x="32" y="364" width="384" height="152" fill="#F3F6F8"/>
+    <g transform="translate(50 396)" color="#171A1F"><use href="#mark"/></g>
+    <text x="132" y="442" fill="#171A1F" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="30" font-weight="650">Codex<tspan font-weight="800">Team</tspan></text>
+  </g>
+
+  <g transform="translate(1072 184)">
+    <rect width="448" height="580" rx="4" fill="#18201D"/>
+    <text x="32" y="50" fill="#F1F4F2" font-family="ui-monospace, monospace" font-size="14" font-weight="700">C / MINERAL</text>
+    <g transform="translate(32 94) scale(2.1)" color="#F1F4F2"><use href="#mark"/></g>
+    <text x="182" y="178" fill="#F1F4F2" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="42" font-weight="650">Codex<tspan font-weight="800">Team</tspan></text>
+    <line x1="32" y1="236" x2="416" y2="236" stroke="#F1F4F2"/>
+    <text x="32" y="286" fill="#F1F4F2" font-family="ui-monospace, monospace" font-size="14">BASALT  #18201D</text>
+    <text x="32" y="318" fill="#F1F4F2" font-family="ui-monospace, monospace" font-size="14">CLOUD   #F1F4F2</text>
+    <rect x="32" y="364" width="384" height="152" fill="#F1F4F2"/>
+    <g transform="translate(50 396)" color="#18201D"><use href="#mark"/></g>
+    <text x="132" y="442" fill="#18201D" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="30" font-weight="650">Codex<tspan font-weight="800">Team</tspan></text>
+  </g>
+  <text x="80" y="832" fill="#686C72" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="16">Neutral is most independent of product status colors. Cool feels more software-native. Mineral subtly suggests controlled system health.</text>
+</svg>

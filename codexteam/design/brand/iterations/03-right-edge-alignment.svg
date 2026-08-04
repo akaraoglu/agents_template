@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">CodexTeam CT right-edge alignment correction</title>
+  <desc id="desc">A comparison of the original overhanging T and the corrected left-shifted T with aligned right terminals.</desc>
+  <defs>
+    <g id="before">
+      <path d="M48 12H20L12 20V44L20 52H48" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M28 24H52M40 24V44" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
+    </g>
+    <g id="after">
+      <path d="M48 12H20L12 20V44L20 52H48" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M24 24H48M36 24V44" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
+    </g>
+    <pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <path d="M16 0H0V16" fill="none" stroke="#D7D9DD" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="#E9EAEC"/>
+  <text x="80" y="90" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="30" font-weight="750" fill="#191B1F">Right-edge correction</text>
+  <text x="80" y="126" font-family="ui-monospace, monospace" font-size="16" fill="#686C72">ONE GEOMETRY FOR EMBLEM / APP ICON / BANNER / IDENTITY</text>
+
+  <g transform="translate(80 180)">
+    <rect width="696" height="610" rx="4" fill="#F2F3F5"/>
+    <text x="36" y="50" font-family="ui-monospace, monospace" font-size="14" font-weight="700" fill="#686C72">BEFORE / T OVERHANGS 4 UNITS</text>
+    <rect x="188" y="100" width="320" height="320" fill="url(#grid)"/>
+    <g transform="translate(188 100) scale(5)" color="#191B1F"><use href="#before"/></g>
+    <line x1="443" y1="88" x2="443" y2="432" stroke="#A13A3A" stroke-width="2" stroke-dasharray="8 8"/>
+    <line x1="463" y1="88" x2="463" y2="432" stroke="#A13A3A" stroke-width="2" stroke-dasharray="8 8"/>
+    <text x="36" y="480" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="16" fill="#686C72">C terminals: x48 / T terminal: x52</text>
+    <g transform="translate(36 518)" color="#191B1F"><use href="#before"/></g>
+    <g transform="translate(132 534) scale(.5)" color="#191B1F"><use href="#before"/></g>
+    <g transform="translate(190 542) scale(.25)" color="#191B1F"><use href="#before"/></g>
+  </g>
+
+  <g transform="translate(824 180)">
+    <rect width="696" height="610" rx="4" fill="#191B1F"/>
+    <text x="36" y="50" font-family="ui-monospace, monospace" font-size="14" font-weight="700" fill="#AEB1B6">AFTER / SHARED RIGHT EDGE</text>
+    <rect x="188" y="100" width="320" height="320" fill="#22252A"/>
+    <g transform="translate(188 100) scale(5)" color="#F2F3F5"><use href="#after"/></g>
+    <line x1="443" y1="88" x2="443" y2="432" stroke="#F2F3F5" stroke-width="2" stroke-dasharray="8 8"/>
+    <text x="36" y="480" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="16" fill="#AEB1B6">C and T terminals: x48 / T stem: x36</text>
+    <g transform="translate(36 518)" color="#F2F3F5"><use href="#after"/></g>
+    <g transform="translate(132 534) scale(.5)" color="#F2F3F5"><use href="#after"/></g>
+    <g transform="translate(190 542) scale(.25)" color="#F2F3F5"><use href="#after"/></g>
+  </g>
+</svg>

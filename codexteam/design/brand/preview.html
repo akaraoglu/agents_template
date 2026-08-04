@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CodexTeam Brand Review</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #191b1f; background: #e9eaec; font-family: "Noto Sans", Inter, system-ui, sans-serif; }
+    main { max-width: 1200px; margin: 0 auto; padding: 48px 24px 72px; }
+    h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
+    h2 { margin: 0 0 20px; font-size: 16px; letter-spacing: 0; }
+    p { margin: 8px 0 32px; color: #686c72; }
+    section { padding: 32px 0; border-top: 1px solid #cfd1d4; }
+    .band { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; padding: 1px; background: #cfd1d4; }
+    .surface { min-height: 250px; padding: 40px; background: #f2f3f5; }
+    .surface.dark { background: #191b1f; }
+    .lockup { width: min(100%, 610px); height: auto; }
+    .marks { display: flex; align-items: end; gap: 28px; min-height: 180px; }
+    .marks img { display: block; }
+    .banner { display: block; width: 100%; height: auto; }
+    .palette { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .swatch { min-height: 140px; padding: 104px 16px 16px; border: 1px solid #cfd1d4; background: var(--swatch); color: var(--label); font: 700 13px ui-monospace, monospace; }
+    @media (max-width: 720px) { .band, .palette { grid-template-columns: 1fr; } .surface { min-height: 210px; padding: 28px 20px; } .marks { gap: 18px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>CodexTeam monochrome identity</h1>
+    <p>Review candidate. Coal and Mist only.</p>
+    <section>
+      <h2>Horizontal identity</h2>
+      <div class="band">
+        <div class="surface"><img class="lockup" src="codexteam-lockup.svg" alt="CodexTeam light identity"></div>
+        <div class="surface dark"><img class="lockup" src="codexteam-lockup-dark.svg" alt="CodexTeam dark identity"></div>
+      </div>
+    </section>
+    <section>
+      <h2>App-icon scale</h2>
+      <div class="surface marks">
+        <img src="codexteam-app-icon.svg" width="128" height="128" alt="128 pixel CodexTeam icon">
+        <img src="codexteam-app-icon.svg" width="64" height="64" alt="64 pixel CodexTeam icon">
+        <img src="codexteam-app-icon.svg" width="32" height="32" alt="32 pixel CodexTeam icon">
+        <img src="codexteam-app-icon.svg" width="16" height="16" alt="16 pixel CodexTeam icon">
+      </div>
+    </section>
+    <section>
+      <h2>Banner</h2>
+      <img class="banner" src="codexteam-banner-dark.svg" alt="CodexTeam dark banner">
+    </section>
+    <section>
+      <h2>Palette</h2>
+      <div class="palette">
+        <div class="swatch" style="--swatch:#191b1f;--label:#f2f3f5">COAL #191B1F</div>
+        <div class="swatch" style="--swatch:#f2f3f5;--label:#191b1f">MIST #F2F3F5</div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

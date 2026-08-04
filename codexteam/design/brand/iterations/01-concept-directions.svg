@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">CodexTeam monochrome identity directions</title>
+  <desc id="desc">Three black and off-white geometric logo concepts for bounded orchestration, team topology, and checkpoint convergence.</desc>
+  <defs>
+    <g id="bounded-ct">
+      <path d="M48 12H23C16.4 12 12 16.4 12 23V41C12 47.6 16.4 52 23 52H48" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="round"/>
+      <path d="M27 24H50M38.5 24V45" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
+    </g>
+    <g id="team-topology">
+      <path d="M18 19H46M32 19V46" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="square"/>
+      <rect x="12" y="13" width="12" height="12" rx="2" fill="currentColor"/>
+      <rect x="40" y="13" width="12" height="12" rx="2" fill="currentColor"/>
+      <rect x="26" y="26" width="12" height="12" rx="2" fill="currentColor"/>
+      <rect x="26" y="40" width="12" height="12" rx="2" fill="currentColor"/>
+    </g>
+    <g id="checkpoint-flow">
+      <path d="M12 15H24L34 28M12 32H27M12 49H24L34 36M40 32H53" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="square" stroke-linejoin="round"/>
+      <rect x="27" y="25" width="14" height="14" rx="2" fill="currentColor"/>
+      <rect x="49" y="28" width="8" height="8" rx="1" fill="currentColor"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#F2F3F5"/>
+  <text x="80" y="92" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="30" font-weight="750" fill="#191B1F">CodexTeam identity study</text>
+  <text x="80" y="128" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="17" fill="#686C72">MONOCHROME / CONCEPT DIRECTIONS / 64-UNIT GEOMETRY</text>
+  <line x1="80" y1="164" x2="1520" y2="164" stroke="#D7D9DD"/>
+
+  <g transform="translate(80 210)">
+    <rect width="448" height="610" rx="4" fill="#FFFFFF"/>
+    <text x="32" y="48" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#686C72">A / BOUNDED CT</text>
+    <g transform="translate(112 100) scale(3.5)" color="#191B1F"><use href="#bounded-ct"/></g>
+    <text x="32" y="392" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="34" font-weight="700" fill="#191B1F">Codex<tspan font-weight="850">Team</tspan></text>
+    <text x="32" y="440" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#686C72">Boundary + CT monogram</text>
+    <text x="32" y="468" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#686C72">Direct, proprietary, scalable</text>
+    <g transform="translate(32 512)" color="#191B1F"><use href="#bounded-ct"/></g>
+    <g transform="translate(122 528) scale(.5)" color="#191B1F"><use href="#bounded-ct"/></g>
+    <g transform="translate(180 536) scale(.25)" color="#191B1F"><use href="#bounded-ct"/></g>
+    <text x="232" y="552" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="13" fill="#686C72">64 / 32 / 16</text>
+  </g>
+
+  <g transform="translate(576 210)">
+    <rect width="448" height="610" rx="4" fill="#FFFFFF"/>
+    <text x="32" y="48" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#686C72">B / TEAM TOPOLOGY</text>
+    <g transform="translate(112 100) scale(3.5)" color="#191B1F"><use href="#team-topology"/></g>
+    <text x="32" y="392" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="34" font-weight="700" fill="#191B1F">Codex<tspan font-weight="850">Team</tspan></text>
+    <text x="32" y="440" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#686C72">Lead + bounded specialists</text>
+    <text x="32" y="468" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#686C72">Literal, modular, familiar</text>
+    <g transform="translate(32 512)" color="#191B1F"><use href="#team-topology"/></g>
+    <g transform="translate(122 528) scale(.5)" color="#191B1F"><use href="#team-topology"/></g>
+    <g transform="translate(180 536) scale(.25)" color="#191B1F"><use href="#team-topology"/></g>
+    <text x="232" y="552" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="13" fill="#686C72">64 / 32 / 16</text>
+  </g>
+
+  <g transform="translate(1072 210)">
+    <rect width="448" height="610" rx="4" fill="#191B1F"/>
+    <text x="32" y="48" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#AEB1B6">C / CHECKPOINT FLOW</text>
+    <g transform="translate(112 100) scale(3.5)" color="#F2F3F5"><use href="#checkpoint-flow"/></g>
+    <text x="32" y="392" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="34" font-weight="700" fill="#F2F3F5">Codex<tspan font-weight="850">Team</tspan></text>
+    <text x="32" y="440" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#AEB1B6">Parallel work + verification gate</text>
+    <text x="32" y="468" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#AEB1B6">Operational, directional, explicit</text>
+    <g transform="translate(32 512)" color="#F2F3F5"><use href="#checkpoint-flow"/></g>
+    <g transform="translate(122 528) scale(.5)" color="#F2F3F5"><use href="#checkpoint-flow"/></g>
+    <g transform="translate(180 536) scale(.25)" color="#F2F3F5"><use href="#checkpoint-flow"/></g>
+    <text x="232" y="552" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="13" fill="#AEB1B6">64 / 32 / 16</text>
+  </g>
+
+  <text x="80" y="886" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#191B1F">PALETTE</text>
+  <rect x="80" y="908" width="180" height="44" fill="#191B1F"/>
+  <text x="280" y="937" font-family="ui-monospace, monospace" font-size="14" fill="#191B1F">COAL #191B1F</text>
+  <rect x="480" y="908" width="180" height="44" fill="#F2F3F5" stroke="#D7D9DD"/>
+  <text x="680" y="937" font-family="ui-monospace, monospace" font-size="14" fill="#191B1F">MIST #F2F3F5</text>
+</svg>

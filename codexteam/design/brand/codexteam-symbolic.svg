@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-labelledby="title desc">
+  <title id="title">CodexTeam symbolic emblem</title>
+  <desc id="desc">A simplified CT monogram aligned to a sixteen-unit grid.</desc>
+  <path d="M12 3H5L3 5V11L5 13H12" fill="none" stroke="#191B1F" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M6 6H12M9 6V11" fill="none" stroke="#191B1F" stroke-width="2" stroke-linecap="square"/>
+</svg>

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">CodexTeam bounded CT geometry refinements</title>
+  <desc id="desc">Three monochrome refinements of the selected CT monogram with rounded, chamfered, and interrupted boundaries.</desc>
+  <defs>
+    <g id="round">
+      <path d="M48 12H23C16.4 12 12 16.4 12 23V41C12 47.6 16.4 52 23 52H48" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="round"/>
+      <path d="M27 24H50M38.5 24V45" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
+    </g>
+    <g id="chamfer">
+      <path d="M48 12H21L12 21V43L21 52H48" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M27 24H50M38.5 24V45" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
+    </g>
+    <g id="handoff">
+      <path d="M48 12H21L12 21V27" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M12 37V43L21 52H48" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+      <path d="M27 24H50M38.5 24V45" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
+    </g>
+    <pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <path d="M16 0H0V16" fill="none" stroke="#D7D9DD" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#F2F3F5"/>
+  <text x="80" y="92" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="30" font-weight="750" fill="#191B1F">Bounded CT refinement</text>
+  <text x="80" y="128" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="17" fill="#686C72">ROUND / CHAMFER / HANDOFF GAP</text>
+  <line x1="80" y1="164" x2="1520" y2="164" stroke="#D7D9DD"/>
+
+  <g transform="translate(80 208)">
+    <rect width="448" height="600" rx="4" fill="#FFFFFF"/>
+    <text x="32" y="48" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#686C72">A1 / ROUND BOUNDARY</text>
+    <rect x="96" y="86" width="256" height="256" fill="url(#grid)"/>
+    <g transform="translate(96 86) scale(4)" color="#191B1F"><use href="#round"/></g>
+    <text x="32" y="402" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#686C72">Approachable, stable, but familiar.</text>
+    <rect x="32" y="454" width="80" height="80" rx="4" fill="#191B1F"/>
+    <g transform="translate(40 462)" color="#F2F3F5"><use href="#round"/></g>
+    <g transform="translate(148 462)" color="#191B1F"><use href="#round"/></g>
+    <g transform="translate(238 478) scale(.5)" color="#191B1F"><use href="#round"/></g>
+    <g transform="translate(296 486) scale(.25)" color="#191B1F"><use href="#round"/></g>
+  </g>
+
+  <g transform="translate(576 208)">
+    <rect width="448" height="600" rx="4" fill="#FFFFFF"/>
+    <text x="32" y="48" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#686C72">A2 / CHAMFERED BOUNDARY</text>
+    <rect x="96" y="86" width="256" height="256" fill="url(#grid)"/>
+    <g transform="translate(96 86) scale(4)" color="#191B1F"><use href="#chamfer"/></g>
+    <text x="32" y="402" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#686C72">Technical, distinct, optically firm.</text>
+    <rect x="32" y="454" width="80" height="80" rx="4" fill="#191B1F"/>
+    <g transform="translate(40 462)" color="#F2F3F5"><use href="#chamfer"/></g>
+    <g transform="translate(148 462)" color="#191B1F"><use href="#chamfer"/></g>
+    <g transform="translate(238 478) scale(.5)" color="#191B1F"><use href="#chamfer"/></g>
+    <g transform="translate(296 486) scale(.25)" color="#191B1F"><use href="#chamfer"/></g>
+  </g>
+
+  <g transform="translate(1072 208)">
+    <rect width="448" height="600" rx="4" fill="#191B1F"/>
+    <text x="32" y="48" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#AEB1B6">A3 / HANDOFF GAP</text>
+    <rect x="96" y="86" width="256" height="256" fill="#22252A"/>
+    <g transform="translate(96 86) scale(4)" color="#F2F3F5"><use href="#handoff"/></g>
+    <text x="32" y="402" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#AEB1B6">Meaningful gap, weaker small silhouette.</text>
+    <rect x="32" y="454" width="80" height="80" rx="4" fill="#F2F3F5"/>
+    <g transform="translate(40 462)" color="#191B1F"><use href="#handoff"/></g>
+    <g transform="translate(148 462)" color="#F2F3F5"><use href="#handoff"/></g>
+    <g transform="translate(238 478) scale(.5)" color="#F2F3F5"><use href="#handoff"/></g>
+    <g transform="translate(296 486) scale(.25)" color="#F2F3F5"><use href="#handoff"/></g>
+  </g>
+
+  <g transform="translate(80 854)">
+    <text x="0" y="0" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="14" font-weight="750" fill="#191B1F">CRITIQUE TARGETS</text>
+    <text x="0" y="38" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="15" fill="#686C72">C/CT recognition · favicon integrity · technical character · light/dark inversion · distance from OpenAI and EnerGIT geometry</text>
+  </g>
+</svg>

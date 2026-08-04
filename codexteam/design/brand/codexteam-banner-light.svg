@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 360" role="img" aria-labelledby="title desc">
+  <title id="title">CodexTeam light banner</title>
+  <desc id="desc">The coal CodexTeam identity on an off-white banner with a restrained product descriptor.</desc>
+  <rect width="1600" height="360" fill="#F2F3F5"/>
+  <g transform="translate(92 82) scale(3)">
+    <path d="M48 12H20L12 20V44L20 52H48" fill="none" stroke="#191B1F" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="M24 24H48M36 24V44" fill="none" stroke="#191B1F" stroke-width="6" stroke-linecap="square"/>
+  </g>
+  <text x="340" y="190" fill="#191B1F" font-family="Noto Sans, Inter, Segoe UI, sans-serif" font-size="92" font-weight="650" letter-spacing="0">Codex<tspan font-weight="800">Team</tspan></text>
+  <text x="346" y="238" fill="#191B1F" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="600" letter-spacing="2">BOUNDED ORCHESTRATION / VERIFIED DELIVERY</text>
+  <rect x="96" y="302" width="1408" height="2" fill="#191B1F"/>
+</svg>
