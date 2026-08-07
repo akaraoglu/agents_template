@@ -1,22 +1,35 @@
-# Report Template
+# Engineering Report
 
-## Goal
-State the task or question the report covers.
+## Goal and Scope
 
-## Status
-Summarize the current outcome.
+State the question or task, included scope, and relevant exclusions.
 
-## What Changed
-- Key change
-- Key change
+## Outcome
+
+Summarize the result or current status.
+
+## Findings
+
+List findings by severity with file or artifact references, evidence, impact, and
+trigger conditions. State explicitly when there are no findings.
+
+## Changes
+
+For implementation reports, summarize the important behavior and file changes.
+Omit this section for read-only work.
 
 ## Verification
-- Commands run
+
+- Exact commands or inspections performed
 - Results observed
+- Checks skipped or blocked and why
 
-## Risks
-- Remaining uncertainty
-- Deferred follow-up
+## Assumptions and Limitations
 
-## Next Steps
-- Immediate next action
+- Assumptions that affected the result
+- Missing evidence or environmental limitations
+
+## Risks and Follow-ups
+
+- Residual risk
+- Deferred work or next required decision

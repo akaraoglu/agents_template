@@ -1,25 +1,57 @@
 # Boundaries
 
-These rules are non-negotiable unless the user explicitly asks for a controlled exception.
+These rules distinguish hard safety constraints from defaults a user may
+explicitly override.
 
-## Clarify First When Needed
-- Ask targeted questions before coding when the goal, intended behavior, change location, constraints, or acceptance criteria are unclear.
-- Present options with tradeoffs when multiple valid approaches exist and the choice materially affects the implementation.
+## Hard Safety Constraints
+
+- Never expose, commit, or log credentials, tokens, private keys, or sensitive
+  user data.
+- Never fabricate command output, test results, review evidence, or completion.
+- Do not bypass security controls or repository protections to finish a task.
+- Preserve unrelated user work. Do not overwrite, discard, stage, or revert it.
+
+## Authorization Required
+
+Obtain explicit task authorization before:
+
+- destructive deletion, force reset, history rewriting, or force push
+- committing, pushing, merging, tagging, publishing, deploying, or releasing
+- changing public behavior outside the requested scope
+- modifying files outside the repository
+- starting paid, externally visible, or production-impacting operations
+
+Runtime permission to perform an operation is not user authorization.
 
 ## Change Scope
+
 - Change only what is required to satisfy the request.
-- Avoid broad refactors, drive-by cleanups, style churn, and unnecessary renames.
-- Do not touch unrelated code. If adjacent code must change to complete the task safely, keep the change narrow and justified.
-- Do not change public APIs, variable names, UI placement, or behavior unless explicitly requested or required for a safe fix.
-- Prefer small diffs over "perfect" code.
+- Avoid broad refactors, style churn, drive-by cleanup, and unnecessary renames.
+- Preserve public APIs and persisted formats unless a change is requested and
+  compatibility or migration impact has been addressed.
+- Do not alter unrelated files merely because they are in the writable scope.
 
-## Safety
-- Do not overwrite, discard, or revert user changes unless explicitly requested.
-- Do not use `rm -r` or `rm -rf` unless the user explicitly asks for it.
-- Do not use destructive commands such as force resets or broad deletes without clear approval.
-- Do not introduce secrets, credentials, or sensitive data into the repository.
-- Do not log sensitive input or output.
+## Task Modes
 
-## Conflict Handling
-- Stop and clarify if a request conflicts with repo rules or creates ambiguous risk.
-- Record durable lessons in the appropriate `.agents` document.
+- Analysis and planning tasks are read-only unless edits are explicitly asked
+  for later.
+- Reviews report findings and do not apply fixes unless requested.
+- Implementation tasks include appropriate verification and self-review.
+- Delivery tasks do not imply permission to publish or deploy beyond the exact
+  operation requested.
+
+## Clarification
+
+- Ask a targeted question when ambiguity in goals, acceptance criteria,
+  constraints, or risk would materially change the implementation.
+- When several approaches are valid, present alternatives only if the choice
+  has meaningful product, compatibility, operational, or maintenance impact.
+- Otherwise make the smallest reasonable assumption, state it when relevant,
+  and proceed.
+
+## Conflicts
+
+- Follow higher-priority system, platform, and user instructions.
+- Apply the most specific repository guidance for the affected files.
+- Stop and clarify when instructions conflict in a way that cannot be resolved
+  safely.

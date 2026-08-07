@@ -1,10 +1,17 @@
 # Decisions Memory
 
 ## Purpose
-Record durable project decisions, conventions, and tradeoffs that should influence future work.
+
+Record concise rationale for durable repository-wide guidance decisions. The
+root guidance remains authoritative if wording later diverges.
 
 ## Entries
-- The current `codexteam/` is a local specification-driven workflow toolkit, not the removed application/controller system.
-- `codexteam_20260618.zip` is an obsolete historical archive and must not be used as an implementation or recovery source.
-- CodexTeam task IDs use uppercase `T001` form and results use enforced contract v1.
-- CodexTeam runtime paths, role defaults, and profile routing are governed by the current `codexteam/` code and `codexteam/roles/*.toml`; durable subsystem rationale lives in `codexteam/.agents/memory/decisions.md`.
+
+- Provider-neutral lifecycle guidance is separated from explicitly named
+  provider playbooks so agents can share engineering standards without erasing
+  necessary platform procedures.
+- Language-specific rules live in separate skills because language ecosystems
+  evolve independently and future languages should not expand the core prompt.
+- Authorization is documented separately from runtime capability because agents
+  may receive broad filesystem or tool access for inspection while the user's
+  requested mutation remains narrow.

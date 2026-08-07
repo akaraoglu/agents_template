@@ -1,124 +1,108 @@
-## Skill, Tool, and Self-Improvement Rules
+# Repository Agent Guidance
 
-Codex may improve repository-local agent guidance only when the improvement is durable, specific, and useful for future tasks.
+These instructions apply to any coding agent working in this repository. Follow
+system, platform, and user instructions first; then apply the most specific
+repository guidance available for the files being changed.
 
-### Local Guidance Layout
+## Before Work
 
-Before substantial work, inspect the relevant guidance under `.agents/`:
+1. Determine the task mode: analysis, planning, implementation, review, or
+   delivery. Do not turn a read-only request into an editing task.
+2. Inspect relevant repository guidance, including more specific `AGENTS.md`
+   files, before substantial work.
+3. Inspect the affected code, tests, configuration, and repository-native
+   commands before proposing or making changes.
+4. Identify acceptance criteria, non-goals, affected interfaces, and material
+   risks. Ask a targeted question only when unresolved ambiguity would
+   materially change the result.
+5. Treat filesystem access as capability, not authorization. Modify only files
+   relevant to the user's request.
 
-- `.agents/capabilities/` for stable environment, safety, and coding standards
-- `.agents/skills/` for reusable workflows that match the task
-- `.agents/playbooks/` for narrow implementation, debugging, or operational procedures
-  - `.agents/playbooks/add-ollama-model-to-codex.md` — register a local Ollama model as a Codex `--profile` (Modelfile, catalog, profile, KV-cache budget, verification)
-- `.agents/memory/` for durable decisions, corrections, and changelog entries
+## Engineering Lifecycle
 
-Use the smallest relevant guidance file. Do not treat `.agents/` as application source unless the task is to maintain agent guidance.
+Use the smallest relevant workflow under `.agents/skills/`:
 
-### Definitions
+- `engineering-workflow/` routes substantial coding tasks through discovery,
+  design, implementation, verification, and review.
+- `discovery-scoping/` establishes task mode, repository context, authorized
+  scope, and acceptance criteria.
+- `planning-design/` covers implementation planning and software design.
+- `implementation/` covers safe, scoped code changes.
+- `verification/` covers tests and risk-based quality gates.
+- `testing/` covers test design, test layers, fixtures, and assertion quality.
+- `code-review/` covers read-only review and implementation self-review.
+- `debugging/` covers diagnosis and root-cause analysis.
+- `refactoring/` covers behavior-preserving structural changes.
+- `python/` adds Python-specific implementation and testing guidance.
+- `git-delivery/` covers commits, pushes, branches, and pull requests.
+- `releases/` covers release preparation, publication, and deployment.
 
-- A **skill** is a reusable workflow or capability description stored under `.agents/skills/`.
-  - Use skills for repeatable tasks that require consistent steps, conventions, commands, validation, or domain-specific judgment.
-  - Skills should explain how to perform the task, when to use it, expected inputs, expected outputs, validation steps, and common failure modes.
+Use `.agents/playbooks/` for narrower task recipes and `.agents/capabilities/`
+for stable safety, tooling, and coding standards. Provider-specific playbooks
+apply only when their named platform or tool is part of the task.
 
-- A **playbook** is a task-specific troubleshooting or implementation procedure stored under `.agents/playbooks/`.
-  - Use playbooks for narrow operational flows, incident/debugging procedures, migrations, canary workflows, or known defect classes.
+## Core Rules
 
-- A **tool** is an executable helper script or command wrapper used by Codex to make repeated work safer or faster.
-  - Prefer tools for deterministic, error-prone, or repetitive operations.
-  - Tools must be small, documented, and testable.
-  - Tools that modify files must support a clear preview/dry-run mode when practical.
+- Prefer the smallest coherent change that fully satisfies the request.
+- Preserve existing behavior unless the request intentionally changes it.
+- Follow established repository patterns before introducing new abstractions,
+  dependencies, or tools.
+- Never overwrite, discard, stage, or revert unrelated user changes.
+- Behavior changes and bug fixes normally require practical regression
+  coverage. Explain when suitable automated coverage is unavailable.
+- Run the smallest relevant checks first, then broaden verification according
+  to risk and repository requirements.
+- Inspect the final diff for unintended changes before reporting completion.
+- Report commands actually run, observed results, skipped checks, and residual
+  risks. Do not claim verification that was not performed.
+- Commit, push, open or merge pull requests, tag, publish, or deploy only when
+  explicitly requested or already authorized by the task.
 
-- A **memory entry** is a concise record of durable project knowledge stored under `.agents/memory/`.
-  - Use memory for decisions, corrections, recurring mistakes, and behavior updates.
-  - Do not store noisy task transcripts or duplicate information already present elsewhere.
+## Guidance Layout
 
-### When to Create or Update Skills
+- `.agents/capabilities/`: stable boundaries, coding standards, and tool rules
+- `.agents/skills/`: reusable workflows and language-specific guidance
+- `.agents/playbooks/`: narrow implementation, debugging, and operations recipes
+- `.agents/templates/`: reusable review, triage, PR, and report formats
+- `.agents/memory/`: concise durable decisions, corrections, and change history
+- `.agents/scripts/`: documented deterministic workflow helpers
 
-Create or update a skill when one or more of these are true:
+Guidance files describe how to work; they are not application source. Keep
+project runtime behavior and machine-specific configuration elsewhere unless
+the task is specifically about agent guidance.
 
-- The same task pattern appears more than once.
-- The task requires a checklist, sequence, or validation procedure.
-- The task depends on project-specific conventions not obvious from code.
-- A previous mistake would likely recur without written guidance.
-- A workflow requires specific commands, paths, canaries, test data, or expected outputs.
-- The user explicitly asks for reusable agent guidance.
+## Maintaining Guidance
 
-Before creating a new skill, check existing files under `.agents/skills/` and update the closest existing skill when appropriate.
+At the end of a substantial task, consider whether it exposed a durable,
+repeatable improvement. Update guidance only when all of these are true:
 
-A skill should include:
+- The current task permits edits to agent guidance.
+- The improvement is specific, reusable, and supported by observed evidence.
+- The change belongs in the smallest relevant guidance file.
+- It does not duplicate source code, generated configuration, or scoped
+  subsystem guidance.
 
-1. Purpose
-2. When to use it
-3. Inputs needed
-4. Step-by-step workflow
-5. Commands to run, if any
-6. Expected output
-7. Validation steps
-8. Common mistakes or failure modes
-9. Related files, playbooks, tools, or memory entries
+For read-only, review, or planning tasks, report a recommended guidance change
+instead of editing files. Do not silently alter operating rules.
 
-Keep skills concise. Move long examples, references, or schemas into adjacent files instead of bloating the main skill document.
+When guidance changes, the final response must state what changed, why, which
+future tasks it improves, and what validation was performed. Include a diff
+summary for non-trivial changes.
 
-### When to Create or Update Tools
+## Skill Authoring
 
-Create or update a tool when:
+Before creating a skill, check for an existing workflow to extend. A skill
+should define:
 
-- The same shell/Python/Node command sequence is repeated.
-- Manual execution is risky or easy to get wrong.
-- The task needs parsing, validation, formatting, or comparison.
-- A script would reduce ambiguity or prevent future mistakes.
-- The tool can be tested cheaply.
+1. Purpose and trigger
+2. Inputs and prerequisites
+3. Workflow
+4. Expected output
+5. Validation
+6. Failure modes or cautions
+7. Related guidance
 
-Do not create a tool when:
-
-- A simple documented command is enough.
-- The logic is one-off.
-- The tool would hide important behavior from the user.
-- The tool requires new dependencies without clear benefit.
-
-Each tool must include:
-
-1. A clear name and purpose
-2. Usage instructions
-3. Safe defaults
-4. Input validation
-5. Helpful error messages
-6. A test or example invocation
-7. Documentation in the relevant skill or playbook
-
-Prefer existing project languages and tooling. Do not introduce new runtimes or package managers unless explicitly justified.
-
-### Self-Improvement Loop
-
-At the end of each substantial task, Agent should briefly evaluate:
-
-1. Did this task reveal a reusable workflow?
-2. Did this task expose a recurring mistake or outdated instruction?
-3. Did this task require commands or checks that should become a tool?
-4. Did existing agent guidance conflict with reality?
-5. Would future Agent runs benefit from a small update?
-
-If yes, update the smallest appropriate file:
-
-- `.agents/memory/changelog.md` for request/action history
-- `.agents/memory/decisions.md` for durable decisions
-- `.agents/memory/corrections.md` for mistakes, outdated assumptions, or lessons
-- `.agents/skills/` for reusable workflows
-- `.agents/playbooks/` for specific procedures
-- `.agents/capabilities/` for stable environment, safety, or coding standards
-- `AGENTS.md` only for global rules that affect all Agent behavior
-
-Do not rewrite broad guidance for a narrow lesson. Prefer local, specific updates.
-
-### Review Requirements for Agent Guidance Changes
-
-When Agent changes `.agents/`, include in the final response:
-
-- What guidance changed
-- Why it changed
-- Which future task it improves
-- Any commands or validations run
-
-For non-trivial changes, show the relevant diff summary.
-
-Agent must not silently change its own operating rules. Self-improvement must be visible, reviewable, and tied to the user’s task.
+Keep the main `SKILL.md` concise. Put language details, long examples, or stable
+reference material in a skill's `references/` directory. Add a helper tool only
+when a repeated, error-prone process benefits from deterministic execution;
+document safe defaults, validation, errors, and a test or example invocation.

@@ -5,15 +5,16 @@ Register a local Ollama model as a Codex `--profile` that loads reliably, keeps 
 declared context window in sync with what Ollama actually loads, and survives long
 multi-turn sessions without the "session hangs at low %" failure.
 
-All Codex-side artifacts live under `~/.codex/` (NOT in this repo, and NOT in any
-`agent_template_new` folder). Three directories matter:
-- `~/.codex/modelfiles/<name>.Modelfile`        — tuned Ollama build recipe
-- `~/.codex/model_catalogs/local-models.json`   — shared Codex catalog (one entry per model)
-- `~/.codex/<profile>.config.toml`              — the Codex profile invoked with `--profile`
+All Codex-side artifacts live under `${CODEX_HOME:-$HOME/.codex}` and not in this
+repository. Three directories matter:
+- `$CODEX_HOME/modelfiles/<name>.Modelfile` - tuned Ollama build recipe
+- `$CODEX_HOME/model_catalogs/local-models.json` - shared Codex catalog
+- `$CODEX_HOME/<profile>.config.toml` - profile invoked with `--profile`
 
 ## Preconditions
 - The base model is pulled in Ollama (`ollama pull <base>`; confirm with `ollama list`).
-- The `ollama_local` provider exists in `~/.codex/config.toml`:
+- The `ollama_local` provider exists in
+  `${CODEX_HOME:-$HOME/.codex}/config.toml`:
   ```toml
   [model_providers.ollama_local]
   name = "Ollama"
@@ -44,7 +45,7 @@ two models co-resident, both must fit at once or Ollama will swap between them p
 
 ## Steps
 
-### 1. Write the tuned Modelfile — `~/.codex/modelfiles/<name>.Modelfile`
+### 1. Write the tuned Modelfile - `$CODEX_HOME/modelfiles/<name>.Modelfile`
 Base GGUFs commonly ship a bare `TEMPLATE {{ .Prompt }}` with no turn markers or stop
 token, which degrades multi-turn behavior. Always supply: sampling, a pinned `num_ctx`,
 a `stop` token, a canonical chat template, and a minimal `SYSTEM`.
@@ -73,18 +74,17 @@ TEMPLATE """<model-specific turn template>"""
 SYSTEM """You are Codex. Follow the runtime instructions you are given."""
 ```
 
-Reference templates already in this setup:
-- Gemma (`<start_of_turn>` / `<end_of_turn>`): `~/.codex/modelfiles/gemma4-26b.Modelfile`
-- Qwen3 ChatML (`<|im_start|>` / `<|im_end|>`): `~/.codex/modelfiles/qwen3.6-27b.Modelfile`
+Reference any existing local Modelfile for the same model family, but verify its
+turn markers and stop token against the model author's current template.
 
 ### 2. Build the model
 ```bash
-cd ~/.codex/modelfiles
+cd "${CODEX_HOME:-$HOME/.codex}/modelfiles"
 ollama create <name> -f <name>.Modelfile
 ollama show <name> | grep -iE "num_ctx|context length"   # confirm num_ctx baked in
 ```
 
-### 3. Add a catalog entry — `~/.codex/model_catalogs/local-models.json`
+### 3. Add a catalog entry - `$CODEX_HOME/model_catalogs/local-models.json`
 Copy an existing entry in the `models` array and edit it. The single most important rule:
 
 > **`context_window` and `max_context_window` MUST equal the Modelfile `num_ctx`.**
@@ -94,26 +94,33 @@ a context size larger than what Ollama actually loaded, so real overflow happens
 UI still shows single-digit percentages. Edit by slug, programmatically, to avoid touching
 sibling entries:
 ```bash
-python3 - <<'PY'
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}" python3 - <<'PY'
 import json
-p="/home/alik/.codex/model_catalogs/local-models.json"
-d=json.load(open(p))
+import os
+from pathlib import Path
+
+p = Path(os.environ["CODEX_HOME"]) / "model_catalogs/local-models.json"
+d=json.loads(p.read_text())
+found = False
 for m in d["models"]:
     if m["slug"]=="<name>":
+        found = True
         m["context_window"]=<N>
         m["max_context_window"]=<N>
-json.dump(d,open(p,"w"),indent=2,ensure_ascii=False); open(p,"a").write("\n")
+if not found:
+    raise SystemExit("catalog entry <name> does not exist; copy and edit a compatible entry first")
+p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n")
 print({m["slug"]:(m["context_window"],m["max_context_window"]) for m in d["models"]})
 PY
 ```
 Set `provider` to `ollama_local`, `enabled` true, and `input_modalities` to match the
 model (e.g. include `image` only for vision models).
 
-### 4. Create the Codex profile — `~/.codex/<profile>.config.toml`
+### 4. Create the Codex profile - `$CODEX_HOME/<profile>.config.toml`
 ```toml
 model = "<name>"
 model_provider = "ollama_local"
-model_catalog_json = "/home/alik/.codex/model_catalogs/local-models.json"
+model_catalog_json = "/absolute/path/to/.codex/model_catalogs/local-models.json"
 approval_policy = "on-request"
 approvals_reviewer = "user"
 model_reasoning_effort = "medium"   # see Notes: "high" can over-think and stall
@@ -128,11 +135,18 @@ To grant write access to extra paths for this profile, add:
 [sandbox_workspace_write]
 writable_roots = ["/abs/path/one", "/abs/path/two"]
 ```
+Add only paths the user explicitly authorizes for agent writes. Do not infer
+authorization from filesystem permissions or add broad parent directories for
+convenience.
 
 ### 5. (Large context only) Enable q8_0 KV cache globally on the Ollama server
 Needed when f16 KV would exceed VRAM but q8_0 fits. This is a **global, root-owned**
 change affecting every model the server loads, and it requires a restart (drops any
 currently loaded model).
+
+Stop and obtain explicit authorization for this exact system-wide change and
+service restart. Confirm no user-owned workload depends on the currently loaded
+models. If authorization is absent, lower `num_ctx` instead and skip this step.
 ```bash
 sudo mkdir -p /etc/systemd/system/ollama.service.d
 sudo tee /etc/systemd/system/ollama.service.d/override.conf >/dev/null <<'EOF'
@@ -176,6 +190,12 @@ codex exec --profile <profile> "print the word READY and nothing else"
 - `codex exec --profile <profile>` returns a normal completion.
 
 ## Recovery / rollback
+
+Recovery actions that restart Ollama, change its global service environment,
+delete profiles or catalog entries, or run `ollama rm` require explicit
+authorization for that exact mutation. Diagnose and propose the minimal recovery
+first; do not assume the setup authorization covers later destructive cleanup.
+
 - "Hangs at low %": re-check catalog↔num_ctx equality and `ollama ps` for any CPU spill;
   lower `num_ctx` (and the catalog to match) until it is 100% GPU.
 - Large context won't fit at f16: enable q8_0 KV (Step 5) or drop `num_ctx`.
