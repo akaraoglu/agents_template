@@ -1,0 +1,8 @@
+schema_version = "2.0"
+kind = "capability"
+definition_version = "1"
+capability_id = "repository_discovery"
+name = "Repository discovery"
+description = "Inspect repository facts and requirements."
+required_operations = ["read", "send"]
+required_resources = ["project_path", "mailbox"]

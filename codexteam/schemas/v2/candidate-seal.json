@@ -1,0 +1,267 @@
+{
+  "$comment": "Structural validation is necessary but semantic and cross-record validation MUST use codexteam_tools.v2.models.validate_wire plus the model named in x-codexteam-semantic-model.",
+  "$defs": {
+    "ActorRef": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "operator",
+            "project_lead",
+            "agent",
+            "orchestrator",
+            "launcher"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "role_instance_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role Instance Id"
+        }
+      },
+      "required": [
+        "actor_id",
+        "kind"
+      ],
+      "title": "ActorRef",
+      "type": "object"
+    },
+    "RecordRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "record_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "kind",
+        "digest"
+      ],
+      "title": "RecordRef",
+      "type": "object"
+    },
+    "RequiredStageCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "stage_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Stage Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage_id",
+        "candidate"
+      ],
+      "title": "RequiredStageCandidate",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_accepted": {
+      "const": true,
+      "title": "Acceptance Accepted",
+      "type": "boolean"
+    },
+    "acceptance_review": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "assurance_accepted": {
+      "const": true,
+      "title": "Assurance Accepted",
+      "type": "boolean"
+    },
+    "assurance_report": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "base_manifest": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "candidate_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Candidate Digest",
+      "type": "string"
+    },
+    "compiler_version": {
+      "minLength": 1,
+      "title": "Compiler Version",
+      "type": "string"
+    },
+    "context_packs": {
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "Context Packs",
+      "type": "array"
+    },
+    "cumulative_change_set": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "final_manifest": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "kind": {
+      "const": "candidate_seal",
+      "title": "Kind",
+      "type": "string"
+    },
+    "lead_approved": {
+      "const": true,
+      "title": "Lead Approved",
+      "type": "boolean"
+    },
+    "lead_decision": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "pipeline_revision": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "project_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "required_stage_ids": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        "type": "string"
+      },
+      "title": "Required Stage Ids",
+      "type": "array"
+    },
+    "role_instances": {
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "Role Instances",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seal_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Seal Id",
+      "type": "string"
+    },
+    "sealed_at": {
+      "format": "date-time",
+      "title": "Sealed At",
+      "type": "string"
+    },
+    "sealed_by": {
+      "$ref": "#/$defs/ActorRef"
+    },
+    "stage_candidates": {
+      "items": {
+        "$ref": "#/$defs/RequiredStageCandidate"
+      },
+      "title": "Stage Candidates",
+      "type": "array"
+    },
+    "verification_accepted": {
+      "const": true,
+      "title": "Verification Accepted",
+      "type": "boolean"
+    },
+    "verification_fresh": {
+      "const": true,
+      "title": "Verification Fresh",
+      "type": "boolean"
+    },
+    "verification_receipts": {
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "Verification Receipts",
+      "type": "array"
+    },
+    "work_item": {
+      "$ref": "#/$defs/RecordRef"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "seal_id",
+    "candidate_digest",
+    "project_id",
+    "work_item",
+    "pipeline_revision",
+    "required_stage_ids",
+    "role_instances",
+    "context_packs",
+    "stage_candidates",
+    "base_manifest",
+    "final_manifest",
+    "cumulative_change_set",
+    "verification_receipts",
+    "assurance_report",
+    "acceptance_review",
+    "lead_decision",
+    "compiler_version",
+    "verification_accepted",
+    "verification_fresh",
+    "assurance_accepted",
+    "acceptance_accepted",
+    "lead_approved",
+    "sealed_by",
+    "sealed_at"
+  ],
+  "title": "CandidateSeal",
+  "type": "object",
+  "x-codexteam-contract-version": "2.0",
+  "x-codexteam-semantic-model": "CandidateSeal",
+  "x-codexteam-semantic-module": "codexteam_tools.v2.models"
+}

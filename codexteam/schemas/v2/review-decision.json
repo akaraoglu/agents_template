@@ -1,0 +1,209 @@
+{
+  "$comment": "Structural validation is necessary but semantic and cross-record validation MUST use codexteam_tools.v2.models.validate_wire plus the model named in x-codexteam-semantic-model.",
+  "$defs": {
+    "ActorRef": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "operator",
+            "project_lead",
+            "agent",
+            "orchestrator",
+            "launcher"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "role_instance_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role Instance Id"
+        }
+      },
+      "required": [
+        "actor_id",
+        "kind"
+      ],
+      "title": "ActorRef",
+      "type": "object"
+    },
+    "RecordRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "record_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "kind",
+        "digest"
+      ],
+      "title": "RecordRef",
+      "type": "object"
+    },
+    "SemanticFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "blocking": {
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "resolved": {
+          "default": false,
+          "title": "Resolved",
+          "type": "boolean"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary",
+        "severity",
+        "blocking"
+      ],
+      "title": "SemanticFinding",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidate": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "decided_at": {
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "ACCEPT",
+        "RETURN",
+        "BLOCK"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "evidence": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "findings": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SemanticFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "kind": {
+      "const": "review_decision",
+      "title": "Kind",
+      "type": "string"
+    },
+    "producer_role_instance_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Producer Role Instance Id",
+      "type": "string"
+    },
+    "rationale": {
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "review_decision_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Review Decision Id",
+      "type": "string"
+    },
+    "reviewer": {
+      "$ref": "#/$defs/ActorRef"
+    },
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "verification_receipts": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "Verification Receipts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "review_decision_id",
+    "candidate",
+    "producer_role_instance_id",
+    "decision",
+    "rationale",
+    "reviewer",
+    "decided_at"
+  ],
+  "title": "ReviewDecision",
+  "type": "object",
+  "x-codexteam-contract-version": "2.0",
+  "x-codexteam-semantic-model": "ReviewDecision",
+  "x-codexteam-semantic-module": "codexteam_tools.v2.models"
+}

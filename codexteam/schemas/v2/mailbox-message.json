@@ -1,0 +1,764 @@
+{
+  "$comment": "Structural validation is necessary but semantic and cross-record validation MUST use codexteam_tools.v2.models.validate_wire plus the model named in x-codexteam-semantic-model.",
+  "$defs": {
+    "AcceptanceCriterion": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "required_evidence_types": {
+          "items": {
+            "$ref": "#/$defs/EvidenceType"
+          },
+          "title": "Required Evidence Types",
+          "type": "array"
+        },
+        "statement": {
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineVerificationSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "statement",
+        "required_evidence_types"
+      ],
+      "title": "AcceptanceCriterion",
+      "type": "object"
+    },
+    "AcknowledgementBody": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledged_message": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "kind": {
+          "const": "acknowledgement",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "acknowledged_message"
+      ],
+      "title": "AcknowledgementBody",
+      "type": "object"
+    },
+    "ActorRef": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "operator",
+            "project_lead",
+            "agent",
+            "orchestrator",
+            "launcher"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "role_instance_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role Instance Id"
+        }
+      },
+      "required": [
+        "actor_id",
+        "kind"
+      ],
+      "title": "ActorRef",
+      "type": "object"
+    },
+    "AssuranceDomain": {
+      "enum": [
+        "security_privacy",
+        "data_database",
+        "accessibility",
+        "performance_reliability"
+      ],
+      "title": "AssuranceDomain",
+      "type": "string"
+    },
+    "AssuranceFindingBody": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/AssuranceDomain"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RecordRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "kind": {
+          "const": "assurance_finding",
+          "title": "Kind",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "domain",
+        "severity",
+        "summary"
+      ],
+      "title": "AssuranceFindingBody",
+      "type": "object"
+    },
+    "BlockerBody": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "blocker",
+          "title": "Kind",
+          "type": "string"
+        },
+        "recovery_needed": {
+          "minLength": 1,
+          "title": "Recovery Needed",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "summary",
+        "recovery_needed"
+      ],
+      "title": "BlockerBody",
+      "type": "object"
+    },
+    "CancellationBody": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cancellation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/RecordRef"
+        }
+      },
+      "required": [
+        "kind",
+        "target",
+        "reason"
+      ],
+      "title": "CancellationBody",
+      "type": "object"
+    },
+    "CandidateReadyBody": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "kind": {
+          "const": "candidate_ready",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "candidate"
+      ],
+      "title": "CandidateReadyBody",
+      "type": "object"
+    },
+    "ConflictBody": {
+      "additionalProperties": false,
+      "properties": {
+        "conflicting_records": {
+          "items": {
+            "$ref": "#/$defs/RecordRef"
+          },
+          "title": "Conflicting Records",
+          "type": "array"
+        },
+        "kind": {
+          "const": "conflict",
+          "title": "Kind",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "summary",
+        "conflicting_records"
+      ],
+      "title": "ConflictBody",
+      "type": "object"
+    },
+    "ContextGapBody": {
+      "additionalProperties": false,
+      "properties": {
+        "impact": {
+          "minLength": 1,
+          "title": "Impact",
+          "type": "string"
+        },
+        "kind": {
+          "const": "context_gap",
+          "title": "Kind",
+          "type": "string"
+        },
+        "missing": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Missing",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "missing",
+        "impact"
+      ],
+      "title": "ContextGapBody",
+      "type": "object"
+    },
+    "DefinitionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "definition_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Definition Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "minLength": 1,
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "definition_id",
+        "kind",
+        "definition_version",
+        "digest"
+      ],
+      "title": "DefinitionRef",
+      "type": "object"
+    },
+    "EvidenceType": {
+      "enum": [
+        "test_output",
+        "manifest",
+        "review",
+        "analysis",
+        "artifact"
+      ],
+      "title": "EvidenceType",
+      "type": "string"
+    },
+    "LeadDecisionBody": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "kind": {
+          "const": "lead_decision",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "decision"
+      ],
+      "title": "LeadDecisionBody",
+      "type": "object"
+    },
+    "MachineVerificationSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Argv",
+          "type": "array"
+        },
+        "expected_stdout": {
+          "title": "Expected Stdout",
+          "type": "string"
+        },
+        "verifier_argv": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Verifier Argv",
+          "type": "array"
+        }
+      },
+      "required": [
+        "verifier_argv",
+        "argv",
+        "expected_stdout"
+      ],
+      "title": "MachineVerificationSpec",
+      "type": "object"
+    },
+    "PipelineChangeRequestBody": {
+      "additionalProperties": false,
+      "properties": {
+        "discovery_candidate": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "kind": {
+          "const": "pipeline_change_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "requested_stages": {
+          "items": {
+            "$ref": "#/$defs/PipelineStageSpec"
+          },
+          "title": "Requested Stages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "requested_stages",
+        "rationale",
+        "discovery_candidate"
+      ],
+      "title": "PipelineChangeRequestBody",
+      "type": "object"
+    },
+    "PipelineStageSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_spec": {
+          "$ref": "#/$defs/DefinitionRef"
+        },
+        "assurance_domain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssuranceDomain"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dependencies": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "title": "Dependencies",
+          "type": "array"
+        },
+        "optional": {
+          "title": "Optional",
+          "type": "boolean"
+        },
+        "stage": {
+          "enum": [
+            "discovery",
+            "architecture",
+            "ux",
+            "implementation",
+            "verification",
+            "assurance",
+            "review"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "stage_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Stage Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage_id",
+        "stage",
+        "agent_spec",
+        "dependencies",
+        "optional"
+      ],
+      "title": "PipelineStageSpec",
+      "type": "object"
+    },
+    "QuestionBody": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "question",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "question"
+      ],
+      "title": "QuestionBody",
+      "type": "object"
+    },
+    "RecordRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "record_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "kind",
+        "digest"
+      ],
+      "title": "RecordRef",
+      "type": "object"
+    },
+    "ResponseBody": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "response",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "response": {
+          "minLength": 1,
+          "title": "Response",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "question",
+        "response"
+      ],
+      "title": "ResponseBody",
+      "type": "object"
+    },
+    "VerificationDefectBody": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "title": "Criterion Ids",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/RecordRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "kind": {
+          "const": "verification_defect",
+          "title": "Kind",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "summary",
+        "criterion_ids",
+        "evidence"
+      ],
+      "title": "VerificationDefectBody",
+      "type": "object"
+    },
+    "WorkItemProposalBody": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_criteria": {
+          "items": {
+            "$ref": "#/$defs/AcceptanceCriterion"
+          },
+          "title": "Acceptance Criteria",
+          "type": "array"
+        },
+        "kind": {
+          "const": "work_item_proposal",
+          "title": "Kind",
+          "type": "string"
+        },
+        "objective": {
+          "minLength": 1,
+          "title": "Objective",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "objective",
+        "acceptance_criteria"
+      ],
+      "title": "WorkItemProposalBody",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "discriminator": {
+        "mapping": {
+          "acknowledgement": "#/$defs/AcknowledgementBody",
+          "assurance_finding": "#/$defs/AssuranceFindingBody",
+          "blocker": "#/$defs/BlockerBody",
+          "cancellation": "#/$defs/CancellationBody",
+          "candidate_ready": "#/$defs/CandidateReadyBody",
+          "conflict": "#/$defs/ConflictBody",
+          "context_gap": "#/$defs/ContextGapBody",
+          "lead_decision": "#/$defs/LeadDecisionBody",
+          "pipeline_change_request": "#/$defs/PipelineChangeRequestBody",
+          "question": "#/$defs/QuestionBody",
+          "response": "#/$defs/ResponseBody",
+          "verification_defect": "#/$defs/VerificationDefectBody",
+          "work_item_proposal": "#/$defs/WorkItemProposalBody"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/QuestionBody"
+        },
+        {
+          "$ref": "#/$defs/ResponseBody"
+        },
+        {
+          "$ref": "#/$defs/ContextGapBody"
+        },
+        {
+          "$ref": "#/$defs/BlockerBody"
+        },
+        {
+          "$ref": "#/$defs/ConflictBody"
+        },
+        {
+          "$ref": "#/$defs/PipelineChangeRequestBody"
+        },
+        {
+          "$ref": "#/$defs/WorkItemProposalBody"
+        },
+        {
+          "$ref": "#/$defs/CandidateReadyBody"
+        },
+        {
+          "$ref": "#/$defs/VerificationDefectBody"
+        },
+        {
+          "$ref": "#/$defs/AssuranceFindingBody"
+        },
+        {
+          "$ref": "#/$defs/LeadDecisionBody"
+        },
+        {
+          "$ref": "#/$defs/AcknowledgementBody"
+        },
+        {
+          "$ref": "#/$defs/CancellationBody"
+        }
+      ],
+      "title": "Body"
+    },
+    "correlation_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "kind": {
+      "const": "mailbox_message",
+      "title": "Kind",
+      "type": "string"
+    },
+    "message_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Message Id",
+      "type": "string"
+    },
+    "recipient": {
+      "$ref": "#/$defs/ActorRef"
+    },
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sender": {
+      "$ref": "#/$defs/ActorRef"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "message_id",
+    "sender",
+    "recipient",
+    "correlation_id",
+    "idempotency_key",
+    "created_at",
+    "body"
+  ],
+  "title": "MailboxMessage",
+  "type": "object",
+  "x-codexteam-contract-version": "2.0",
+  "x-codexteam-semantic-model": "MailboxMessage",
+  "x-codexteam-semantic-module": "codexteam_tools.v2.models"
+}

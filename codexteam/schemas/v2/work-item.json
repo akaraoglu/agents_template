@@ -1,0 +1,150 @@
+{
+  "$comment": "Structural validation is necessary but semantic and cross-record validation MUST use codexteam_tools.v2.models.validate_wire plus the model named in x-codexteam-semantic-model.",
+  "$defs": {
+    "AcceptanceCriterion": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "required_evidence_types": {
+          "items": {
+            "$ref": "#/$defs/EvidenceType"
+          },
+          "title": "Required Evidence Types",
+          "type": "array"
+        },
+        "statement": {
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineVerificationSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "statement",
+        "required_evidence_types"
+      ],
+      "title": "AcceptanceCriterion",
+      "type": "object"
+    },
+    "EvidenceType": {
+      "enum": [
+        "test_output",
+        "manifest",
+        "review",
+        "analysis",
+        "artifact"
+      ],
+      "title": "EvidenceType",
+      "type": "string"
+    },
+    "MachineVerificationSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Argv",
+          "type": "array"
+        },
+        "expected_stdout": {
+          "title": "Expected Stdout",
+          "type": "string"
+        },
+        "verifier_argv": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Verifier Argv",
+          "type": "array"
+        }
+      },
+      "required": [
+        "verifier_argv",
+        "argv",
+        "expected_stdout"
+      ],
+      "title": "MachineVerificationSpec",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_criteria": {
+      "items": {
+        "$ref": "#/$defs/AcceptanceCriterion"
+      },
+      "title": "Acceptance Criteria",
+      "type": "array"
+    },
+    "approved_scope": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Approved Scope",
+      "type": "array"
+    },
+    "kind": {
+      "const": "work_item",
+      "title": "Kind",
+      "type": "string"
+    },
+    "objective": {
+      "minLength": 1,
+      "title": "Objective",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "work_item_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Work Item Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "work_item_id",
+    "title",
+    "objective",
+    "acceptance_criteria"
+  ],
+  "title": "WorkItem",
+  "type": "object",
+  "x-codexteam-contract-version": "2.0",
+  "x-codexteam-semantic-model": "WorkItem",
+  "x-codexteam-semantic-module": "codexteam_tools.v2.models"
+}

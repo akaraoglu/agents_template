@@ -1,0 +1,8 @@
+schema_version = "2.0"
+kind = "capability"
+definition_version = "1"
+capability_id = "ux_design"
+name = "UX design"
+description = "Produce bounded interface design artifacts."
+required_operations = ["read", "write", "send"]
+required_resources = ["project_path", "mailbox"]

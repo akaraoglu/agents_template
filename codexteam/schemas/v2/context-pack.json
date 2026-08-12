@@ -1,0 +1,85 @@
+{
+  "$comment": "Structural validation is necessary but semantic and cross-record validation MUST use codexteam_tools.v2.models.validate_wire plus the model named in x-codexteam-semantic-model.",
+  "$defs": {
+    "RecordRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "record_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "kind",
+        "digest"
+      ],
+      "title": "RecordRef",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assignment": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "context_pack_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Context Pack Id",
+      "type": "string"
+    },
+    "digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Digest",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "kind": {
+      "const": "context_pack",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "context_pack_id",
+    "assignment",
+    "items",
+    "digest"
+  ],
+  "title": "ContextPack",
+  "type": "object",
+  "x-codexteam-contract-version": "2.0",
+  "x-codexteam-semantic-model": "ContextPack",
+  "x-codexteam-semantic-module": "codexteam_tools.v2.models"
+}

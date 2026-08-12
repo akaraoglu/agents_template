@@ -1,0 +1,280 @@
+{
+  "$comment": "Structural validation is necessary but semantic and cross-record validation MUST use codexteam_tools.v2.models.validate_wire plus the model named in x-codexteam-semantic-model.",
+  "$defs": {
+    "DefinitionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "definition_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Definition Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "minLength": 1,
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "definition_id",
+        "kind",
+        "definition_version",
+        "digest"
+      ],
+      "title": "DefinitionRef",
+      "type": "object"
+    },
+    "PermissionOperation": {
+      "enum": [
+        "read",
+        "write",
+        "execute",
+        "delete",
+        "spawn",
+        "send",
+        "approve",
+        "seal"
+      ],
+      "title": "PermissionOperation",
+      "type": "string"
+    },
+    "PermissionResource": {
+      "enum": [
+        "project_path",
+        "project_state",
+        "mailbox",
+        "evidence",
+        "process",
+        "network",
+        "git_repository"
+      ],
+      "title": "PermissionResource",
+      "type": "string"
+    },
+    "RecordRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "record_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "kind",
+        "digest"
+      ],
+      "title": "RecordRef",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent_spec": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "assignment": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "assignment_scope": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Assignment Scope",
+      "type": "array"
+    },
+    "attempt_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "backend": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "backend_limitations": {
+      "items": {
+        "enum": [
+          "no_os_sandbox",
+          "no_mcp"
+        ],
+        "type": "string"
+      },
+      "title": "Backend Limitations",
+      "type": "array"
+    },
+    "backend_supported_operations": {
+      "items": {
+        "$ref": "#/$defs/PermissionOperation"
+      },
+      "title": "Backend Supported Operations",
+      "type": "array"
+    },
+    "backend_supported_resources": {
+      "items": {
+        "$ref": "#/$defs/PermissionResource"
+      },
+      "title": "Backend Supported Resources",
+      "type": "array"
+    },
+    "capabilities": {
+      "items": {
+        "$ref": "#/$defs/DefinitionRef"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "effective_policy_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Effective Policy Digest",
+      "type": "string"
+    },
+    "guidance_bundle": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "host_isolation_authorization": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecordRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "kind": {
+      "const": "role_instance",
+      "title": "Kind",
+      "type": "string"
+    },
+    "model_profile": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "operator_grants": {
+      "items": {
+        "$ref": "#/$defs/DefinitionRef"
+      },
+      "title": "Operator Grants",
+      "type": "array"
+    },
+    "operator_grants_authorization": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RecordRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "permission_policy": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "pipeline_revision": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "project_policy": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "resolved_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Resolved Digest",
+      "type": "string"
+    },
+    "responsibility": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "responsibility_permission_ceiling": {
+      "$ref": "#/$defs/DefinitionRef"
+    },
+    "role_instance_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Role Instance Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stage_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Stage Id",
+      "type": "string"
+    },
+    "stage_spec_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Stage Spec Digest",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "role_instance_id",
+    "assignment",
+    "pipeline_revision",
+    "stage_id",
+    "stage_spec_digest",
+    "attempt_id",
+    "agent_spec",
+    "responsibility",
+    "responsibility_permission_ceiling",
+    "capabilities",
+    "permission_policy",
+    "project_policy",
+    "operator_grants",
+    "operator_grants_authorization",
+    "assignment_scope",
+    "guidance_bundle",
+    "model_profile",
+    "backend",
+    "backend_supported_operations",
+    "backend_supported_resources",
+    "backend_limitations",
+    "effective_policy_digest",
+    "resolved_digest"
+  ],
+  "title": "RoleInstance",
+  "type": "object",
+  "x-codexteam-contract-version": "2.0",
+  "x-codexteam-semantic-model": "RoleInstance",
+  "x-codexteam-semantic-module": "codexteam_tools.v2.models"
+}

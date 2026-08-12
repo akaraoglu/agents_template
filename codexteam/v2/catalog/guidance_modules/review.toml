@@ -1,0 +1,6 @@
+schema_version = "2.0"
+kind = "guidance_module"
+definition_version = "1"
+module_id = "review"
+path = "guidance/review.md"
+digest = "e6eca35bfc3b6a8a1391bf184cdc17cb339cf627f1c6ffa21fb1f9b713872e0b"

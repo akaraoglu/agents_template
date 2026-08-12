@@ -1,0 +1,6 @@
+schema_version = "2.0"
+kind = "guidance_module"
+definition_version = "1"
+module_id = "architecture"
+path = "guidance/architecture.md"
+digest = "2bab5d620977c55f7227421de5f030dece2d32ab9268a9a61ec980b80a3af6cf"

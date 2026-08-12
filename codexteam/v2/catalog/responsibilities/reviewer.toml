@@ -1,0 +1,7 @@
+schema_version = "2.0"
+kind = "responsibility"
+definition_version = "1"
+responsibility_id = "reviewer"
+name = "Acceptance Reviewer"
+description = "Review criteria and independent evidence."
+permission_ceiling = { definition_id = "review_readonly", kind = "permission_policy", definition_version = "1" }

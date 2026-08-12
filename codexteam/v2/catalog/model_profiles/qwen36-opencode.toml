@@ -1,0 +1,6 @@
+schema_version = "2.0"
+kind = "model_profile"
+definition_version = "1"
+profile_id = "qwen36-opencode"
+model = "ollama/qwen3.6-27b:latest"
+backend = { definition_id = "opencode", kind = "backend_definition", definition_version = "1" }

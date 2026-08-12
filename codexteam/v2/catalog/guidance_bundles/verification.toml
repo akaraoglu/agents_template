@@ -1,0 +1,5 @@
+schema_version = "2.0"
+kind = "guidance_bundle"
+definition_version = "1"
+bundle_id = "verification"
+modules = [{ definition_id = "verification", kind = "guidance_module", definition_version = "1" }]

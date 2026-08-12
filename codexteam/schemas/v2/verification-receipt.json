@@ -1,0 +1,254 @@
+{
+  "$comment": "Structural validation is necessary but semantic and cross-record validation MUST use codexteam_tools.v2.models.validate_wire plus the model named in x-codexteam-semantic-model.",
+  "$defs": {
+    "ActorRef": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "operator",
+            "project_lead",
+            "agent",
+            "orchestrator",
+            "launcher"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "role_instance_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role Instance Id"
+        }
+      },
+      "required": [
+        "actor_id",
+        "kind"
+      ],
+      "title": "ActorRef",
+      "type": "object"
+    },
+    "CriterionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "command_indexes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "Command Indexes",
+          "type": "array"
+        },
+        "criterion_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_run"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RecordRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "command_indexes",
+        "disposition"
+      ],
+      "title": "CriterionResult",
+      "type": "object"
+    },
+    "RecordRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "record_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "kind",
+        "digest"
+      ],
+      "title": "RecordRef",
+      "type": "object"
+    },
+    "RunBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "change_set": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "plan": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "run": {
+          "$ref": "#/$defs/RecordRef"
+        },
+        "workspace_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Workspace Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "plan",
+        "candidate",
+        "change_set",
+        "workspace_digest"
+      ],
+      "title": "RunBinding",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "candidate": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "change_set": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "criterion_ids": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+        "type": "string"
+      },
+      "title": "Criterion Ids",
+      "type": "array"
+    },
+    "criterion_results": {
+      "items": {
+        "$ref": "#/$defs/CriterionResult"
+      },
+      "title": "Criterion Results",
+      "type": "array"
+    },
+    "issued_at": {
+      "format": "date-time",
+      "title": "Issued At",
+      "type": "string"
+    },
+    "issued_by": {
+      "$ref": "#/$defs/ActorRef"
+    },
+    "kind": {
+      "const": "verification_receipt",
+      "title": "Kind",
+      "type": "string"
+    },
+    "plan": {
+      "$ref": "#/$defs/RecordRef"
+    },
+    "producer_role_instance_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Producer Role Instance Id",
+      "type": "string"
+    },
+    "run_bindings": {
+      "items": {
+        "$ref": "#/$defs/RunBinding"
+      },
+      "title": "Run Bindings",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "verification_receipt_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "title": "Verification Receipt Id",
+      "type": "string"
+    },
+    "workspace_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Workspace Digest",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "verification_receipt_id",
+    "plan",
+    "candidate",
+    "change_set",
+    "workspace_digest",
+    "run_bindings",
+    "criterion_ids",
+    "criterion_results",
+    "accepted",
+    "producer_role_instance_id",
+    "issued_by",
+    "issued_at"
+  ],
+  "title": "VerificationReceipt",
+  "type": "object",
+  "x-codexteam-contract-version": "2.0",
+  "x-codexteam-semantic-model": "VerificationReceipt",
+  "x-codexteam-semantic-module": "codexteam_tools.v2.models"
+}

@@ -1,0 +1,9 @@
+schema_version = "2.0"
+kind = "agent_spec"
+definition_version = "1"
+agent_spec_id = "ct2.design.ux"
+responsibility = { definition_id = "designer", kind = "responsibility", definition_version = "1" }
+capabilities = [{ definition_id = "ux_design", kind = "capability", definition_version = "1" }]
+permission_policy = { definition_id = "ux_writer", kind = "permission_policy", definition_version = "1" }
+guidance_bundle = { definition_id = "ux", kind = "guidance_bundle", definition_version = "1" }
+model_profile = { definition_id = "muse-glimmer-opencode", kind = "model_profile", definition_version = "1" }

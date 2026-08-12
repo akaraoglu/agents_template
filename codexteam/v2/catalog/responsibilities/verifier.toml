@@ -1,0 +1,7 @@
+schema_version = "2.0"
+kind = "responsibility"
+definition_version = "1"
+responsibility_id = "verifier"
+name = "Verifier"
+description = "Produce independent integration evidence."
+permission_ceiling = { definition_id = "test_writer", kind = "permission_policy", definition_version = "1" }
