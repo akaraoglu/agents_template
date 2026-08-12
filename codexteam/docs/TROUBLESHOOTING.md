@@ -4,6 +4,8 @@
 
 Confirm `$CODEX_HOME/<profile>.config.toml` or `~/.codex/<profile>.config.toml` exists. Established execution roles default to `qwen36-27b`; Feature Planner defaults to `gpt54-mini` and accepts an explicit `qwen36-27b` local override. `gemma4-26b` is an optional secondary profile.
 
+For `--backend opencode`, use `--profile muse-glimmer` for `ollama/muse-glimmer:30b`, `--profile ornith35b` for `ollama/ornith:35b`, or `--profile qwen36-27b` for tuned `ollama/qwen3.6-27b:latest`. OpenCode profile resolution does not read a Codex profile TOML. An unknown alias fails before session creation.
+
 ## Result Is Partial
 
 Inspect `output.stdout_tail`, `output.stderr_tail`, and `errors` in the saved result. The worker may have returned malformed JSON, wrong scope fields, copied template content, or no evidence.
@@ -11,6 +13,14 @@ Inspect `output.stdout_tail`, `output.stderr_tail`, and `errors` in the saved re
 ## Turn Has No Final Message
 
 Use the launcher-reported `<turn>.stderr.txt` and adjacent `<turn>.jsonl` files. If `session.json` contains the exact thread ID, send focused feedback with the same team, task, attempt, role, profile, and workspace. Do not start a new attempt merely because one turn ended without a message.
+
+OpenCode records the same opaque ID as both `thread_id` and `opencode_session_id`. Keep `--backend opencode` on continuation. A malformed OpenCode final result is corrected through feedback in that exact session; `--format json` does not make model text schema-valid.
+
+Do not assume the OpenCode SDK fixes local-model finalization. Both Ornith and Qwen failed the structured-output capability gate with `StructuredOutputError`; Qwen produced zero structured results in three exact-session trials. SDK finalization remains disabled. Inspect each OpenCode `<turn>.metrics.json` for `model_steps`, `backend_usage`, and `context_bytes` when profiling repeated calls or guidance reads.
+
+## V2 First Canary Reports a Landlock Error
+
+The first live v2 canary turn exposed Codex's deprecated `features.use_legacy_landlock` setting as an `item.completed` error even though the JSONL stream later emitted `turn.completed`. Current v2 config and sandbox probes omit that feature and use an explicit direct permission profile: Codex applies seccomp and network denial without creating a nested bubblewrap, while the adapter's outer bubblewrap remains the filesystem authority. The adapter now treats every completed error item as a backend failure; do not infer success from `turn.completed` alone or restore the legacy setting. A Qwen final response may be either raw JSON or one full-message lowercase `json` fence, but prose before that fence remains invalid.
 
 ## Resume Uses the Wrong Model or Reasoning Level
 

@@ -30,23 +30,24 @@ def collect_subagent_status(
         status = str(merged.get("status") or merged.get("last_status") or "unknown")
         if turn_state.get("status") == "running":
             status = _running_status(turn_state, observed_at)
-        records.append(
-            {
-                "team": merged.get("team_id", attempt_dir.parents[1].name),
-                "task": merged.get("task_id", attempt_dir.parent.name),
-                "attempt": merged.get("attempt_id", attempt_dir.name),
-                "role": merged.get("agent_role", "unknown"),
-                "profile": merged.get("model_profile", "unknown"),
-                "policy": merged.get("role_policy_name", "legacy/unpinned"),
-                "policy_digest": merged.get("role_policy_digest"),
-                "phase": merged.get("phase") or session.get("last_phase", "unknown"),
-                "turn": merged.get("turn_number") or session.get("turn_count", 0),
-                "status": status,
-                "updated_at": merged.get("updated_at") or session.get("updated_at"),
-                "result": session.get("final_result_path"),
-                "state_path": str((attempt_dir / "turn-state.json").relative_to(project_root)),
-            }
-        )
+        record = {
+            "team": merged.get("team_id", attempt_dir.parents[1].name),
+            "task": merged.get("task_id", attempt_dir.parent.name),
+            "attempt": merged.get("attempt_id", attempt_dir.name),
+            "role": merged.get("agent_role", "unknown"),
+            "profile": merged.get("model_profile", "unknown"),
+            "policy": merged.get("role_policy_name", "legacy/unpinned"),
+            "policy_digest": merged.get("role_policy_digest"),
+            "phase": merged.get("phase") or session.get("last_phase", "unknown"),
+            "turn": merged.get("turn_number") or session.get("turn_count", 0),
+            "status": status,
+            "updated_at": merged.get("updated_at") or session.get("updated_at"),
+            "result": session.get("final_result_path"),
+            "state_path": str((attempt_dir / "turn-state.json").relative_to(project_root)),
+        }
+        if merged.get("execution_backend") == "opencode":
+            record["backend"] = "opencode"
+        records.append(record)
     return sorted(
         records,
         key=lambda item: (str(item.get("updated_at") or ""), item["task"], item["attempt"]),
@@ -112,23 +113,18 @@ def main(argv: list[str] | None = None) -> int:
     if not records:
         print("No subagent sessions found.")
         return 0
-    print("TEAM TASK ATTEMPT ROLE PROFILE POLICY PHASE TURN STATUS UPDATED")
+    include_backend = any(record.get("backend") == "opencode" for record in records)
+    fields = ["team", "task", "attempt", "role"]
+    if include_backend:
+        fields.append("backend")
+    fields.extend(("profile", "policy", "phase", "turn", "status", "updated_at"))
+    headers = ["UPDATED" if field == "updated_at" else field.upper() for field in fields]
+    print(" ".join(headers))
     for record in records:
         print(
             " ".join(
-                str(record[field] or "-")
-                for field in (
-                    "team",
-                    "task",
-                    "attempt",
-                    "role",
-                    "profile",
-                    "policy",
-                    "phase",
-                    "turn",
-                    "status",
-                    "updated_at",
-                )
+                str(record.get(field, "codex" if field == "backend" else None) or "-")
+                for field in fields
             )
         )
     return 0

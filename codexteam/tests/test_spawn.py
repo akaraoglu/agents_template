@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import codexteam_tools.spawn as spawn
+from codexteam_tools import opencode_backend
 from codexteam_tools.contracts import validate_result
 
 
@@ -28,6 +29,7 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
     workspace = tmp_path / "workspace"
     workspace.mkdir(exist_ok=True)
     values = {
+        "backend": "codex",
         "phase": "draft",
         "profile": "qwen36-27b",
         "reasoning_effort": None,
@@ -63,6 +65,31 @@ def event_stream(message: str, *, thread_id: str = THREAD_ID, completed: bool = 
 
 def successful_process(message: str, *, thread_id: str = THREAD_ID) -> spawn.ProcessResult:
     return spawn.ProcessResult(0, event_stream(message, thread_id=thread_id), "", 0.2)
+
+
+def opencode_stream(message: str, *, session_id: str = THREAD_ID) -> str:
+    events = [
+        {"type": "step_start", "sessionID": session_id, "part": {}},
+        {"type": "text", "sessionID": session_id, "part": {"text": message}},
+        {
+            "type": "step_finish",
+            "sessionID": session_id,
+            "part": {
+                "reason": "stop",
+                "tokens": {
+                    "input": 10,
+                    "output": 4,
+                    "reasoning": 2,
+                    "cache": {"read": 3, "write": 1},
+                },
+            },
+        },
+    ]
+    return "".join(json.dumps(event) + "\n" for event in events)
+
+
+def successful_opencode_process(message: str) -> spawn.ProcessResult:
+    return spawn.ProcessResult(0, opencode_stream(message), "", 0.2)
 
 
 def configure_mcp_servers(source_home: Path, projects_root: Path) -> None:
@@ -721,6 +748,110 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
     assert summary["attempt_id"] == "att-001"
     assert summary["turn"]["completed"] is True
     assert summary["turn"]["duration_seconds"] == 0.2
+    assert "execution_backend" not in summary
+    assert "context_bytes" not in summary
+    assert "model_steps" not in summary
+    assert "backend_usage" not in summary
+
+    backend_fields = {
+        "execution_backend",
+        "backend_version",
+        "backend_config_digest",
+        "resolved_model",
+        "opencode_session_id",
+    }
+    state = json.loads((request.session_dir / spawn.TURN_STATE_FILENAME).read_text())
+    assert backend_fields.isdisjoint(session)
+    assert backend_fields.isdisjoint(state)
+    assert backend_fields.isdisjoint(outcome)
+    assert set(session) == {
+        "schema_version",
+        "team_id",
+        "task_id",
+        "attempt_id",
+        "agent_role",
+        "model_profile",
+        "role_policy_name",
+        "role_policy_version",
+        "role_policy_digest",
+        "instruction_bundle_digest",
+        "result_schema_sha256",
+        "model",
+        "model_provider",
+        "model_catalog_json",
+        "model_reasoning_effort",
+        "reasoning_effort_override",
+        "model_verbosity",
+        "mcp_allowed_servers",
+        "mcp_effective_servers",
+        "mcp_missing_servers",
+        "mcp_allowed_tools",
+        "mcp_effective_tools",
+        "workspace_root",
+        "trust_parent_sandbox",
+        "thread_id",
+        "turn_count",
+        "last_phase",
+        "last_status",
+        "last_turn_path",
+        "created_at",
+        "updated_at",
+        "turns",
+    }
+    assert set(state) == {
+        "schema_version",
+        "team_id",
+        "task_id",
+        "attempt_id",
+        "agent_role",
+        "model_profile",
+        "role_policy_name",
+        "role_policy_version",
+        "role_policy_digest",
+        "instruction_bundle_digest",
+        "phase",
+        "turn_number",
+        "status",
+        "started_at",
+        "updated_at",
+        "timeout_seconds",
+        "run_guard_enabled",
+        "mcp_allowed_servers",
+        "mcp_effective_servers",
+        "mcp_missing_servers",
+        "mcp_allowed_tools",
+        "mcp_effective_tools",
+        "changed_paths",
+        "errors",
+        "duration_seconds",
+        "exit_code",
+        "timed_out",
+        "run_guard_triggered",
+    }
+    assert set(outcome) == {
+        "phase",
+        "status",
+        "team_id",
+        "task_id",
+        "attempt_id",
+        "agent_role",
+        "role_policy_name",
+        "role_policy_version",
+        "role_policy_digest",
+        "instruction_bundle_digest",
+        "result_schema_sha256",
+        "mcp_context_project",
+        "thread_id",
+        "turn_count",
+        "session_path",
+        "turn_path",
+        "lead_prompt_path",
+        "events_path",
+        "metrics_path",
+        "stderr_path",
+        "result_path",
+        "errors",
+    }
 
 
 def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: Path, monkeypatch):
@@ -1393,6 +1524,19 @@ def test_forbidden_tester_write_requires_correction(tmp_path: Path, monkeypatch)
     assert state["role_policy_name"] == "codexteam_tester"
 
 
+def test_workspace_snapshot_keeps_control_paths_for_role_boundary_auditing(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    control = workspace / ".codexteam/lead-prompt-T002-att-001.md"
+    runtime = workspace / ".codexteam/runtime/session.json"
+    control.parent.mkdir(parents=True)
+    runtime.parent.mkdir(parents=True)
+    control.write_text("feedback\n")
+    runtime.write_text("{}\n")
+    snapshot = spawn.snapshot_workspace(workspace)
+    assert ".codexteam/lead-prompt-T002-att-001.md" in snapshot
+    assert ".codexteam/runtime/session.json" not in snapshot
+
+
 def test_running_turn_state_is_written_before_worker_execution(tmp_path: Path, monkeypatch):
     request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
     observed = {}
@@ -1411,3 +1555,1024 @@ def test_running_turn_state_is_written_before_worker_execution(tmp_path: Path, m
     terminal = json.loads((request.session_dir / "turn-state.json").read_text())
     assert terminal["status"] == "draft_ready"
     assert outcome["role_policy_name"] == "codexteam_developer"
+
+
+def test_parser_and_legacy_session_default_to_codex(tmp_path: Path, monkeypatch):
+    assert spawn.build_parser().parse_args(
+        [
+            "--phase", "draft", "--team", "team-1", "--task", "T002",
+            "--attempt", "att-001", "--role", "developer", "--workspace", str(tmp_path),
+            "--prompt", "work",
+        ]
+    ).backend == "codex"
+    request, _ = run_draft(tmp_path, monkeypatch)
+    session = json.loads(request.session_path.read_text())
+    assert "execution_backend" not in session
+    request.session_path.write_text(json.dumps(session))
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+    )
+    assert feedback.backend == "codex"
+
+
+def test_codex_dry_run_retains_pre_backend_shape(tmp_path: Path, monkeypatch, capsys):
+    args = request_args(tmp_path, monkeypatch)
+    code = spawn.main([
+        "--phase", "draft", "--profile", args.profile,
+        "--team", args.team, "--task", args.task, "--attempt", args.attempt,
+        "--role", args.role, "--workspace", args.workspace,
+        "--prompt", args.prompt, "--dry-run",
+    ])
+
+    assert code == 0
+    details = json.loads(capsys.readouterr().out)
+    assert set(details) == {
+        "phase",
+        "command",
+        "profile_file",
+        "role_policy",
+        "role_policy_version",
+        "role_policy_digest",
+        "role_policy_source",
+        "default_profile",
+        "sandbox_mode",
+        "mcp_allowed_servers",
+        "mcp_effective_servers",
+        "mcp_missing_servers",
+        "mcp_allowed_tools",
+        "mcp_effective_tools",
+        "mcp_context_project",
+        "reasoning_effort",
+        "reasoning_effort_override",
+        "workspace",
+        "trust_parent_sandbox",
+        "run_guard",
+        "session_path",
+        "lead_prompt_path",
+        "turn_path",
+        "stderr_path",
+        "result_schema_path",
+        "result_path",
+        "skills",
+    }
+    assert details["phase"] == "draft"
+    assert details["profile_file"].endswith("qwen36-27b.config.toml")
+    assert details["reasoning_effort"] == "medium"
+    assert details["command"][:2] == ["codex", "exec"]
+
+
+def test_opencode_resolves_local_profiles_without_codex_profile(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch, backend="opencode", profile="ornith35b")
+    Path(spawn.os.environ["CODEX_HOME"]).joinpath("qwen36-27b.config.toml").unlink()
+    request = spawn.prepare_request(args)
+    assert request.model == "ollama/ornith:35b"
+    assert request.model_provider == "ollama"
+    qwen = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b")
+    )
+    assert qwen.model == "ollama/qwen3.6-27b:latest"
+    assert qwen.model_provider == "ollama"
+    muse = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, backend="opencode", profile="muse-glimmer")
+    )
+    assert muse.model == "ollama/muse-glimmer:30b"
+    assert muse.model_provider == "ollama"
+    muse_config = opencode_backend.build_config(
+        model=muse.model,
+        role_name="Developer",
+        role_instructions="Implement the task.",
+    )
+    assert muse_config["model"] == muse_config["small_model"] == "ollama/muse-glimmer:30b"
+    assert muse_config["provider"]["ollama"]["models"] == {
+        "muse-glimmer:30b": {"name": "Muse Glimmer 30B"}
+    }
+    with pytest.raises(ValueError, match="profile must be one of"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, backend="opencode", profile="unknown")
+        )
+
+
+def test_opencode_command_environment_and_prompt_are_private(tmp_path: Path, monkeypatch):
+    workspace = Path(request_args(tmp_path, monkeypatch).workspace)
+    (workspace / "AGENTS.md").write_text("PINNED PROJECT RULE\n")
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, backend="opencode", profile="ornith35b")
+    )
+    turn = spawn.prepare_turn(request)
+    command = spawn.build_command(request, turn)
+    assert command == [
+        "opencode", "run", "--pure", "--format", "json", "--model",
+        "ollama/ornith:35b", "--agent", "codexteam", "--dir", str(request.workspace),
+        "--title", "CodexTeam T002/att-001",
+    ]
+    prompt = spawn.build_prompt(request, turn)
+    assert "[PINNED GUIDANCE:" in prompt
+    assert "[GUIDANCE: implementation.md]" not in prompt
+    assert prompt.count(request.prompt) == 1
+
+    observed = {}
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: observed.update(
+            env=kwargs["env"],
+            config=json.loads(Path(kwargs["env"]["OPENCODE_CONFIG"]).read_text()),
+        ) or successful_opencode_process("DRAFT"),
+    )
+    _, code = spawn.run_spawn(request)
+    assert code == 0
+    assert observed["env"]["HOME"].startswith(str(request.session_dir))
+    assert observed["env"]["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
+    assert observed["env"]["OPENCODE_DISABLE_MODELS_FETCH"] == "1"
+    assert observed["env"]["OPENCODE_DISABLE_CLAUDE_CODE"] == "1"
+    assert observed["env"]["OPENCODE_CONFIG"] == str(request.backend_config_path)
+    config = observed["config"]
+    assert config["provider"]["ollama"] == {
+        "npm": "@ai-sdk/openai-compatible",
+        "options": {"baseURL": "http://localhost:11434/v1"},
+        "models": {"ornith:35b": {"name": "Ornith 35B"}},
+    }
+    assert "PINNED PROJECT RULE" in config["agent"]["codexteam"]["prompt"]
+    assert config["agent"]["codexteam"]["permission"]["webfetch"] == "deny"
+    assert config["agent"]["codexteam"]["permission"]["websearch"] == "deny"
+
+
+def test_opencode_spawn_records_exact_unicode_context_bytes(
+    tmp_path: Path,
+    monkeypatch,
+    result_factory,
+):
+    args = request_args(
+        tmp_path,
+        monkeypatch,
+        backend="opencode",
+        profile="ornith35b",
+        prompt="Implement café λ.",
+    )
+    workspace = Path(args.workspace)
+    agents = "Pinned 日本語 rule.\n"
+    (workspace / "AGENTS.md").write_text(agents, encoding="utf-8")
+    guidance = tmp_path / "unicode-guidance.md"
+    guidance.write_text("Guidance résumé.\n", encoding="utf-8")
+    args.skill_file = [str(guidance)]
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    observed = {}
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: observed.update(prompt=kwargs["prompt"])
+        or successful_opencode_process("DRAFT T002/att-001"),
+    )
+    draft = spawn.prepare_request(args)
+    _, draft_code = spawn.run_spawn(draft)
+    assert draft_code == 0
+
+    draft_metrics = json.loads(
+        (draft.session_dir / "turns/001-draft.metrics.json").read_text()
+    )
+    draft_config = json.loads(draft.backend_config_path.read_text())
+    assert draft_metrics["context_bytes"] == {
+        "worker_prompt_bytes": len(observed["prompt"].encode("utf-8")),
+        "agent_prompt_bytes": len(
+            draft_config["agent"][opencode_backend.AGENT]["prompt"].encode("utf-8")
+        ),
+        "lead_prompt_source_bytes": len(draft.prompt.encode("utf-8")),
+        "available_guidance_snapshot_bytes": len(guidance.read_bytes()),
+        "available_guidance_snapshot_count": 1,
+        "available_result_schema_bytes": len(
+            (draft.session_dir / spawn.RESULT_SCHEMA_FILENAME).read_bytes()
+        ),
+    }
+
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    result = result_factory(task_id="T002", role="developer")
+    result["file_changes"] = []
+    observed.clear()
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: observed.update(prompt=kwargs["prompt"])
+        or successful_opencode_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            backend="opencode",
+            profile="ornith35b",
+            phase="final",
+            prompt="Accept résumé ✓.",
+        )
+    )
+    final_turn = spawn.prepare_turn(final)
+    checkpoint_json = json.dumps(
+        final_turn.session["accepted_checkpoint"],
+        indent=2,
+        sort_keys=True,
+    )
+    _, final_code = spawn.run_spawn(final)
+    assert final_code == 0
+
+    final_metrics = json.loads(
+        (final.session_dir / "turns/002-final.metrics.json").read_text()
+    )
+    final_config = json.loads(final.backend_config_path.read_text())
+    assert final_metrics["context_bytes"] == {
+        "worker_prompt_bytes": len(observed["prompt"].encode("utf-8")),
+        "agent_prompt_bytes": len(
+            final_config["agent"][opencode_backend.FINAL_AGENT]["prompt"].encode("utf-8")
+        ),
+        "lead_prompt_source_bytes": len(final.prompt.encode("utf-8")),
+        "available_guidance_snapshot_bytes": len(guidance.read_bytes()),
+        "available_guidance_snapshot_count": 1,
+        "available_result_schema_bytes": len(
+            (final.session_dir / spawn.RESULT_SCHEMA_FILENAME).read_bytes()
+        ),
+        "accepted_checkpoint_embedded_bytes": len(checkpoint_json.encode("utf-8")),
+    }
+
+
+def test_opencode_environment_neutralizes_hostile_parent_overrides(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", '{"permission":"allow"}')
+    monkeypatch.setenv("OPENCODE_PERMISSION", '{"*":"allow"}')
+    monkeypatch.setenv("OPENCODE_DB", "/tmp/hostile-opencode.db")
+    monkeypatch.setenv("OPENCODE_MODELS_PATH", "/tmp/hostile-models.json")
+    monkeypatch.setenv("OPENCODE_EXPERIMENTAL_NATIVE_LLM", "1")
+    monkeypatch.setenv("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX", "999999")
+    monkeypatch.setenv("OPENCODE_WORKSPACE_ID", "hostile-workspace")
+    observed = {}
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: observed.update(env=kwargs["env"])
+        or successful_opencode_process("DRAFT"),
+    )
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, backend="opencode", profile="ornith35b")
+    )
+    _, code = spawn.run_spawn(request)
+    assert code == 0
+    env = observed["env"]
+    assert "OPENCODE_CONFIG_CONTENT" not in env
+    assert "OPENCODE_PERMISSION" not in env
+    assert "OPENCODE_DB" not in env
+    assert "OPENCODE_MODELS_PATH" not in env
+    assert "OPENCODE_EXPERIMENTAL_NATIVE_LLM" not in env
+    assert "OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX" not in env
+    assert "OPENCODE_WORKSPACE_ID" not in env
+    assert env["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "1"
+    assert env["OPENCODE_DISABLE_EXTERNAL_SKILLS"] == "1"
+    assert env["OPENCODE_CONFIG"] == str(request.backend_config_path)
+
+
+@pytest.mark.parametrize(
+    ("baseline", "previous", "current", "expected"),
+    [
+        ({}, {"src/main.py": {"action": "created", "sha256": "new"}}, {}, {}),
+        (
+            {"src/main.py": "original"},
+            {"src/main.py": {"action": "modified", "sha256": "changed"}},
+            {"src/main.py": "original"},
+            {},
+        ),
+        (
+            {"src/main.py": "original"},
+            {"src/main.py": {"action": "deleted", "sha256": None}},
+            {"src/main.py": "original"},
+            {},
+        ),
+        (
+            {"src/main.py": "original"},
+            {},
+            {"src/main.py": "changed"},
+            {"src/main.py": {"action": "modified", "sha256": "changed"}},
+        ),
+    ],
+)
+def test_opencode_worker_change_manifest_uses_attempt_baseline(
+    baseline, previous, current, expected
+):
+    merged = spawn._merge_worker_change_manifest(
+        baseline,
+        previous,
+        {"src/main.py": "modified"},
+        current,
+    )
+    assert merged == expected
+
+
+def test_opencode_resume_exact_session_and_mismatches_rejected(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    draft = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, backend="opencode", profile="ornith35b")
+    )
+    spawn.run_spawn(draft)
+    feedback = spawn.prepare_request(
+        request_args(
+            tmp_path, monkeypatch, backend="opencode", profile="ornith35b",
+            phase="feedback", prompt="revise",
+        )
+    )
+    command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
+    assert command[command.index("--session") + 1] == THREAD_ID
+    assert "--continue" not in command
+    assert "--fork" not in command
+    with pytest.raises(ValueError, match="backend mismatch"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="wrong backend")
+        )
+    mismatched_profile = spawn.prepare_request(
+        request_args(
+            tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
+            phase="feedback", prompt="wrong profile",
+        )
+    )
+    with pytest.raises(ValueError, match="session scope mismatch"):
+        spawn.prepare_turn(mismatched_profile)
+
+
+def test_opencode_mismatched_resume_preserves_changes_under_stored_session(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    spawn.run_spawn(draft)
+    product = draft.workspace / "src/main.py"
+
+    def mismatched_change(*args, **kwargs):
+        product.parent.mkdir(exist_ok=True)
+        product.write_text("VALUE = 1\n")
+        return spawn.ProcessResult(
+            0,
+            opencode_stream("mismatched", session_id="different-session"),
+            "",
+            0.1,
+        )
+
+    monkeypatch.setattr(spawn, "run_process", mismatched_change)
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="revise", **values)
+    )
+    outcome, code = spawn.run_spawn(feedback)
+    assert code == 1
+    assert outcome["status"] == "session_mismatch"
+    session = json.loads(feedback.session_path.read_text())
+    assert session["thread_id"] == THREAD_ID
+    assert session["opencode_session_id"] == THREAD_ID
+    assert session["worker_change_manifest"]["src/main.py"]["action"] == "created"
+
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT recovered")
+    )
+    recovery = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="recover", **values)
+    )
+    _, recovery_code = spawn.run_spawn(recovery)
+    assert recovery_code == 0
+    recovered = json.loads(recovery.session_path.read_text())
+    assert recovered["accepted_checkpoint"]["accepted_paths"]["src/main.py"]["action"] == "created"
+
+
+@pytest.mark.parametrize("initially_present", [True, False])
+def test_opencode_restored_baseline_bytes_remove_net_change(
+    tmp_path: Path, monkeypatch, initially_present
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    args = request_args(tmp_path, monkeypatch, **values)
+    product = Path(args.workspace) / "src/main.py"
+    product.parent.mkdir()
+    if initially_present:
+        product.write_text("ORIGINAL\n")
+
+    def first_turn(*args, **kwargs):
+        if initially_present:
+            product.unlink()
+        else:
+            product.write_text("CREATED\n")
+        return successful_opencode_process("DRAFT")
+
+    monkeypatch.setattr(spawn, "run_process", first_turn)
+    draft = spawn.prepare_request(args)
+    spawn.run_spawn(draft)
+
+    def restore_baseline(*args, **kwargs):
+        if initially_present:
+            product.write_text("ORIGINAL\n")
+        else:
+            product.unlink()
+        return successful_opencode_process("DRAFT restored")
+
+    monkeypatch.setattr(spawn, "run_process", restore_baseline)
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="restore", **values)
+    )
+    _, code = spawn.run_spawn(feedback)
+    assert code == 0
+    session = json.loads(feedback.session_path.read_text())
+    assert session["worker_change_manifest"] == {}
+    assert session["accepted_checkpoint"]["accepted_paths"] == {}
+
+
+def test_opencode_workspace_baseline_digest_is_pinned(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    spawn.run_spawn(draft)
+    baseline = draft.session_dir / spawn.WORKSPACE_BASELINE_FILENAME
+    assert stat.S_IMODE(baseline.stat().st_mode) == 0o600
+    session = json.loads(draft.session_path.read_text())
+    assert session["workspace_baseline_sha256"] == spawn._workspace_baseline_digest(
+        json.loads(baseline.read_text())
+    )
+    baseline.write_text('{"tampered":"digest"}\n')
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue", **values)
+    )
+    with pytest.raises(ValueError, match="workspace baseline digest mismatch"):
+        spawn.run_spawn(feedback)
+
+
+def test_opencode_worker_cannot_repin_mutated_workspace_baseline(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    spawn.run_spawn(draft)
+    original_session = json.loads(draft.session_path.read_text())
+    trusted_digest = original_session["workspace_baseline_sha256"]
+    baseline = draft.session_dir / spawn.WORKSPACE_BASELINE_FILENAME
+    trusted_content = baseline.read_bytes()
+    product = draft.workspace / "src/main.py"
+
+    def mutate_private_baseline(*args, **kwargs):
+        baseline.write_text('{"attacker":"controlled"}\n')
+        product.parent.mkdir(exist_ok=True)
+        product.write_text("VALUE = 1\n")
+        return successful_opencode_process("DRAFT tampered")
+
+    monkeypatch.setattr(spawn, "run_process", mutate_private_baseline)
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue", **values)
+    )
+    outcome, code = spawn.run_spawn(feedback)
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert any("changed the private workspace baseline" in error for error in outcome["errors"])
+    session = json.loads(feedback.session_path.read_text())
+    assert session["thread_id"] == THREAD_ID
+    assert session["workspace_baseline_sha256"] == trusted_digest
+    assert session["worker_change_manifest"]["src/main.py"]["action"] == "created"
+    assert baseline.read_bytes() == trusted_content
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT recovered")
+    )
+    recovery = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="recover", **values)
+    )
+    _, recovery_code = spawn.run_spawn(recovery)
+    assert recovery_code == 0
+    recovered = json.loads(recovery.session_path.read_text())
+    accepted = recovered["accepted_checkpoint"]["accepted_paths"]
+    assert accepted["src/main.py"]["action"] == "created"
+
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    result = result_factory(task_id="T002", role="developer")
+    result["file_changes"] = []
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    outcome, final_code = spawn.run_spawn(final)
+    assert final_code == 1
+    assert any(
+        "must declare accepted created path: src/main.py" in error
+        for error in outcome["errors"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("reasoning_effort", "medium"),
+        ("trust_parent_sandbox", True),
+        ("run_guard", True),
+    ],
+)
+def test_opencode_rejects_unsupported_flags(tmp_path: Path, monkeypatch, flag, value):
+    with pytest.raises(ValueError, match=f"--{flag.replace('_', '-')}"):
+        spawn.prepare_request(
+            request_args(
+                tmp_path, monkeypatch, backend="opencode", profile="ornith35b", **{flag: value}
+            )
+        )
+
+
+def test_opencode_config_disables_integrations_and_final_agent_is_read_only():
+    config = opencode_backend.build_config(
+        model="ollama/ornith:35b",
+        role_name="developer", role_instructions="Implement only the handoff."
+    )
+    assert config["plugin"] == []
+    assert config["mcp"] == {}
+    assert config["lsp"] is False
+    assert config["skills"] == {"paths": [], "urls": []}
+    assert config["enabled_providers"] == ["ollama"]
+    assert config["provider"]["ollama"]["npm"] == "@ai-sdk/openai-compatible"
+    final = config["agent"]["codexteam-final"]["permission"]
+    assert final["edit"] == "deny"
+    assert final["bash"] == "deny"
+    assert final["read"] == "allow"
+    assert final["webfetch"] == "deny"
+    assert final["websearch"] == "deny"
+
+
+def test_opencode_qwen_config_selects_only_tuned_qwen_model():
+    config = opencode_backend.build_config(
+        model="ollama/qwen3.6-27b:latest",
+        role_name="reviewer",
+        role_instructions="Review the handoff.",
+    )
+    assert config["model"] == "ollama/qwen3.6-27b:latest"
+    assert config["small_model"] == "ollama/qwen3.6-27b:latest"
+    assert config["provider"]["ollama"]["models"] == {
+        "qwen3.6-27b:latest": {"name": "Qwen3.6 27B"}
+    }
+    assert config["agent"]["codexteam"]["model"] == "ollama/qwen3.6-27b:latest"
+    assert config["agent"]["codexteam-final"]["model"] == "ollama/qwen3.6-27b:latest"
+
+
+def test_opencode_event_parser_handles_tools_steps_and_bad_streams():
+    text = opencode_stream("first").replace(
+        json.dumps({
+            "type": "step_finish", "sessionID": THREAD_ID,
+            "part": {"reason": "stop", "tokens": {"input": 10, "output": 4,
+            "reasoning": 2, "cache": {"read": 3, "write": 1}}},
+        }) + "\n",
+        json.dumps({"type": "tool_use", "sessionID": THREAD_ID,
+                    "part": {"tool": "read", "state": {"status": "completed"}}}) + "\n"
+        + json.dumps({"type": "step_finish", "sessionID": THREAD_ID,
+                      "part": {"reason": "tool-calls", "tokens": {"input": 1, "output": 1}}}) + "\n"
+        + json.dumps({"type": "text", "sessionID": THREAD_ID, "part": {"text": "last"}}) + "\n"
+        + json.dumps({"type": "step_finish", "sessionID": THREAD_ID,
+                      "part": {"reason": "stop", "tokens": {"input": 2, "output": 2}}}) + "\n",
+    )
+    summary = opencode_backend.parse_events(text)
+    assert summary.thread_ids == (THREAD_ID,)
+    assert summary.last_agent_message == "last"
+    assert summary.completed is True
+    assert summary.parse_errors == ()
+
+    error = opencode_backend.parse_events(
+        json.dumps({"type": "error", "sessionID": THREAD_ID, "error": {"data": {"message": "bad"}}}) + "\n"
+    )
+    assert error.failures == ("bad",)
+    malformed = opencode_backend.parse_events("not-json\n")
+    assert malformed.parse_errors
+    inconsistent = opencode_backend.parse_events(
+        opencode_stream("x") + json.dumps({"type": "text", "sessionID": "other", "part": {"text": "y"}}) + "\n"
+    )
+    assert any("inconsistent" in item for item in inconsistent.parse_errors)
+    for reason in ("length", "unknown"):
+        non_terminal = opencode_backend.parse_events(
+            json.dumps({"type": "text", "sessionID": THREAD_ID, "part": {"text": "x"}}) + "\n"
+            + json.dumps({"type": "step_finish", "sessionID": THREAD_ID,
+                          "part": {"reason": reason, "tokens": {}}}) + "\n"
+        )
+        assert non_terminal.completed is False
+
+
+@pytest.mark.parametrize(
+    ("profile", "model", "model_id"),
+    [
+        ("ornith35b", "ollama/ornith:35b", "ornith:35b"),
+        ("qwen36-27b", "ollama/qwen3.6-27b:latest", "qwen3.6-27b:latest"),
+    ],
+)
+def test_fake_opencode_draft_feedback_final_persists_session_and_result(
+    tmp_path, monkeypatch, result_factory, profile, model, model_id
+):
+    result = result_factory(task_id="T002", role="developer")
+    result["file_changes"] = []
+    fake = tmp_path / "fake-opencode"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"session = {THREAD_ID!r}\n"
+        f"result = {result!r}\n"
+        "if '--version' in sys.argv: print('1.18.14'); raise SystemExit\n"
+        "args = sys.argv[1:]\n"
+        "home = Path(os.environ['HOME']); count_file = home / 'count'\n"
+        "config_path = Path(os.environ['OPENCODE_CONFIG'])\n"
+        "config = json.loads(config_path.read_text())\n"
+        "assert config_path.parent == Path(os.environ['OPENCODE_CONFIG_DIR'])\n"
+        "assert config_path.parents[1] == Path(os.environ['XDG_CONFIG_HOME'])\n"
+        f"assert config['provider']['ollama']['models'][{model_id!r}]\n"
+        "(home / 'observed-config.json').write_text(json.dumps(config))\n"
+        "count = int(count_file.read_text()) if count_file.exists() else 0\n"
+        "if count and args[args.index('--session') + 1] != session: raise SystemExit(8)\n"
+        "count += 1; count_file.write_text(str(count))\n"
+        "message = json.dumps(result) if args[args.index('--agent') + 1] == 'codexteam-final' else f'DRAFT T002/att-001 turn {count}'\n"
+        "print(json.dumps({'type':'step_start','sessionID':session,'part':{}}))\n"
+        "print(json.dumps({'type':'text','sessionID':session,'part':{'text':message}}))\n"
+        "print(json.dumps({'type':'step_finish','sessionID':session,'part':{'reason':'stop','tokens':{'input':2,'output':1,'reasoning':0,'cache':{'read':0,'write':0}}}}))\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    values = {"backend": "opencode", "profile": profile}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, phase="draft", **values))
+    (draft.workspace / "src").mkdir()
+    (draft.workspace / "src/main.py").write_text("VALUE = 1\n")
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    draft_outcome, draft_code = spawn.run_spawn(draft, executable=str(fake))
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="revise", **values)
+    )
+    feedback_outcome, feedback_code = spawn.run_spawn(feedback, executable=str(fake))
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    final_outcome, final_code = spawn.run_spawn(final, executable=str(fake))
+    session = json.loads(final.session_path.read_text())
+    state = json.loads((final.session_dir / "turn-state.json").read_text())
+    assert (draft_code, feedback_code, final_code) == (0, 0, 0)
+    assert draft_outcome["thread_id"] == feedback_outcome["thread_id"] == THREAD_ID
+    assert final_outcome["status"] == "completed"
+    assert session["execution_backend"] == "opencode"
+    assert session["opencode_session_id"] == THREAD_ID
+    assert state["opencode_session_id"] == THREAD_ID
+    assert session["backend_version"] == "1.18.14"
+    assert session["backend_config_digest"]
+    assert session["accepted_checkpoint"]["message_sha256"]
+    assert (final.session_dir / "opencode-runtime/home/count").read_text() == "3"
+    observed_config = json.loads(
+        (final.session_dir / "opencode-runtime/home/observed-config.json").read_text()
+    )
+    assert observed_config["model"] == model
+    validate_result(json.loads(final.result_path.read_text()), expected_attempt="att-001")
+
+
+def test_opencode_final_rejects_workspace_changed_after_accepted_checkpoint(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    product = draft.workspace / "src/main.py"
+    product.parent.mkdir()
+    product.write_text("VALUE = 1\n")
+
+    def modify_product(*args, **kwargs):
+        product.write_text("VALUE = 2\n")
+        return successful_opencode_process("DRAFT")
+
+    monkeypatch.setattr(spawn, "run_process", modify_product)
+    spawn.run_spawn(draft)
+    product.write_text("VALUE = 3\n")
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    with pytest.raises(ValueError, match="product path mismatch"):
+        spawn.run_spawn(final)
+
+
+def test_opencode_final_tolerates_private_lead_prompt_update(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    private_prompt = draft.workspace / ".codexteam/lead-prompt-T002-att-001.md"
+    private_prompt.parent.mkdir()
+    private_prompt.write_text("FEEDBACK: REVISE\n")
+    product = draft.workspace / "src/main.py"
+    product.parent.mkdir()
+    product.write_text("VALUE = 1\n")
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    spawn.run_spawn(draft)
+
+    private_prompt.write_text("FEEDBACK: ACCEPT\n")
+    snapshot = spawn.snapshot_workspace(draft.workspace)
+    assert ".codexteam/lead-prompt-T002-att-001.md" in snapshot
+    assert "src/main.py" in snapshot
+
+    result = result_factory(task_id="T002", role="developer")
+    result["file_changes"] = []
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    outcome, code = spawn.run_spawn(final)
+    assert code == 0
+    assert outcome["status"] == "completed"
+
+
+def test_opencode_empty_accepted_manifest_rejects_declared_change(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    spawn.run_spawn(draft)
+    extra = draft.workspace / "extra.py"
+    extra.write_text("EXTRA = True\n")
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    result = result_factory(task_id="T002", role="developer", file_path="extra.py")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    outcome, code = spawn.run_spawn(final)
+    assert code == 1
+    assert any("path outside accepted product manifest: extra.py" in error for error in outcome["errors"])
+
+
+def test_opencode_final_allows_independent_gate_and_test_artifacts(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    product = draft.workspace / "src/main.py"
+    product.parent.mkdir()
+
+    def create_product(*args, **kwargs):
+        product.write_text("VALUE = 1\n")
+        return successful_opencode_process("DRAFT")
+
+    monkeypatch.setattr(spawn, "run_process", create_product)
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    spawn.run_spawn(draft)
+    integration_test = draft.workspace / "tests/integration/test_feature.py"
+    integration_test.parent.mkdir(parents=True)
+    integration_test.write_text("def test_feature(): assert True\n")
+    gate = draft.workspace / "results/gates/integration.json"
+    gate.parent.mkdir(parents=True)
+    gate.write_text('{"status":"passed"}\n')
+
+    result = result_factory(task_id="T002", role="developer")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    outcome, code = spawn.run_spawn(final)
+    assert code == 0
+    assert outcome["status"] == "completed"
+
+
+def test_opencode_rolling_gate_change_is_not_an_accepted_product_path(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    product = draft.workspace / "src/main.py"
+    product.parent.mkdir()
+    rolling_gate = draft.workspace / "results/gates/development.json"
+
+    def worker_changes(*args, **kwargs):
+        product.write_text("VALUE = 1\n")
+        rolling_gate.parent.mkdir(parents=True)
+        rolling_gate.write_text('{"status":"passed","run":1}\n')
+        return successful_opencode_process("DRAFT")
+
+    monkeypatch.setattr(spawn, "run_process", worker_changes)
+    draft.result_dir.mkdir(exist_ok=True)
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    spawn.run_spawn(draft)
+    session = json.loads(draft.session_path.read_text())
+    assert "src/main.py" in session["accepted_checkpoint"]["accepted_paths"]
+    assert "results/gates/development.json" not in session["accepted_checkpoint"]["accepted_paths"]
+    assert "results/gates/development.json" in session["worker_change_manifest"]
+    rolling_gate.write_text('{"status":"passed","run":2}\n')
+
+    result = result_factory(task_id="T002", role="developer")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    outcome, code = spawn.run_spawn(final)
+    assert code == 0
+    assert outcome["status"] == "completed"
+
+
+def test_opencode_failed_turn_changes_survive_noop_feedback(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    product = draft.workspace / "src/main.py"
+    product.parent.mkdir()
+
+    def failed_change(*args, **kwargs):
+        product.write_text("VALUE = 1\n")
+        return spawn.ProcessResult(
+            1,
+            json.dumps({"type": "step_start", "sessionID": THREAD_ID, "part": {}}) + "\n",
+            "failed",
+            0.1,
+        )
+
+    monkeypatch.setattr(spawn, "run_process", failed_change)
+    outcome, code = spawn.run_spawn(draft)
+    assert code == 1
+    assert outcome["status"] == "turn_failed"
+    failed_session = json.loads(draft.session_path.read_text())
+    assert failed_session["worker_change_manifest"]["src/main.py"]["action"] == "created"
+
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT recovered")
+    )
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="recover", **values)
+    )
+    _, feedback_code = spawn.run_spawn(feedback)
+    assert feedback_code == 0
+    session = json.loads(feedback.session_path.read_text())
+    assert session["accepted_checkpoint"]["accepted_paths"]["src/main.py"]["action"] == "created"
+
+
+@pytest.mark.parametrize(
+    ("declared_changes", "expected_error"),
+    [
+        ([], "must declare accepted created path: src/main.py"),
+        (
+            [{"path": "src/main.py", "action": "modified", "size_bytes": 1}],
+            "must declare accepted created path: src/main.py",
+        ),
+        (
+            [
+                {"path": "src/main.py", "action": "created", "size_bytes": 1},
+                {"path": "extra.py", "action": "created", "size_bytes": 1},
+            ],
+            "path outside accepted product manifest: extra.py",
+        ),
+        (
+            [
+                {"path": "src/main.py", "action": "created", "size_bytes": 1},
+                {"path": "src/main.py", "action": "created", "size_bytes": 1},
+            ],
+            "duplicate path: src/main.py",
+        ),
+    ],
+)
+def test_opencode_noop_feedback_retains_provenance_and_rejects_bad_declaration(
+    tmp_path: Path, monkeypatch, result_factory, declared_changes, expected_error
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    product = draft.workspace / "src/main.py"
+    product.parent.mkdir()
+
+    def create_product(*args, **kwargs):
+        product.write_text("VALUE = 1\n")
+        return successful_opencode_process("DRAFT")
+
+    monkeypatch.setattr(spawn, "run_process", create_product)
+    draft.result_dir.mkdir()
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    spawn.run_spawn(draft)
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT revised")
+    )
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="revise", **values)
+    )
+    _, feedback_code = spawn.run_spawn(feedback)
+    assert feedback_code == 0
+    session = json.loads(feedback.session_path.read_text())
+    assert session["accepted_checkpoint"]["changed_paths"] == ["src/main.py"]
+    assert session["accepted_checkpoint"]["accepted_paths"]["src/main.py"]["action"] == "created"
+
+    result = result_factory(task_id="T002", role="developer")
+    result["file_changes"] = declared_changes
+    if any(item["path"] == "extra.py" for item in declared_changes):
+        (draft.workspace / "extra.py").write_text("EXTRA = True\n")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
+    )
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+    )
+    outcome, code = spawn.run_spawn(final)
+    assert code == 1
+    assert any(expected_error in error for error in outcome["errors"])
+
+
+def test_opencode_continuation_rejects_config_mismatch(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    values = {"backend": "opencode", "profile": "ornith35b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    spawn.run_spawn(draft)
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue", **values)
+    )
+    config = json.loads(feedback.backend_config_path.read_text())
+    config["share"] = "manual"
+    feedback.backend_config_path.write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="config digest mismatch"):
+        spawn.run_spawn(feedback)
+
+
+def test_opencode_continuation_uses_pinned_project_instructions_and_version(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(tmp_path, monkeypatch, backend="opencode", profile="ornith35b")
+    workspace = Path(args.workspace)
+    (workspace / "AGENTS.md").write_text("ORIGINAL PROJECT RULE\n")
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    draft = spawn.prepare_request(args)
+    spawn.run_spawn(draft)
+    config_before = draft.backend_config_path.read_bytes()
+    (workspace / "AGENTS.md").write_text("MUTATED PROJECT RULE\n")
+    feedback = spawn.prepare_request(
+        request_args(
+            tmp_path, monkeypatch, backend="opencode", profile="ornith35b",
+            phase="feedback", prompt="continue",
+        )
+    )
+    assert feedback.backend_config_path.read_bytes() == config_before
+    outcome, code = spawn.run_spawn(feedback)
+    assert code == 0
+    assert outcome["status"] == "draft_ready"
+    assert feedback.backend_config_path.read_bytes() == config_before
+    next_feedback = spawn.prepare_request(
+        request_args(
+            tmp_path, monkeypatch, backend="opencode", profile="ornith35b",
+            phase="feedback", prompt="continue again",
+        )
+    )
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.19.0")
+    with pytest.raises(ValueError, match="backend version mismatch"):
+        spawn.run_spawn(next_feedback)
+
+
+def test_opencode_dry_run_has_no_reasoning_effort(tmp_path: Path, monkeypatch, capsys):
+    code = spawn.main([
+        "--backend", "opencode", "--phase", "draft", "--profile", "ornith35b",
+        "--team", "team-1", "--task", "T002", "--attempt", "att-001",
+        "--role", "developer", "--workspace", request_args(tmp_path, monkeypatch).workspace,
+        "--prompt", "work", "--dry-run",
+    ])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["reasoning_effort"] is None

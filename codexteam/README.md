@@ -1,6 +1,6 @@
 # CodexTeam
 
-CodexTeam is a local workflow toolkit for coordinating bounded Codex subagents around a specification-driven software project. It provides project guidance, task handoffs, strict result contracts, safe local-model spawning, independent verification, and deterministic project-state closure.
+CodexTeam is a local workflow toolkit for coordinating bounded AI subagents around a specification-driven software project. It provides project guidance, task handoffs, strict result contracts, local-model spawning, independent verification, and deterministic project-state closure. Codex remains the default execution backend; an explicit OpenCode canary backend is also available.
 
 It is not an application server, controller service, board, HTTP API, or MCP implementation. Historical archives are not source inputs for this system.
 
@@ -60,7 +60,7 @@ For a cloud-enabled cold start, `gpt54-mini` at medium reasoning is the recommen
 - `gemma4-26b`: optional bounded secondary perspective when its task-specific capability has been confirmed
 - `gpt54-mini`: controlled cloud profile and Feature Planner default; E2E runner examples explicitly override it to medium reasoning
 
-Profiles must exist under `$CODEX_HOME` or `~/.codex` before a subagent is started.
+Codex profiles must exist under `$CODEX_HOME` or `~/.codex` before a Codex-backed subagent is started. OpenCode supports the local aliases `ornith35b` for `ollama/ornith:35b`, `qwen36-27b` for tuned `ollama/qwen3.6-27b:latest`, and `muse-glimmer` for `ollama/muse-glimmer:30b`. These aliases do not alter Codex profiles with the same names.
 
 ## Commands
 
@@ -79,6 +79,20 @@ Start a developer draft:
   --role developer --workspace ./projects/example \
   --prompt-file ./projects/example/management/tasks/T003.md
 ```
+
+Start the same role through the opt-in OpenCode backend:
+
+```bash
+./.agents/scripts/spawn-subagent.sh \
+  --backend opencode --profile muse-glimmer \
+  --phase draft --team example --task T003 --attempt att-001 \
+  --role developer --workspace ./projects/example \
+  --prompt-file ./projects/example/management/tasks/T003.md
+```
+
+OpenCode uses an attempt-private configuration and exact session ID. MCP, LSP, plugins, external skills, `--reasoning-effort`, `--trust-parent-sandbox`, and `--run-guard` are intentionally unsupported on this first backend. It is a compatibility canary, not the default and not an OS-sandbox equivalent.
+
+Use `muse-glimmer` for bounded implementation canaries, or `qwen36-27b` for tuned local Qwen. A matched three-run implementation comparison gave both models 26/26 hidden correctness in every run, while Muse used 58% fewer median input tokens and completed 35% faster. A separate matched Reviewer comparison favored Qwen over Ornith, so Qwen remains the preferred OpenCode Reviewer candidate. These findings do not change global role or backend defaults.
 
 Review the draft, then continue the exact session with `--phase feedback`. After acceptance, use `--phase final` with the same team, task, attempt, role, profile, and workspace. Draft and feedback may edit handoff-scoped project files, but they never write the deterministic result; finalization writes that one result after acceptance.
 
@@ -167,6 +181,9 @@ expandable task/attempt/turn details, and verified milestone commits. Milestones
 appear as grouping metadata while canonical task IDs lead task titles. Each returned
 turn gets a private metrics sidecar with token deltas, tool and failure counts,
 command-output volume, repeats, and redacted previews of the three largest commands.
+OpenCode sidecars additionally report bounded model-step token growth, tool counts and
+UTF-8 text-output bytes by tool, plus labeled local context-component bytes. These are
+observations, not a reconstruction or token estimate of the complete provider prompt.
 The theme menu defaults to the operating-system theme and remembers an explicit Light
 or Dark choice in the browser. The UI exposes GET views only and cannot start workers,
 retry tasks, edit project state, or modify Git.
@@ -181,5 +198,12 @@ Preview the controlled end-to-end team canary with:
 ```
 
 See `scripts/TOOLS-README.md` for live-run budgeting, reports, product-only verification, and same-session failure recovery. The cold-start-through-team acceptance definition, including product-audit and proportional-performance gates, is in `docs/E2E_ACCEPTANCE_PLAN.md`.
+
+Foundation v2 remains experimental and is not the default. Its active live
+profile requires OpenCode `1.18.16`, Ollama `0.32.9` or newer, and
+`ollama/muse-glimmer:30b`; `0.32.9` fixes the Muse function-call boundary parser
+failure observed under `0.32.8`. Post-upgrade qualification passed, but the next
+adaptive canary failed closed on malformed Architecture candidate JSON, so v2
+is not yet live-model accepted. See `docs/v2/README.md`.
 
 Start with `docs/USER_GUIDE.md`, `.agents/skills/project-lead.md`, and `.agents/skills/subagent-orchestration.md`.

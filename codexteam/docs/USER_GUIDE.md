@@ -40,6 +40,8 @@ After that approval, “handle it yourself” or “end to end” means the Proj
 
 Use `--dry-run` to inspect the exact command, profile, guidance, session path, and final result path without starting Codex. The draft is conversational output and does not create a result.
 
+To run a local OpenCode canary instead, add `--backend opencode` with `--profile muse-glimmer`, `--profile ornith35b`, or `--profile qwen36-27b`. Keep that backend and profile on every turn. Muse selects `ollama/muse-glimmer:30b`; Qwen selects tuned `ollama/qwen3.6-27b:latest`. OpenCode aliases do not change Codex profiles of the same names. OpenCode uses an attempt-private configuration and exact stored session ID. Do not add `--reasoning-effort`, `--trust-parent-sandbox`, or `--run-guard`; MCP and LSP are not enabled for this backend yet.
+
 Use the opt-in `--run-guard` for turns where an unchanged command-failure loop or
 unbounded discovery is a material risk. It streams private diagnostics and interrupts
 after three consecutive identical failed command results, a command result over 32 KiB, or broad repository
@@ -58,9 +60,9 @@ Run gates through the repository-owned executor:
 ./scripts/run-test-gate.py <project-root> --gate integration --execution-surface <worker-or-lead_host>
 ```
 
-Run `curl -fsS http://127.0.0.1:11434/api/version` from the same execution surface before the live draft. If it succeeds inside the already-sandboxed Project Lead, use a local profile and add `--trust-parent-sandbox` to draft, feedback, and final. If it fails there but succeeds on the host, use the approved host-level launcher on every turn and omit the flag. A successful `--dry-run` does not test model connectivity. See `.agents/playbooks/nested-worker-sandbox.md` for the app-server, `bwrap`, and endpoint failure routes.
+Run `curl -fsS http://127.0.0.1:11434/api/version` from the same execution surface before the live draft. For the default Codex backend, a reachable already-sandboxed route may add `--trust-parent-sandbox`; otherwise use the approved host-level launcher without it. OpenCode attempts always use the approved host-level route and reject `--trust-parent-sandbox`; they do not provide an equivalent OS sandbox. A successful `--dry-run` does not test model connectivity. See `.agents/playbooks/nested-worker-sandbox.md` for Codex app-server and `bwrap` recovery.
 
-Prefer `--prompt-file` for handoffs and feedback. Markdown backticks, dollar signs, and shell metacharacters inside an inline `--prompt` can be interpreted by the calling shell before Codex receives them.
+Prefer `--prompt-file` for handoffs and feedback. Markdown backticks, dollar signs, and shell metacharacters inside an inline `--prompt` can be interpreted by the calling shell before Codex or OpenCode receives them.
 
 ## 4. Review and Continue the Same Session
 

@@ -26,6 +26,8 @@ commands before inventing new ones.
   `./scripts/git-steward.py inspect <project> --boundary <id> --tasks <ids>`; authorization and commit preview by default and require `--apply` to write. The tool requires the project to be the exact Git root and implements no remote action.
 - Subagent preview:
   `./.agents/scripts/spawn-subagent.sh --phase draft ... --dry-run`
+- OpenCode canary:
+  add `--backend opencode` with `--profile ornith35b` or `--profile qwen36-27b`; keep both values stable across the attempt. The Qwen alias selects tuned `ollama/qwen3.6-27b:latest` and does not alter Codex profile routing. MCP, LSP, plugins, `--reasoning-effort`, `--trust-parent-sandbox`, and `--run-guard` are unsupported on this backend.
 - Subagent continuation:
   use `--phase feedback` for revision and `--phase final` only after Project Lead acceptance; keep team, task, attempt, role, and profile unchanged.
 - Role-policy inspection:

@@ -27,6 +27,8 @@
 - Keep GitHub MCP digest-pinned, server-enforced read-only, and host-allowlisted to bounded read tools. Allow it only for the Leader after authentication verification; keep it disabled for every other role.
 - Keep `local-docs` on STDIO with no network or subprocess imports and exactly three read-only tools. Its MCP process opens the ignored mode-`0600` index read-only; only the separate preview-first indexer may atomically replace it from manifest-approved, symlink-free local sources.
 - Execute gate commands only as validated argument arrays from `management/TEST_GATES.toml`; never pass configured text through a shell.
+- OpenCode attempts use private HOME/XDG state and scrub inherited `OPENCODE_*` variables before applying a pinned local-only configuration. MCP, LSP, plugins, external skills, project config discovery, nested agents, and cloud providers are disabled.
+- OpenCode tool permissions are not an OS sandbox. Keep baseline-derived workspace change manifests, role-boundary auditing, exact result declarations, and independent verification; do not claim parity with Codex sandbox containment.
 
 ## Models
 

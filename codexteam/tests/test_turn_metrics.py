@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from codexteam_tools.turn_metrics import (
+    MODEL_STEP_LIMIT,
+    TOOL_TYPE_LIMIT,
     backfill_project,
     load_summary,
     metrics_path,
@@ -111,6 +113,57 @@ def test_summary_records_tool_cycles_deltas_repeats_and_redacted_previews():
     assert "beta" not in json.dumps(activity)
     assert "<redacted>" in activity["repeated_commands"][0]["preview"]
     assert summary["events"]["parse_error_count"] == 1
+
+
+def test_codex_summary_retains_exact_top_level_shape_and_values():
+    summary = summarize(
+        jsonl(
+            {"type": "item.completed", "item": {"type": "agent_message"}},
+            {
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 10,
+                    "cached_input_tokens": 4,
+                    "output_tokens": 3,
+                    "reasoning_output_tokens": 1,
+                },
+            },
+        ),
+        context_bytes={"worker_prompt_bytes": 999},
+    )
+
+    assert set(summary) == {
+        "schema_version",
+        "metric_scope",
+        "task_id",
+        "attempt_id",
+        "agent_role",
+        "model_profile",
+        "source_event_file",
+        "turn",
+        "usage",
+        "activity",
+        "events",
+        "generated_at",
+    }
+    assert summary["usage"] == {
+        "cumulative": {
+            "input_tokens": 10,
+            "cached_input_tokens": 4,
+            "uncached_input_tokens": 6,
+            "output_tokens": 3,
+            "reasoning_output_tokens": 1,
+        },
+        "delta": {
+            "input_tokens": 10,
+            "cached_input_tokens": 4,
+            "uncached_input_tokens": 6,
+            "output_tokens": 3,
+            "reasoning_output_tokens": 1,
+        },
+        "delta_mode": "initial",
+    }
+    assert summary["activity"]["agent_messages"] == 1
 
 
 def test_summary_derives_delta_from_previous_cumulative_usage():
@@ -394,6 +447,21 @@ def test_summary_write_is_private_validated_and_not_silently_overwritten(tmp_pat
     assert load_summary(path) is None
 
 
+def test_load_summary_accepts_records_with_and_without_additive_opencode_fields(
+    tmp_path: Path,
+):
+    old_record = summarize(jsonl({"type": "turn.completed", "usage": {}}))
+    new_record = summarize(
+        jsonl({"type": "step_finish", "part": {"reason": "stop", "tokens": {}}}),
+        backend="opencode",
+        context_bytes={"lead_prompt_source_bytes": 4},
+    )
+    for name, record in (("old.metrics.json", old_record), ("new.metrics.json", new_record)):
+        path = tmp_path / name
+        path.write_text(json.dumps(record), encoding="utf-8")
+        assert load_summary(path) == record
+
+
 def test_previous_summary_falls_back_to_legacy_event_usage(tmp_path: Path):
     (tmp_path / "001-draft.jsonl").write_text(
         jsonl(
@@ -474,3 +542,325 @@ def test_backfill_previews_then_writes_missing_sidecars(tmp_path: Path):
     assert [item["action"] for item in backfill_project(project)] == ["exists", "exists"]
     with pytest.raises(ValueError, match="requires --write"):
         backfill_project(project, overwrite=True)
+
+
+def test_opencode_summary_projects_per_turn_delta_and_adds_previous_cumulative():
+    text = jsonl(
+        {"type": "text", "sessionID": "ses-1", "part": {"text": "working"}},
+        {"type": "tool_use", "sessionID": "ses-1", "part": {
+            "tool": "read", "state": {"status": "completed"}
+        }},
+        {"type": "step_finish", "sessionID": "ses-1", "part": {
+            "reason": "tool-calls",
+            "tokens": {"input": 10, "output": 2, "reasoning": 1,
+                       "cache": {"read": 3, "write": 1}},
+        }},
+        {"type": "step_finish", "sessionID": "ses-1", "part": {
+            "reason": "stop",
+            "tokens": {"input": 20, "output": 5, "reasoning": 2,
+                       "cache": {"read": 4, "write": 2}},
+        }},
+    )
+    summary = summarize(text, backend="opencode", previous_summary={
+        "usage": {"cumulative": {"input_tokens": 999}}
+    })
+    assert summary["execution_backend"] == "opencode"
+    assert summary["turn"]["completed"] is True
+    assert summary["usage"]["cumulative"] == {
+        "input_tokens": 1039,
+        "cached_input_tokens": 7,
+        "uncached_input_tokens": 33,
+        "output_tokens": 10,
+        "reasoning_output_tokens": 3,
+    }
+    assert summary["usage"]["delta"] == {
+        "input_tokens": 40,
+        "cached_input_tokens": 7,
+        "uncached_input_tokens": 33,
+        "output_tokens": 10,
+        "reasoning_output_tokens": 3,
+    }
+    assert summary["usage"]["delta_mode"] == "per_turn"
+    assert summary["model_steps"] == [
+        {
+            "ordinal": 1,
+            "reason": "tool-calls",
+            "input_tokens": 14,
+            "cached_input_tokens": 3,
+            "uncached_input_tokens": 11,
+            "cache_write_tokens": 1,
+            "output_tokens": 3,
+            "reasoning_output_tokens": 1,
+        },
+        {
+            "ordinal": 2,
+            "reason": "stop",
+            "input_tokens": 26,
+            "cached_input_tokens": 4,
+            "uncached_input_tokens": 22,
+            "cache_write_tokens": 2,
+            "output_tokens": 7,
+            "reasoning_output_tokens": 2,
+        },
+    ]
+    assert summary["backend_usage"] == {
+        "model_steps": 2,
+        "first_step_input_tokens": 14,
+        "last_step_input_tokens": 26,
+        "max_step_input_tokens": 26,
+        "cache_write_tokens": 3,
+        "tool_text_output_bytes_by_tool": {},
+    }
+    assert summary["activity"]["tool_calls"] == 1
+    assert summary["activity"]["item_type_counts"] == {
+        "agent_message": 1,
+        "tool:read": 1,
+        "tool_use": 1,
+    }
+
+
+def test_opencode_metrics_require_stop_for_completion():
+    summary = summarize(
+        jsonl(
+            {"type": "text", "sessionID": "ses-1", "part": {"text": "partial"}},
+            {"type": "step_finish", "sessionID": "ses-1", "part": {
+                "reason": "length", "tokens": {"input": 1, "output": 1}
+            }},
+        ),
+        backend="opencode",
+    )
+    assert summary["turn"]["completed"] is False
+
+
+def test_opencode_tool_metrics_classify_outputs_and_failures_without_raw_text():
+    secret_outputs = {
+        "read": "résumé",
+        "bash": "private bash output",
+        "edit": "edited",
+        "write": "written",
+    }
+    text = jsonl(
+        *[
+            {
+                "type": "tool_use",
+                "part": {
+                    "tool": tool,
+                    "state": {
+                        "status": "error" if tool == "bash" else "completed",
+                        "output": output,
+                        "metadata": {"exit_code": 7 if tool == "bash" else 0},
+                    },
+                },
+            }
+            for tool, output in secret_outputs.items()
+        ]
+    )
+
+    summary = summarize(text, backend="opencode")
+
+    assert summary["activity"]["tool_calls"] == 4
+    assert summary["activity"]["failed_tool_calls"] == 1
+    assert summary["activity"]["item_type_counts"] == {
+        "tool:bash": 1,
+        "tool:edit": 1,
+        "tool:read": 1,
+        "tool:write": 1,
+        "tool_use": 4,
+    }
+    assert summary["backend_usage"]["tool_text_output_bytes_by_tool"] == {
+        tool: len(output.encode("utf-8"))
+        for tool, output in sorted(secret_outputs.items())
+    }
+    serialized = json.dumps(summary, ensure_ascii=False)
+    assert all(output not in serialized for output in secret_outputs.values())
+
+
+def test_context_bytes_are_opencode_only_and_unicode_safe():
+    measurements = {
+        "lead_prompt_source_bytes": len("café".encode("utf-8")),
+        "worker_prompt_bytes": len("こんにちは".encode("utf-8")),
+    }
+
+    opencode = summarize("", backend="opencode", context_bytes=measurements)
+    codex = summarize("", context_bytes=measurements)
+
+    assert opencode["context_bytes"] == measurements
+    assert "context_bytes" not in codex
+    assert "model_steps" not in codex
+    assert "backend_usage" not in codex
+
+
+def test_opencode_usage_is_per_turn_delta_and_cumulative_across_turns():
+    first = summarize(
+        jsonl({
+            "type": "step_finish",
+            "part": {
+                "reason": "stop",
+                "tokens": {
+                    "input": 10,
+                    "output": 2,
+                    "reasoning": 1,
+                    "cache": {"read": 3, "write": 1},
+                },
+            },
+        }),
+        backend="opencode",
+    )
+    second = summarize(
+        jsonl({
+            "type": "step_finish",
+            "part": {
+                "reason": "stop",
+                "tokens": {
+                    "input": 4,
+                    "output": 1,
+                    "reasoning": 0,
+                    "cache": {"read": 2, "write": 0},
+                },
+            },
+        }),
+        backend="opencode",
+        turn_number=2,
+        previous_summary=first,
+    )
+
+    assert second["usage"]["delta"] == {
+        "input_tokens": 6,
+        "cached_input_tokens": 2,
+        "uncached_input_tokens": 4,
+        "output_tokens": 1,
+        "reasoning_output_tokens": 0,
+    }
+    assert second["usage"]["cumulative"] == {
+        "input_tokens": 20,
+        "cached_input_tokens": 5,
+        "uncached_input_tokens": 15,
+        "output_tokens": 4,
+        "reasoning_output_tokens": 1,
+    }
+    assert second["usage"]["delta_mode"] == "per_turn"
+
+
+def test_opencode_cumulative_usage_tolerates_old_or_reset_previous_summary():
+    old = {"usage": {"cumulative": {"input_tokens": 100, "output_tokens": 9}}}
+    summary = summarize(
+        jsonl({
+            "type": "step_finish",
+            "part": {"reason": "stop", "tokens": {"input": 2, "output": 1}},
+        }),
+        backend="opencode",
+        previous_summary=old,
+    )
+
+    assert summary["usage"]["delta"]["input_tokens"] == 2
+    assert summary["usage"]["cumulative"] == {
+        "input_tokens": 102,
+        "cached_input_tokens": 0,
+        "uncached_input_tokens": 2,
+        "output_tokens": 10,
+        "reasoning_output_tokens": 0,
+    }
+
+
+def test_opencode_error_metrics_keep_only_bounded_name_and_data_message():
+    summary = summarize(
+        jsonl({
+            "type": "error",
+            "error": {
+                "name": "ProviderError",
+                "data": {
+                    "message": "request failed",
+                    "responseBody": "SECRET-BODY",
+                    "headers": {"authorization": "SECRET-TOKEN"},
+                },
+                "metadata": {"private": "SECRET-METADATA"},
+            },
+        }),
+        backend="opencode",
+    )
+
+    assert summary["events"]["last_error"] == "ProviderError: request failed"
+    serialized = json.dumps(summary)
+    assert "SECRET" not in serialized
+
+
+def test_opencode_failed_bash_error_text_counts_as_output_without_persisting_text():
+    error_text = "command failed: café"
+    summary = summarize(
+        jsonl({
+            "type": "tool_use",
+            "part": {
+                "tool": "bash",
+                "state": {
+                    "status": "error",
+                    "input": {"command": "false"},
+                    "error": error_text,
+                    "metadata": {"exit": 1},
+                },
+            },
+        }),
+        backend="opencode",
+    )
+
+    assert summary["activity"]["failed_tool_calls"] == 1
+    assert summary["backend_usage"]["tool_text_output_bytes_by_tool"] == {
+        "bash": len(error_text.encode("utf-8"))
+    }
+    assert error_text not in json.dumps(summary, ensure_ascii=False)
+
+
+def test_opencode_observation_lists_are_bounded_and_sorted():
+    steps = [
+        {
+            "type": "step_finish",
+            "part": {"reason": "tool-calls", "tokens": {"input": index}},
+        }
+        for index in range(MODEL_STEP_LIMIT + 2)
+    ]
+    tools = [
+        {
+            "type": "tool_use",
+            "part": {
+                "tool": f"tool{index:03d}",
+                "state": {"status": "completed", "output": "x"},
+            },
+        }
+        for index in range(TOOL_TYPE_LIMIT + 2)
+    ]
+    summary = summarize(jsonl(*(steps + tools)), backend="opencode")
+
+    assert summary["backend_usage"]["model_steps"] == MODEL_STEP_LIMIT + 2
+    assert len(summary["model_steps"]) == MODEL_STEP_LIMIT
+    assert summary["model_steps"][-1]["ordinal"] == MODEL_STEP_LIMIT
+    by_tool = summary["backend_usage"]["tool_text_output_bytes_by_tool"]
+    assert len(by_tool) == TOOL_TYPE_LIMIT
+    assert list(by_tool) == sorted(by_tool)
+
+
+def test_opencode_malformed_tokens_are_safely_zeroed():
+    summary = summarize(
+        jsonl({
+            "type": "step_finish",
+            "part": {
+                "reason": {"unsafe": "object"},
+                "tokens": {
+                    "input": "ten",
+                    "output": -2,
+                    "reasoning": float("nan"),
+                    "cache": {"read": True, "write": float("inf")},
+                },
+            },
+        }),
+        backend="opencode",
+    )
+
+    assert summary["model_steps"] == [{
+        "ordinal": 1,
+        "reason": "unknown",
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "uncached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+    }]

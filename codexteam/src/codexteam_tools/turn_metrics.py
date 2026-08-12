@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter
 from datetime import datetime, timezone
@@ -17,7 +18,10 @@ TURN_FILE = re.compile(r"^(\d+)-(draft|feedback|final)\.jsonl$")
 METRICS_FILE = re.compile(r"^(\d+)-(draft|feedback|final)\.metrics\.json$")
 PREVIEW_LIMIT = 180
 REPEATED_COMMAND_LIMIT = 10
+MODEL_STEP_LIMIT = 100
+TOOL_TYPE_LIMIT = 50
 NON_TOOL_ITEM_TYPES = {"agent_message", "reasoning", "todo_list"}
+SAFE_TOOL_NAME = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|AUTH|CREDENTIAL)[A-Z0-9_]*)"
     r"=([^\s]+)"
@@ -51,7 +55,11 @@ def summarize_turn(
     source_event_file: str,
     previous_summary: dict[str, Any] | None = None,
     generated_at: str | None = None,
+    backend: str = "codex",
+    context_bytes: dict[str, int] | None = None,
 ) -> dict[str, Any]:
+    if backend not in {"codex", "opencode"}:
+        raise ValueError(f"unsupported execution backend: {backend}")
     item_counts: Counter[str] = Counter()
     commands: list[dict[str, Any]] = []
     mcp_observations: list[dict[str, Any]] = []
@@ -63,6 +71,20 @@ def summarize_turn(
     mcp_failure_seen = False
     command_calls_after_mcp_failure = 0
 
+    opencode_usage = {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+    }
+    opencode_usage_seen = False
+    opencode_cache_write_tokens = 0
+    opencode_model_step_count = 0
+    opencode_model_steps: list[dict[str, Any]] = []
+    opencode_first_step_input: int | None = None
+    opencode_last_step_input: int | None = None
+    opencode_max_step_input: int | None = None
+    opencode_tool_output_bytes: Counter[str] = Counter()
     for raw_line in event_text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -76,6 +98,72 @@ def summarize_turn(
             parse_error_count += 1
             continue
         event_type = event.get("type")
+        if backend == "opencode":
+            part = event.get("part")
+            if event_type == "text":
+                item_counts["agent_message"] += 1
+            elif event_type == "tool_use":
+                state = part.get("state") if isinstance(part, dict) else None
+                if not isinstance(state, dict) or state.get("status") not in {
+                    "completed",
+                    "error",
+                    "failed",
+                }:
+                    continue
+                item_counts["tool_use"] += 1
+                tool = _opencode_tool_name(part.get("tool") if isinstance(part, dict) else None)
+                item_counts[f"tool:{tool}"] += 1
+                failed_tool_calls += int(_opencode_tool_failed(state))
+                measured_output = _opencode_tool_output_bytes(state)
+                if measured_output is not None:
+                    opencode_tool_output_bytes[tool] += measured_output
+            elif event_type == "step_finish" and isinstance(part, dict):
+                reason = part.get("reason")
+                completed = completed or (
+                    reason == "stop"
+                )
+                tokens = part.get("tokens")
+                if isinstance(tokens, dict):
+                    opencode_usage_seen = True
+                    cache = tokens.get("cache")
+                    raw_input = _opencode_token_int(tokens.get("input"))
+                    raw_output = _opencode_token_int(tokens.get("output"))
+                    reasoning = _opencode_token_int(tokens.get("reasoning"))
+                    cache_read = 0
+                    cache_write = 0
+                    if isinstance(cache, dict):
+                        cache_read = _opencode_token_int(cache.get("read"))
+                        cache_write = _opencode_token_int(cache.get("write"))
+                    opencode_usage["input_tokens"] += raw_input + cache_read + cache_write
+                    opencode_usage["cached_input_tokens"] += cache_read
+                    opencode_usage["output_tokens"] += raw_output + reasoning
+                    opencode_usage["reasoning_output_tokens"] += reasoning
+                    opencode_cache_write_tokens += cache_write
+                    total_input = raw_input + cache_read + cache_write
+                    opencode_model_step_count += 1
+                    if opencode_first_step_input is None:
+                        opencode_first_step_input = total_input
+                    opencode_last_step_input = total_input
+                    opencode_max_step_input = max(
+                        opencode_max_step_input or 0,
+                        total_input,
+                    )
+                    if len(opencode_model_steps) < MODEL_STEP_LIMIT:
+                        opencode_model_steps.append(
+                            {
+                                "ordinal": opencode_model_step_count,
+                                "reason": reason[:64] if isinstance(reason, str) else "unknown",
+                                "input_tokens": total_input,
+                                "cached_input_tokens": cache_read,
+                                "uncached_input_tokens": total_input - cache_read,
+                                "cache_write_tokens": cache_write,
+                                "output_tokens": raw_output + reasoning,
+                                "reasoning_output_tokens": reasoning,
+                            }
+                        )
+            elif event_type == "error":
+                last_error = _opencode_event_error(event)
+            continue
         if event_type == "event_msg":
             payload = event.get("payload")
             if not isinstance(payload, dict):
@@ -132,9 +220,14 @@ def summarize_turn(
             elif item_type not in NON_TOOL_ITEM_TYPES and item.get("status") == "failed":
                 failed_tool_calls += 1
 
-    cumulative = _usage_values(usage)
-    previous = _previous_usage(previous_summary)
-    delta, delta_mode = _usage_delta(cumulative, previous)
+    if backend == "opencode":
+        delta = _usage_values(opencode_usage if opencode_usage_seen else None)
+        cumulative = _opencode_cumulative_usage(delta, previous_summary)
+        delta_mode = "per_turn" if opencode_usage_seen else "unavailable"
+    else:
+        cumulative = _usage_values(usage)
+        previous = _previous_usage(previous_summary)
+        delta, delta_mode = _usage_delta(cumulative, previous)
     repeated = _repeated_commands(commands)
     largest = sorted(
         commands,
@@ -142,7 +235,10 @@ def summarize_turn(
     )[:3]
     output_bytes = sum(item["output_bytes"] for item in commands)
     tool_calls = sum(
-        count for item_type, count in item_counts.items() if item_type not in NON_TOOL_ITEM_TYPES
+        count
+        for item_type, count in item_counts.items()
+        if item_type not in NON_TOOL_ITEM_TYPES
+        and (backend != "opencode" or not item_type.startswith("tool:"))
     )
 
     return {
@@ -197,6 +293,16 @@ def summarize_turn(
             "parse_error_count": parse_error_count,
             "last_error": last_error,
         },
+        **(_opencode_fields(
+            model_steps=opencode_model_steps,
+            model_step_count=opencode_model_step_count,
+            first_step_input=opencode_first_step_input,
+            last_step_input=opencode_last_step_input,
+            max_step_input=opencode_max_step_input,
+            cache_write_tokens=opencode_cache_write_tokens,
+            tool_output_bytes=opencode_tool_output_bytes,
+            context_bytes=context_bytes,
+        ) if backend == "opencode" else {}),
         "generated_at": generated_at or _utc_now(),
     }
 
@@ -333,6 +439,7 @@ def backfill_project(
                 duration_seconds=item.get("duration_seconds"),
                 source_event_file=event_path.name,
                 previous_summary=prior,
+                backend=str(session.get("execution_backend") or "codex"),
             )
             action = "would_overwrite" if target_existed else "would_create"
             if write:
@@ -358,6 +465,118 @@ def _usage_values(usage: dict[str, Any] | None) -> dict[str, int | None]:
         "output_tokens": output_tokens,
         "reasoning_output_tokens": reasoning_tokens,
     }
+
+
+def _opencode_fields(
+    *,
+    model_steps: list[dict[str, Any]],
+    model_step_count: int,
+    first_step_input: int | None,
+    last_step_input: int | None,
+    max_step_input: int | None,
+    cache_write_tokens: int,
+    tool_output_bytes: Counter[str],
+    context_bytes: dict[str, int] | None,
+) -> dict[str, Any]:
+    output_by_tool = {
+        tool: tool_output_bytes[tool]
+        for tool in sorted(tool_output_bytes)[:TOOL_TYPE_LIMIT]
+    }
+    backend_usage = {
+        "model_steps": model_step_count,
+        "first_step_input_tokens": first_step_input,
+        "last_step_input_tokens": last_step_input,
+        "max_step_input_tokens": max_step_input,
+        "cache_write_tokens": cache_write_tokens,
+        "tool_text_output_bytes_by_tool": output_by_tool,
+    }
+    fields: dict[str, Any] = {
+        "execution_backend": "opencode",
+        "model_steps": model_steps,
+        "backend_usage": backend_usage,
+    }
+    if context_bytes is not None:
+        fields["context_bytes"] = dict(context_bytes)
+    return fields
+
+
+def _opencode_cumulative_usage(
+    current: dict[str, int | None],
+    previous_summary: dict[str, Any] | None,
+) -> dict[str, int | None]:
+    previous = _previous_usage(previous_summary)
+    if all(value is None for value in current.values()):
+        return _usage_values(previous) if previous is not None else dict(current)
+    cumulative: dict[str, int | None] = {}
+    for key, value in current.items():
+        previous_value = _nonnegative_int(previous.get(key)) if previous else None
+        cumulative[key] = value if previous_value is None else previous_value + (value or 0)
+    return cumulative
+
+
+def _opencode_tool_name(value: Any) -> str:
+    return value if isinstance(value, str) and SAFE_TOOL_NAME.fullmatch(value) else "unknown"
+
+
+def _opencode_tool_failed(state: dict[str, Any]) -> bool:
+    if state.get("status") in {"error", "failed"} or state.get("error") is not None:
+        return True
+    metadata = state.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    for key in ("exit", "exit_code", "exitCode"):
+        exit_code = metadata.get(key)
+        if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+            return exit_code != 0
+    return metadata.get("success") is False
+
+
+def _opencode_tool_output_bytes(state: dict[str, Any]) -> int | None:
+    output = state.get("output")
+    if isinstance(output, str):
+        return len(output.encode("utf-8"))
+    error = state.get("error")
+    if isinstance(error, str):
+        return len(error.encode("utf-8"))
+    metadata = state.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    for key in ("output_bytes", "outputBytes"):
+        measured = _nonnegative_int(metadata.get(key))
+        if measured is not None:
+            return measured
+    metadata_output = metadata.get("output")
+    if isinstance(metadata_output, str):
+        return len(metadata_output.encode("utf-8"))
+    streams = [
+        metadata[key]
+        for key in ("stdout", "stderr")
+        if isinstance(metadata.get(key), str)
+    ]
+    return sum(len(value.encode("utf-8")) for value in streams) if streams else None
+
+
+def _opencode_token_int(value: Any) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        return 0
+    return int(value)
+
+
+def _opencode_event_error(event: dict[str, Any]) -> str:
+    error = event.get("error")
+    error = error if isinstance(error, dict) else event
+    name = error.get("name")
+    data = error.get("data")
+    message = data.get("message") if isinstance(data, dict) else None
+    safe_name = name.strip()[:100] if isinstance(name, str) and name.strip() else "OpenCode error"
+    if isinstance(message, str) and message.strip():
+        return f"{safe_name}: {message.strip()[:390]}"[:500]
+    return safe_name
 
 
 def _last_usage(event_text: str) -> dict[str, Any] | None:
@@ -636,7 +855,12 @@ def _event_error(event: dict[str, Any]) -> str:
 
 
 def _nonnegative_int(value: Any) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
         return None
     return int(value)
 

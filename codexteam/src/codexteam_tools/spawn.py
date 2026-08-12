@@ -11,7 +11,7 @@ import subprocess
 import threading
 import time
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,7 @@ from .roles import (
     load_role_policy,
     load_role_policy_snapshot,
 )
+from . import opencode_backend
 from .run_guard import ExactFailedRepeatGuard
 from .turn_metrics import (
     metrics_path,
@@ -50,13 +51,16 @@ SESSION_SCHEMA_VERSION = "1.0"
 ROLE_POLICY_FILENAME = "role-policy.json"
 GUIDANCE_MANIFEST_FILENAME = "guidance-manifest.json"
 TURN_STATE_FILENAME = "turn-state.json"
+WORKSPACE_BASELINE_FILENAME = "workspace-baseline.json"
 WORKSPACE_SCAN_EXCLUDES = (".git", ".codexteam/runtime")
+ACCEPTANCE_PATH_EXCLUDES = (".git", ".codexteam")
 CONTEXT_MCP_SERVER = "codexteam-context"
 CONTEXT_PROJECT_ENV = "CODEXTEAM_CONTEXT_PROJECT"
 
 
 @dataclass(frozen=True)
 class SpawnRequest:
+    backend: str
     phase: str
     profile: str
     model: str
@@ -91,6 +95,10 @@ class SpawnRequest:
     profile_file: Path
     role_policy: RolePolicy
     role_policy_path: Path
+    backend_version: str | None
+    backend_config_path: Path | None
+    backend_config_digest: str | None
+    opencode_project_instructions: str | None
 
 
 @dataclass(frozen=True)
@@ -129,6 +137,9 @@ class EventSummary:
 
 
 def prepare_request(args: argparse.Namespace) -> SpawnRequest:
+    backend = getattr(args, "backend", "codex")
+    if backend not in {"codex", "opencode"}:
+        raise ValueError(f"unsupported execution backend: {backend}")
     phase = args.phase
     if phase not in PHASES:
         raise ValueError(f"unsupported conversation phase: {phase}")
@@ -139,9 +150,22 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         raise ValueError(f"unsupported agent role: {args.role}")
     if args.timeout < 1:
         raise ValueError("timeout must be a positive integer")
-    reasoning_effort_override = _validate_reasoning_effort(
-        getattr(args, "reasoning_effort", None)
-    )
+    reasoning_effort_value = getattr(args, "reasoning_effort", None)
+    trust_parent_sandbox = bool(getattr(args, "trust_parent_sandbox", False))
+    run_guard = bool(getattr(args, "run_guard", False))
+    if backend == "opencode":
+        unsupported = []
+        if reasoning_effort_value is not None:
+            unsupported.append("--reasoning-effort")
+        if trust_parent_sandbox:
+            unsupported.append("--trust-parent-sandbox")
+        if run_guard:
+            unsupported.append("--run-guard")
+        if unsupported:
+            raise ValueError(
+                "OpenCode backend does not support " + ", ".join(unsupported)
+            )
+    reasoning_effort_override = _validate_reasoning_effort(reasoning_effort_value)
 
     workspace = ensure_existing_workspace(args.workspace)
     safe_relative_path(args.result_dir, label="result directory")
@@ -162,6 +186,13 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         if phase != "draft" and session_path.is_file()
         else None
     )
+    if existing_session is not None:
+        stored_backend = existing_session.get("execution_backend", "codex")
+        if stored_backend != backend:
+            raise ValueError(
+                "session backend mismatch: "
+                f"expected {backend!r}, found {stored_backend!r}"
+            )
     role_policy_path = session_dir / ROLE_POLICY_FILENAME
     if phase != "draft" and role_policy_path.is_file():
         role_policy = load_role_policy_snapshot(role_policy_path, expected_role=args.role)
@@ -185,6 +216,65 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     source_codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve(
         strict=False
     )
+    if backend == "opencode":
+        model, model_provider = opencode_backend.resolve_profile(profile)
+        backend_config_path = opencode_backend.config_path(session_dir / "opencode-runtime")
+        if existing_session is None:
+            project_instructions = _workspace_agents_instructions(workspace)
+            backend_config = opencode_backend.build_config(
+                model=model,
+                role_name=args.role,
+                role_instructions=role_policy.developer_instructions,
+                project_instructions=project_instructions,
+                add_dirs=add_dirs,
+            )
+            backend_config_digest = opencode_backend.config_digest(backend_config)
+        else:
+            project_instructions = None
+            backend_config_digest = existing_session.get("backend_config_digest")
+            if not isinstance(backend_config_digest, str) or not backend_config_digest:
+                raise ValueError("OpenCode session backend_config_digest must be a non-empty string")
+        return SpawnRequest(
+            backend=backend,
+            phase=phase,
+            profile=profile,
+            model=model,
+            model_provider=model_provider,
+            model_catalog_json=None,
+            model_reasoning_effort=None,
+            reasoning_effort_override=None,
+            model_verbosity=None,
+            team_id=team_id,
+            task_id=task_id,
+            role=args.role,
+            attempt_id=attempt_id,
+            workspace=workspace,
+            prompt=prompt,
+            timeout_seconds=args.timeout,
+            result_dir=result_dir,
+            result_path=result_path,
+            session_dir=session_dir,
+            session_path=session_path,
+            codex_home=session_dir / "codex-home",
+            source_codex_home=source_codex_home,
+            configured_mcp_servers=(),
+            effective_mcp_servers=(),
+            missing_mcp_servers=(),
+            effective_mcp_tools=(),
+            mcp_context_project=None,
+            add_dirs=add_dirs,
+            trust_parent_sandbox=False,
+            run_guard=False,
+            skill_files=skill_files,
+            guidance_digest=guidance_digest,
+            profile_file=backend_config_path,
+            role_policy=role_policy,
+            role_policy_path=role_policy_path,
+            backend_version=None,
+            backend_config_path=backend_config_path,
+            backend_config_digest=backend_config_digest,
+            opencode_project_instructions=project_instructions,
+        )
     codex_config_path = source_codex_home / "config.toml"
     configured_mcp_servers = _configured_mcp_servers(codex_config_path)
     effective_mcp_servers = tuple(
@@ -225,8 +315,6 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         raise ValueError(f"Codex profile model_reasoning_effort must be a string: {profile_file}")
     if model_verbosity is not None and not isinstance(model_verbosity, str):
         raise ValueError(f"Codex profile model_verbosity must be a string: {profile_file}")
-    trust_parent_sandbox = bool(getattr(args, "trust_parent_sandbox", False))
-    run_guard = bool(getattr(args, "run_guard", False))
     if trust_parent_sandbox and model_provider.strip() == "openai":
         raise ValueError(
             "--trust-parent-sandbox requires a local model profile because authenticated "
@@ -234,6 +322,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         )
 
     return SpawnRequest(
+        backend=backend,
         phase=phase,
         profile=profile,
         model=model.strip(),
@@ -268,6 +357,10 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         profile_file=profile_file,
         role_policy=role_policy,
         role_policy_path=role_policy_path,
+        backend_version=None,
+        backend_config_path=None,
+        backend_config_digest=None,
+        opencode_project_instructions=None,
     )
 
 
@@ -313,11 +406,27 @@ def prepare_turn(request: SpawnRequest) -> TurnContext:
     )
 
 
-def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict[str, Any], int]:
+def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[dict[str, Any], int]:
+    executable = executable or request.backend
+    if request.backend == "opencode":
+        request = replace(request, backend_version=opencode_backend.version(executable))
     turn = prepare_turn(request)
     _prepare_session_storage(request, initial=turn.is_initial, session=turn.session)
+    trusted_baseline: dict[str, str] | None = None
+    trusted_baseline_digest: str | None = None
+    if request.backend == "opencode":
+        expected_baseline = (
+            turn.session.get("workspace_baseline_sha256") if turn.session else None
+        )
+        trusted_baseline = _load_workspace_baseline(
+            request,
+            expected_digest=expected_baseline,
+        )
+        trusted_baseline_digest = _workspace_baseline_digest(trusted_baseline)
     turn.message_path.parent.mkdir(parents=True, exist_ok=True)
     turn.message_path.parent.chmod(0o700)
+    if request.backend == "opencode" and request.phase == "final":
+        _ensure_accepted_checkpoint(request, turn)
     before_workspace = snapshot_workspace(request.workspace)
     _write_turn_state(request, turn, status="running")
 
@@ -327,8 +436,20 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
     turn.lead_prompt_path.chmod(0o600)
     environment = os.environ.copy()
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    environment["CODEX_HOME"] = str(_execution_codex_home(request))
-    environment["CODEX_SQLITE_HOME"] = str(request.codex_home)
+    if request.backend == "opencode":
+        assert request.backend_config_path is not None
+        for name in tuple(environment):
+            if name.startswith("OPENCODE_"):
+                environment.pop(name)
+        environment.update(
+            opencode_backend.environment(
+                request.session_dir / "opencode-runtime",
+                request.backend_config_path,
+            )
+        )
+    else:
+        environment["CODEX_HOME"] = str(_execution_codex_home(request))
+        environment["CODEX_SQLITE_HOME"] = str(request.codex_home)
     process = run_process(
         command,
         prompt=worker_prompt,
@@ -341,13 +462,20 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
     )
     atomic_write_text(turn.events_path, process.stdout)
     atomic_write_text(turn.stderr_path, process.stderr)
-    changed_paths = changed_workspace_paths(
+    after_workspace = snapshot_workspace(request.workspace)
+    changed_paths = changed_workspace_paths(before_workspace, after_workspace)
+    change_actions = _workspace_change_actions(
         before_workspace,
-        snapshot_workspace(request.workspace),
+        after_workspace,
+        changed_paths,
     )
     boundary_errors = role_boundary_errors(request.role_policy, changed_paths)
 
-    events = parse_codex_events(process.stdout)
+    events = (
+        opencode_backend.parse_events(process.stdout)
+        if request.backend == "opencode"
+        else parse_codex_events(process.stdout)
+    )
     summary = summarize_turn(
         process.stdout,
         task_id=request.task_id,
@@ -359,12 +487,56 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
         duration_seconds=process.duration_seconds,
         source_event_file=turn.events_path.name,
         previous_summary=previous_summary(turn.events_path.parent, turn.number),
+        backend=request.backend,
+        context_bytes=(
+            _opencode_context_bytes(request, turn, worker_prompt)
+            if request.backend == "opencode"
+            else None
+        ),
     )
     write_summary(metrics_path(turn.events_path), summary)
     stored_thread_id = turn.session.get("thread_id") if turn.session is not None else None
     event_thread_id = _single_thread_id(events.thread_ids)
     thread_id = stored_thread_id or event_thread_id
     thread_mismatch = bool(stored_thread_id and event_thread_id and stored_thread_id != event_thread_id)
+
+    baseline_error = _post_run_baseline_error(request, trusted_baseline_digest)
+    if baseline_error is not None:
+        assert trusted_baseline is not None
+        assert trusted_baseline_digest is not None
+        _restore_workspace_baseline(request, trusted_baseline)
+        persistent_thread_id = stored_thread_id or (
+            event_thread_id if not thread_mismatch else None
+        )
+        if persistent_thread_id:
+            session = _session_record(
+                request,
+                turn,
+                thread_id=persistent_thread_id,
+                status="correction_needed",
+                process=process,
+                change_actions=change_actions,
+                workspace_snapshot=after_workspace,
+                trusted_baseline=trusted_baseline,
+                trusted_baseline_digest=trusted_baseline_digest,
+            )
+            _write_session(request.session_path, session)
+        _write_turn_state(
+            request,
+            turn,
+            status="correction_needed",
+            process=process,
+            changed_paths=changed_paths,
+            errors=[baseline_error],
+            thread_id=persistent_thread_id,
+        )
+        return _turn_outcome(
+            request,
+            turn,
+            status="correction_needed",
+            thread_id=persistent_thread_id,
+            errors=[baseline_error],
+        ), 1
 
     message = ""
     if turn.message_path.is_file():
@@ -378,15 +550,25 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
         events,
         thread_id=thread_id,
         thread_mismatch=thread_mismatch,
+        backend=request.backend,
     )
     if failure_status is not None:
-        if thread_id and not thread_mismatch:
+        persistent_thread_id = (
+            stored_thread_id
+            if request.backend == "opencode" and stored_thread_id
+            else thread_id if not thread_mismatch else None
+        )
+        if persistent_thread_id:
             session = _session_record(
                 request,
                 turn,
-                thread_id=thread_id,
+                thread_id=persistent_thread_id,
                 status=failure_status,
                 process=process,
+                change_actions=change_actions,
+                workspace_snapshot=after_workspace,
+                trusted_baseline=trusted_baseline,
+                trusted_baseline_digest=trusted_baseline_digest,
             )
             _write_session(request.session_path, session)
         _write_turn_state(
@@ -396,6 +578,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             process=process,
             changed_paths=changed_paths,
             errors=failure_errors + boundary_errors,
+            thread_id=thread_id,
         )
         return _turn_outcome(
             request,
@@ -412,6 +595,10 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             thread_id=thread_id,
             status="correction_needed",
             process=process,
+            change_actions=change_actions,
+            workspace_snapshot=after_workspace,
+            trusted_baseline=trusted_baseline,
+            trusted_baseline_digest=trusted_baseline_digest,
         )
         _write_session(request.session_path, session)
         _write_turn_state(
@@ -421,6 +608,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             process=process,
             changed_paths=changed_paths,
             errors=boundary_errors,
+            thread_id=thread_id,
         )
         return _turn_outcome(
             request,
@@ -437,6 +625,10 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             thread_id=thread_id,
             status="correction_needed",
             process=process,
+            change_actions=change_actions,
+            workspace_snapshot=after_workspace,
+            trusted_baseline=trusted_baseline,
+            trusted_baseline_digest=trusted_baseline_digest,
         )
         _write_session(request.session_path, session)
         _write_turn_state(
@@ -445,32 +637,39 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             status="correction_needed",
             process=process,
             changed_paths=changed_paths,
-            errors=["Codex returned no final agent message for this turn"],
+            errors=[f"{_backend_name(request.backend)} returned no final agent message for this turn"],
+            thread_id=thread_id,
         )
         return _turn_outcome(
             request,
             turn,
             status="correction_needed",
             thread_id=thread_id,
-            errors=["Codex returned no final agent message for this turn"],
+            errors=[f"{_backend_name(request.backend)} returned no final agent message for this turn"],
         ), 1
 
     if request.phase in {"draft", "feedback"}:
-        session = _session_record(
-            request,
-            turn,
-            thread_id=thread_id,
-            status="draft_ready",
-            process=process,
-        )
-        _write_session(request.session_path, session)
         _write_turn_state(
             request,
             turn,
             status="draft_ready",
             process=process,
             changed_paths=changed_paths,
+            change_actions=(change_actions if request.backend == "opencode" else None),
+            thread_id=thread_id,
         )
+        session = _session_record(
+            request,
+            turn,
+            thread_id=thread_id,
+            status="draft_ready",
+            process=process,
+            change_actions=change_actions,
+            workspace_snapshot=after_workspace,
+            trusted_baseline=trusted_baseline,
+            trusted_baseline_digest=trusted_baseline_digest,
+        )
+        _write_session(request.session_path, session)
         return _turn_outcome(
             request,
             turn,
@@ -486,6 +685,10 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             thread_id=thread_id,
             status="correction_needed",
             process=process,
+            change_actions=change_actions,
+            workspace_snapshot=after_workspace,
+            trusted_baseline=trusted_baseline,
+            trusted_baseline_digest=trusted_baseline_digest,
         )
         _write_session(request.session_path, session)
         _write_turn_state(
@@ -495,6 +698,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
             process=process,
             changed_paths=changed_paths,
             errors=validation_errors,
+            thread_id=thread_id,
         )
         return _turn_outcome(
             request,
@@ -512,6 +716,10 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
         thread_id=thread_id,
         status="finalized",
         process=process,
+        change_actions=change_actions,
+        workspace_snapshot=after_workspace,
+        trusted_baseline=trusted_baseline,
+        trusted_baseline_digest=trusted_baseline_digest,
         final_result_path=request.result_path.relative_to(request.workspace).as_posix(),
     )
     _write_session(request.session_path, session)
@@ -521,6 +729,7 @@ def run_spawn(request: SpawnRequest, *, executable: str = "codex") -> tuple[dict
         status="finalized",
         process=process,
         changed_paths=changed_paths,
+        thread_id=thread_id,
     )
     return result, 0 if result["status"] in {"completed", "needs_review"} else 1
 
@@ -529,8 +738,19 @@ def build_command(
     request: SpawnRequest,
     turn: TurnContext,
     *,
-    executable: str = "codex",
+    executable: str | None = None,
 ) -> list[str]:
+    executable = executable or request.backend
+    if request.backend == "opencode":
+        session_id = None if turn.is_initial else turn.session["thread_id"]
+        return opencode_backend.build_command(
+            executable=executable,
+            workspace=request.workspace,
+            model=request.model,
+            phase=request.phase,
+            session_id=session_id,
+            title=f"CodexTeam {request.task_id}/{request.attempt_id}",
+        )
     prefix = [executable]
     if request.trust_parent_sandbox:
         prefix.extend(("-s", "danger-full-access"))
@@ -742,6 +962,14 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
             f"[PROJECT LEAD FEEDBACK]\n{request.prompt.strip()}\n"
         )
     if request.phase == "final":
+        checkpoint_note = ""
+        if request.backend == "opencode":
+            checkpoint = turn.session.get("accepted_checkpoint", {}) if turn.session else {}
+            checkpoint_note = (
+                "Immutable accepted draft checkpoint:\n"
+                f"{json.dumps(checkpoint, indent=2, sort_keys=True)}\n"
+                "Re-anchor every claim to this checkpoint. Do not run commands or modify files.\n"
+            )
         return (
             "[CODEXTEAM FINALIZATION TURN]\n"
             f"The Project Lead accepted the draft for {request.task_id}/{request.attempt_id}.\n"
@@ -766,13 +994,27 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
                 if request.role == "git_steward"
                 else ""
             )
-            + "Runtime identity, UTC produced_at, and process output are normalized by the launcher.\n\n"
+            + "Runtime identity, UTC produced_at, and process output are normalized by the launcher.\n"
+            + checkpoint_note
+            + "\n"
             f"[PROJECT LEAD DECISION]\n{request.prompt.strip()}\n"
         )
 
     skills = []
-    for path in request.skill_files:
-        skills.append(f"\n[GUIDANCE: {path.name}]\n{path.read_text(encoding='utf-8').strip()}\n")
+    prompt_skill_files = request.skill_files
+    if (
+        request.backend == "opencode"
+        and (request.session_dir / GUIDANCE_MANIFEST_FILENAME).is_file()
+    ):
+        prompt_skill_files = _load_pinned_skill_files(request.session_dir)
+    for path in prompt_skill_files:
+        if request.backend == "opencode":
+            skills.append(
+                f"\n[PINNED GUIDANCE: {path}]\n"
+                "Read the Purpose, Workflow, Validation, and Common Mistakes sections as needed.\n"
+            )
+        else:
+            skills.append(f"\n[GUIDANCE: {path.name}]\n{path.read_text(encoding='utf-8').strip()}\n")
     handoff = build_handoff(request)
     context_binding = ""
     if request.mcp_context_project is not None:
@@ -808,7 +1050,11 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
         "Outcome, Evidence, Uncertainties or conflicts, and Proposed disposition.\n"
         "Do not emit result-v1 and do not close canonical project state; the Project Lead will review this draft.\n"
         + "".join(skills)
-        + f"\n[TASK DETAILS]\n{request.prompt.strip()}\n"
+        + (
+            ""
+            if request.backend == "opencode"
+            else f"\n[TASK DETAILS]\n{request.prompt.strip()}\n"
+        )
     )
 
 
@@ -916,6 +1162,23 @@ def changed_workspace_paths(
     )
 
 
+def _workspace_change_actions(
+    before: dict[str, str],
+    after: dict[str, str],
+    changed_paths: tuple[str, ...],
+) -> dict[str, str]:
+    return {
+        path: (
+            "created"
+            if path not in before
+            else "deleted"
+            if path not in after
+            else "modified"
+        )
+        for path in changed_paths
+    }
+
+
 def role_boundary_errors(
     policy: RolePolicy,
     changed_paths: tuple[str, ...],
@@ -931,6 +1194,15 @@ def _workspace_scan_excluded(relative: str) -> bool:
     return any(
         relative == prefix or relative.startswith(prefix + "/")
         for prefix in WORKSPACE_SCAN_EXCLUDES
+    )
+
+
+def _acceptance_path_excluded(relative: str) -> bool:
+    if relative == "results/gates" or relative.startswith("results/gates/"):
+        return True
+    return any(
+        relative == prefix or relative.startswith(prefix + "/")
+        for prefix in ACCEPTANCE_PATH_EXCLUDES
     )
 
 
@@ -1196,6 +1468,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run one turn of a persistent CodexTeam worker conversation."
     )
+    parser.add_argument("--backend", choices=("codex", "opencode"), default="codex")
     parser.add_argument("--phase", required=True, choices=PHASES)
     parser.add_argument("--profile", help="Override the selected role policy's default profile")
     parser.add_argument(
@@ -1241,43 +1514,56 @@ def main(argv: list[str] | None = None) -> int:
         request = prepare_request(args)
         turn = prepare_turn(request)
         if args.dry_run:
+            details = {
+                "phase": request.phase,
+                "command": build_command(request, turn),
+                "profile_file": (
+                    str(request.profile_file) if request.backend == "codex" else None
+                ),
+                "role_policy": request.role_policy.name,
+                "role_policy_version": request.role_policy.schema_version,
+                "role_policy_digest": request.role_policy.digest,
+                "role_policy_source": str(request.role_policy.source_path),
+                "default_profile": request.role_policy.default_profile,
+                "sandbox_mode": request.role_policy.sandbox_mode,
+                "mcp_allowed_servers": list(request.role_policy.mcp_servers),
+                "mcp_effective_servers": list(request.effective_mcp_servers),
+                "mcp_missing_servers": list(request.missing_mcp_servers),
+                "mcp_allowed_tools": {
+                    server: list(tools)
+                    for server, tools in request.role_policy.mcp_tools
+                },
+                "mcp_effective_tools": {
+                    server: list(tools)
+                    for server, tools in request.effective_mcp_tools
+                },
+                "mcp_context_project": request.mcp_context_project,
+                "reasoning_effort": _session_reasoning_effort(request, turn.session),
+                "reasoning_effort_override": request.reasoning_effort_override,
+                "workspace": str(request.workspace),
+                "trust_parent_sandbox": request.trust_parent_sandbox,
+                "run_guard": request.run_guard,
+                "session_path": str(request.session_path),
+                "lead_prompt_path": str(turn.lead_prompt_path),
+                "turn_path": str(turn.message_path),
+                "stderr_path": str(turn.stderr_path),
+                "result_schema_path": str(_result_schema_path(request)),
+                "result_path": str(request.result_path),
+                "skills": [str(path) for path in request.skill_files],
+            }
+            if request.backend == "opencode":
+                details.update(
+                    {
+                        "backend": request.backend,
+                        "resolved_model": request.model,
+                        "backend_config_path": str(request.backend_config_path),
+                        "backend_config_digest": request.backend_config_digest,
+                        "reasoning_effort": None,
+                    }
+                )
             print(
                 json.dumps(
-                    {
-                        "phase": request.phase,
-                        "command": build_command(request, turn),
-                        "profile_file": str(request.profile_file),
-                        "role_policy": request.role_policy.name,
-                        "role_policy_version": request.role_policy.schema_version,
-                        "role_policy_digest": request.role_policy.digest,
-                        "role_policy_source": str(request.role_policy.source_path),
-                        "default_profile": request.role_policy.default_profile,
-                        "sandbox_mode": request.role_policy.sandbox_mode,
-                        "mcp_allowed_servers": list(request.role_policy.mcp_servers),
-                        "mcp_effective_servers": list(request.effective_mcp_servers),
-                        "mcp_missing_servers": list(request.missing_mcp_servers),
-                        "mcp_allowed_tools": {
-                            server: list(tools)
-                            for server, tools in request.role_policy.mcp_tools
-                        },
-                        "mcp_effective_tools": {
-                            server: list(tools)
-                            for server, tools in request.effective_mcp_tools
-                        },
-                        "mcp_context_project": request.mcp_context_project,
-                        "reasoning_effort": _session_reasoning_effort(request, turn.session),
-                        "reasoning_effort_override": request.reasoning_effort_override,
-                        "workspace": str(request.workspace),
-                        "trust_parent_sandbox": request.trust_parent_sandbox,
-                        "run_guard": request.run_guard,
-                        "session_path": str(request.session_path),
-                        "lead_prompt_path": str(turn.lead_prompt_path),
-                        "turn_path": str(turn.message_path),
-                        "stderr_path": str(turn.stderr_path),
-                        "result_schema_path": str(_result_schema_path(request)),
-                        "result_path": str(request.result_path),
-                        "skills": [str(path) for path in request.skill_files],
-                    },
+                    details,
                     indent=2,
                 )
             )
@@ -1316,6 +1602,55 @@ def _read_prompt(prompt_file: str | None, prompt: str | None) -> str:
     if not content.strip():
         raise ValueError("prompt cannot be empty")
     return content
+
+
+def _workspace_agents_instructions(workspace: Path) -> str | None:
+    path = workspace / "AGENTS.md"
+    if not path.exists():
+        return None
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"workspace AGENTS.md is unsafe: {path}")
+    content = path.read_text(encoding="utf-8")
+    return content if content.strip() else None
+
+
+def _opencode_context_bytes(
+    request: SpawnRequest,
+    turn: TurnContext,
+    worker_prompt: str,
+) -> dict[str, int]:
+    guidance = _load_pinned_skill_files(request.session_dir)
+    assert request.backend_config_path is not None
+    config = json.loads(request.backend_config_path.read_text(encoding="utf-8"))
+    agent_name = (
+        opencode_backend.FINAL_AGENT
+        if request.phase == "final"
+        else opencode_backend.AGENT
+    )
+    agent = config.get("agent", {}).get(agent_name, {})
+    agent_prompt = agent.get("prompt") if isinstance(agent, dict) else None
+    if not isinstance(agent_prompt, str):
+        raise ValueError(f"pinned OpenCode config is missing {agent_name} prompt")
+    values = {
+        "worker_prompt_bytes": len(worker_prompt.encode("utf-8")),
+        "agent_prompt_bytes": len(agent_prompt.encode("utf-8")),
+        "lead_prompt_source_bytes": len(request.prompt.encode("utf-8")),
+        "available_guidance_snapshot_bytes": sum(
+            len(path.read_bytes()) for path in guidance
+        ),
+        "available_guidance_snapshot_count": len(guidance),
+        "available_result_schema_bytes": len(_result_schema_path(request).read_bytes()),
+    }
+    if request.phase == "final" and turn.session is not None:
+        checkpoint = turn.session.get("accepted_checkpoint")
+        if isinstance(checkpoint, dict):
+            serialized = json.dumps(
+                checkpoint,
+                indent=2,
+                sort_keys=True,
+            )
+            values["accepted_checkpoint_embedded_bytes"] = len(serialized.encode("utf-8"))
+    return values
 
 
 def _skill_files(policy: RolePolicy, overrides: list[str]) -> tuple[Path, ...]:
@@ -1426,12 +1761,25 @@ def _prepare_session_storage(
     if initial:
         request.session_dir.mkdir(parents=True, exist_ok=False)
         request.session_dir.chmod(0o700)
-        request.codex_home.mkdir()
-        request.codex_home.chmod(0o700)
+        if request.backend == "opencode":
+            _write_workspace_baseline(request)
         atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
         request.role_policy_path.chmod(0o600)
         _write_result_schema(request)
         _snapshot_skill_files(request)
+        if request.backend == "opencode":
+            assert request.backend_config_path is not None
+            config = opencode_backend.build_config(
+                model=request.model,
+                role_name=request.role,
+                role_instructions=request.role_policy.developer_instructions,
+                project_instructions=request.opencode_project_instructions,
+                add_dirs=request.add_dirs,
+            )
+            opencode_backend.write_config(request.backend_config_path, config)
+            return
+        request.codex_home.mkdir()
+        request.codex_home.chmod(0o700)
         source = request.profile_file.parent
         base_config = source / "config.toml"
         if base_config.is_file():
@@ -1442,7 +1790,18 @@ def _prepare_session_storage(
         if catalogs.is_dir():
             shutil.copytree(catalogs, request.codex_home / "model_catalogs")
         return
-    if not request.codex_home.is_dir():
+    if request.backend == "opencode":
+        assert request.backend_config_path is not None
+        assert request.backend_config_digest is not None
+        opencode_backend.ensure_config(
+            request.backend_config_path,
+            request.backend_config_digest,
+        )
+        expected_baseline = session.get("workspace_baseline_sha256") if session else None
+        if not isinstance(expected_baseline, str) or not expected_baseline:
+            raise ValueError("OpenCode session workspace_baseline_sha256 must be a non-empty string")
+        _load_workspace_baseline(request, expected_digest=expected_baseline)
+    elif not request.codex_home.is_dir():
         raise FileNotFoundError(f"persistent Codex home is missing: {request.codex_home}")
     if not request.role_policy_path.is_file():
         atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
@@ -1537,6 +1896,21 @@ def _load_session(path: Path) -> dict[str, Any]:
 
 
 def _validate_session_scope(request: SpawnRequest, session: dict[str, Any]) -> None:
+    stored_backend = session.get("execution_backend", "codex")
+    if stored_backend != request.backend:
+        raise ValueError(
+            "session backend mismatch: "
+            f"expected {request.backend!r}, found {stored_backend!r}"
+        )
+    if (
+        request.backend == "opencode"
+        and request.backend_version is not None
+        and session.get("backend_version") != request.backend_version
+    ):
+        raise ValueError(
+            "session backend version mismatch: "
+            f"expected {request.backend_version!r}, found {session.get('backend_version')!r}"
+        )
     expected = {
         "team_id": request.team_id,
         "task_id": request.task_id,
@@ -1563,6 +1937,7 @@ def _validate_session_scope(request: SpawnRequest, session: dict[str, Any]) -> N
         "model_provider": request.model_provider,
         "model_catalog_json": request.model_catalog_json,
         "model_verbosity": request.model_verbosity,
+        "backend_config_digest": request.backend_config_digest,
     }
     optional_mismatches = [
         f"{field}: expected {value!r}, found {session.get(field)!r}"
@@ -1617,6 +1992,10 @@ def _session_record(
     thread_id: str | None,
     status: str,
     process: ProcessResult,
+    change_actions: dict[str, str] | None = None,
+    workspace_snapshot: dict[str, str] | None = None,
+    trusted_baseline: dict[str, str] | None = None,
+    trusted_baseline_digest: str | None = None,
     final_result_path: str | None = None,
 ) -> dict[str, Any]:
     if not thread_id:
@@ -1678,11 +2057,247 @@ def _session_record(
         "updated_at": now,
         "turns": turns,
     }
+    if request.backend == "opencode":
+        if trusted_baseline is None or trusted_baseline_digest is None:
+            raise ValueError("trusted OpenCode workspace baseline is required")
+        record["execution_backend"] = request.backend
+        record["backend_version"] = request.backend_version
+        record["backend_config_digest"] = request.backend_config_digest
+        record["opencode_session_id"] = thread_id
+        record["workspace_baseline_sha256"] = trusted_baseline_digest
+        worker_changes = _merge_worker_change_manifest(
+            trusted_baseline,
+            turn.session.get("worker_change_manifest") if turn.session else None,
+            change_actions or {},
+            workspace_snapshot or {},
+        )
+        record["worker_change_manifest"] = worker_changes
+        if request.phase in {"draft", "feedback"} and status == "draft_ready":
+            record["accepted_checkpoint"] = _accepted_checkpoint(
+                request,
+                turn,
+                thread_id=thread_id,
+                accepted_paths=_accepted_product_paths(worker_changes),
+            )
+        elif turn.session and "accepted_checkpoint" in turn.session:
+            record["accepted_checkpoint"] = turn.session["accepted_checkpoint"]
     if request.mcp_context_project is not None:
         record["mcp_context_project"] = request.mcp_context_project
     if final_result_path is not None:
         record["final_result_path"] = final_result_path
     return record
+
+
+def _accepted_checkpoint(
+    request: SpawnRequest,
+    turn: TurnContext,
+    *,
+    thread_id: str,
+    accepted_paths: dict[str, dict[str, str | None]],
+) -> dict[str, Any]:
+    message_hash = hashlib.sha256(turn.message_path.read_bytes()).hexdigest()
+    return {
+        "turn_number": turn.number,
+        "phase": request.phase,
+        "message_path": turn.message_path.relative_to(request.workspace).as_posix(),
+        "message_sha256": message_hash,
+        "workspace_sha256": _accepted_paths_digest(accepted_paths),
+        "changed_paths": sorted(accepted_paths),
+        "accepted_paths": accepted_paths,
+        "session_id": thread_id,
+        "execution_backend": request.backend,
+        "model_profile": request.profile,
+        "model": request.model,
+        "backend_config_digest": request.backend_config_digest,
+        "role_policy_digest": request.role_policy.digest,
+        "instruction_bundle_digest": request.guidance_digest,
+    }
+
+
+def _ensure_accepted_checkpoint(request: SpawnRequest, turn: TurnContext) -> None:
+    checkpoint = turn.session.get("accepted_checkpoint") if turn.session else None
+    if not isinstance(checkpoint, dict):
+        raise ValueError("OpenCode finalization requires an accepted draft checkpoint")
+    relative = checkpoint.get("message_path")
+    expected_hash = checkpoint.get("message_sha256")
+    if not isinstance(relative, str) or not isinstance(expected_hash, str):
+        raise ValueError("OpenCode accepted draft checkpoint is incomplete")
+    path = contained_path(request.workspace, relative, label="accepted message path")
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"accepted draft message is missing or unsafe: {path}")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+        raise ValueError(f"accepted draft message digest mismatch: {path}")
+    accepted_paths = checkpoint.get("accepted_paths")
+    if not isinstance(accepted_paths, dict):
+        raise ValueError("OpenCode accepted draft checkpoint paths are incomplete")
+    path_errors = _accepted_path_errors(request.workspace, accepted_paths)
+    if path_errors:
+        raise ValueError("accepted draft product path mismatch: " + "; ".join(path_errors))
+    if checkpoint.get("workspace_sha256") != _accepted_paths_digest(accepted_paths):
+        raise ValueError("accepted draft product manifest digest mismatch")
+    expected_identity = {
+        "session_id": turn.session.get("thread_id") if turn.session else None,
+        "execution_backend": request.backend,
+        "model_profile": request.profile,
+        "model": request.model,
+        "backend_config_digest": request.backend_config_digest,
+        "role_policy_digest": request.role_policy.digest,
+        "instruction_bundle_digest": request.guidance_digest,
+    }
+    mismatches = [
+        f"{field}: expected {value!r}, found {checkpoint.get(field)!r}"
+        for field, value in expected_identity.items()
+        if checkpoint.get(field) != value
+    ]
+    if mismatches:
+        raise ValueError("accepted draft checkpoint mismatch: " + "; ".join(mismatches))
+
+
+def _merge_worker_change_manifest(
+    baseline: dict[str, str],
+    previous: Any,
+    change_actions: dict[str, str],
+    snapshot: dict[str, str],
+) -> dict[str, dict[str, str | None]]:
+    touched = {
+        path
+        for path in (previous or {})
+        if isinstance(path, str)
+    }
+    touched.update(
+        path
+        for path, action in change_actions.items()
+        if isinstance(path, str) and action in {"created", "modified", "deleted"}
+    )
+    manifest: dict[str, dict[str, str | None]] = {}
+    for path in sorted(touched):
+        baseline_hash = baseline.get(path)
+        current_hash = snapshot.get(path)
+        if baseline_hash is None and current_hash is None:
+            continue
+        if baseline_hash == current_hash:
+            continue
+        action = (
+            "created"
+            if baseline_hash is None
+            else "deleted"
+            if current_hash is None
+            else "modified"
+        )
+        manifest[path] = {"action": action, "sha256": current_hash}
+    return manifest
+
+
+def _accepted_product_paths(
+    worker_changes: dict[str, dict[str, str | None]],
+) -> dict[str, dict[str, str | None]]:
+    return {
+        path: dict(item)
+        for path, item in worker_changes.items()
+        if not _acceptance_path_excluded(path)
+    }
+
+
+def _accepted_path_errors(
+    workspace: Path,
+    accepted_paths: dict[str, Any],
+) -> list[str]:
+    snapshot = snapshot_workspace(workspace)
+    errors: list[str] = []
+    for path, item in sorted(accepted_paths.items()):
+        if (
+            not isinstance(path, str)
+            or _acceptance_path_excluded(path)
+            or not isinstance(item, dict)
+            or item.get("action") not in {"created", "modified", "deleted"}
+            or (item.get("sha256") is not None and not isinstance(item.get("sha256"), str))
+        ):
+            errors.append(f"invalid accepted path entry: {path!r}")
+            continue
+        if snapshot.get(path) != item.get("sha256"):
+            errors.append(path)
+    return errors
+
+
+def _accepted_paths_digest(accepted_paths: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            accepted_paths,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _workspace_baseline_path(request: SpawnRequest) -> Path:
+    return request.session_dir / WORKSPACE_BASELINE_FILENAME
+
+
+def _write_workspace_baseline(request: SpawnRequest) -> None:
+    path = _workspace_baseline_path(request)
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"workspace baseline already exists: {path}")
+    atomic_write_json(path, snapshot_workspace(request.workspace))
+    path.chmod(0o600)
+
+
+def _load_workspace_baseline(
+    request: SpawnRequest,
+    *,
+    expected_digest: Any = None,
+) -> dict[str, str]:
+    path = _workspace_baseline_path(request)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"workspace baseline is missing or unsafe: {path}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid workspace baseline: {path}: {exc}") from exc
+    if not isinstance(value, dict) or any(
+        not isinstance(key, str) or not isinstance(digest, str)
+        for key, digest in value.items()
+    ):
+        raise ValueError(f"invalid workspace baseline manifest: {path}")
+    digest = _workspace_baseline_digest(value)
+    if expected_digest is not None and expected_digest != digest:
+        raise ValueError(f"workspace baseline digest mismatch: {path}")
+    return value
+
+
+def _workspace_baseline_digest(baseline: dict[str, str]) -> str:
+    return hashlib.sha256(
+        json.dumps(baseline, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _post_run_baseline_error(
+    request: SpawnRequest,
+    trusted_digest: str | None,
+) -> str | None:
+    if request.backend != "opencode":
+        return None
+    if trusted_digest is None:
+        return "trusted OpenCode workspace baseline digest is missing"
+    try:
+        current = _load_workspace_baseline(request)
+    except (OSError, ValueError) as exc:
+        return f"OpenCode worker changed the private workspace baseline: {exc}"
+    if _workspace_baseline_digest(current) != trusted_digest:
+        return "OpenCode worker changed the private workspace baseline digest"
+    return None
+
+
+def _restore_workspace_baseline(
+    request: SpawnRequest,
+    trusted_baseline: dict[str, str],
+) -> None:
+    path = _workspace_baseline_path(request)
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+    atomic_write_json(path, trusted_baseline)
+    path.chmod(0o600)
 
 
 def _validate_reasoning_effort(value: str | None) -> str | None:
@@ -1725,7 +2340,9 @@ def _write_turn_state(
     status: str,
     process: ProcessResult | None = None,
     changed_paths: tuple[str, ...] = (),
+    change_actions: dict[str, str] | None = None,
     errors: list[str] | None = None,
+    thread_id: str | None = None,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     existing: dict[str, Any] = {}
@@ -1772,8 +2389,19 @@ def _write_turn_state(
         "changed_paths": list(changed_paths),
         "errors": errors or [],
     }
+    if change_actions is not None:
+        state["change_actions"] = change_actions
+    if request.backend == "opencode":
+        state["execution_backend"] = request.backend
+        state["resolved_model"] = request.model
+        state["backend_version"] = request.backend_version
+        state["backend_config_digest"] = request.backend_config_digest
     if request.mcp_context_project is not None:
         state["mcp_context_project"] = request.mcp_context_project
+    if thread_id is not None:
+        if request.backend == "opencode":
+            state["thread_id"] = thread_id
+            state["opencode_session_id"] = thread_id
     if process is not None:
         state["duration_seconds"] = round(process.duration_seconds, 3)
         state["exit_code"] = process.exit_code
@@ -1799,6 +2427,7 @@ def _turn_failure(
     *,
     thread_id: str | None,
     thread_mismatch: bool,
+    backend: str = "codex",
 ) -> tuple[str | None, int, list[str]]:
     if thread_mismatch:
         return "session_mismatch", 1, ["resumed turn reported a different thread ID"]
@@ -1817,8 +2446,14 @@ def _turn_failure(
     if not events.completed:
         if events.failures:
             return "turn_failed", 1, list(events.failures)
-        return "turn_failed", 1, ["Codex event stream did not contain turn.completed"]
+        if backend == "codex":
+            return "turn_failed", 1, ["Codex event stream did not contain turn.completed"]
+        return "turn_failed", 1, ["OpenCode event stream did not contain a successful stop step"]
     return None, 0, []
+
+
+def _backend_name(backend: str) -> str:
+    return "OpenCode" if backend == "opencode" else "Codex"
 
 
 def _turn_outcome(
@@ -1829,7 +2464,7 @@ def _turn_outcome(
     thread_id: str | None,
     errors: list[str] | None = None,
 ) -> dict[str, Any]:
-    return {
+    outcome = {
         "phase": request.phase,
         "status": status,
         "team_id": request.team_id,
@@ -1855,6 +2490,10 @@ def _turn_outcome(
         "result_path": str(request.result_path) if request.result_path.exists() else None,
         "errors": errors or [],
     }
+    if request.backend == "opencode":
+        outcome["execution_backend"] = request.backend
+        outcome["resolved_model"] = request.model
+    return outcome
 
 
 def _result_from_message(
@@ -1914,6 +2553,10 @@ def _result_from_message(
         if artifact_errors:
             validation_errors.extend(artifact_errors)
             continue
+        accepted_change_errors = _accepted_change_declaration_errors(request, candidate)
+        if accepted_change_errors:
+            validation_errors.extend(accepted_change_errors)
+            continue
         policy_errors = _result_policy_errors(request, candidate)
         if policy_errors:
             validation_errors.extend(policy_errors)
@@ -1966,6 +2609,37 @@ def _result_policy_errors(request: SpawnRequest, result: dict[str, Any]) -> list
         f"role policy {request.role_policy.name} does not allow evidence type: {item['type']}"
         for item in result["evidence"]
         if item["type"] not in request.role_policy.allowed_evidence_types
+    )
+    return errors
+
+
+def _accepted_change_declaration_errors(
+    request: SpawnRequest,
+    result: dict[str, Any],
+) -> list[str]:
+    if request.backend != "opencode" or request.role == "git_steward":
+        return []
+    session = _load_session(request.session_path)
+    checkpoint = session.get("accepted_checkpoint")
+    accepted = checkpoint.get("accepted_paths") if isinstance(checkpoint, dict) else None
+    if not isinstance(accepted, dict):
+        return ["OpenCode accepted product path manifest is missing"]
+    declared: dict[str, str] = {}
+    errors: list[str] = []
+    for item in result["file_changes"]:
+        path = item["path"]
+        if path in declared:
+            errors.append(f"file_changes contains duplicate path: {path}")
+        else:
+            declared[path] = item["action"]
+    errors.extend(
+        f"file_changes must declare accepted {item.get('action')} path: {path}"
+        for path, item in sorted(accepted.items())
+        if isinstance(item, dict) and declared.get(path) != item.get("action")
+    )
+    errors.extend(
+        f"file_changes contains path outside accepted product manifest: {path}"
+        for path in sorted(set(declared) - set(accepted))
     )
     return errors
 
