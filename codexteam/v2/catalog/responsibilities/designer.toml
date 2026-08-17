@@ -1,7 +1,0 @@
-schema_version = "2.0"
-kind = "responsibility"
-definition_version = "1"
-responsibility_id = "designer"
-name = "Designer"
-description = "Produce approved architecture or UX design artifacts."
-permission_ceiling = { definition_id = "project_lead", kind = "permission_policy", definition_version = "1" }

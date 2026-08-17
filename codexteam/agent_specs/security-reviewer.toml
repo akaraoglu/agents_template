@@ -1,0 +1,8 @@
+schema_version = "1.0"
+agent_spec_id = "security-reviewer"
+version = "1.0"
+base_role = "reviewer"
+description = "Security-focused evidence review specialization."
+capabilities = ["security", "authentication", "threat-modeling"]
+guidance_files = ["security-review-specialization.md"]
+permission_overlay = { allowed_change_patterns = [], denied_change_patterns = [], mcp_servers = [], mcp_tools = {}, allowed_evidence_types = [] }

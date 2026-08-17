@@ -12,6 +12,7 @@ from codexteam_tools.roles import (
     load_all_role_policies,
     load_role_policy,
     load_role_policy_snapshot,
+    validate_role_policy_contract,
 )
 
 
@@ -30,12 +31,8 @@ def test_all_canonical_role_policies_are_unique_and_complete():
     }
     assert len({policy.name for policy in policies}) == 9
     assert len({policy.digest for policy in policies}) == 9
-    assert load_role_policy("feature_planner").default_profile == "gpt54-mini"
-    assert all(
-        policy.default_profile == "qwen36-27b"
-        for policy in policies
-        if policy.role != "feature_planner"
-    )
+    assert all(not hasattr(policy, "default_profile") for policy in policies)
+    assert all(not hasattr(policy, "default_reasoning_effort") for policy in policies)
     assert load_role_policy("leader").mcp_servers == (
         "codexteam-context",
         "github-readonly",
@@ -108,6 +105,19 @@ def test_role_policy_snapshot_digest_is_stable(tmp_path: Path):
     snapshot.write_text(json.dumps(changed))
     with pytest.raises(RolePolicyError, match="digest mismatch"):
         load_role_policy_snapshot(snapshot, expected_role="tester")
+
+
+def test_role_policy_contract_accepts_manifest_and_digest_snapshot():
+    policy = load_role_policy("developer")
+    snapshot = policy.snapshot()
+
+    assert validate_role_policy_contract(snapshot, expected_role="developer").digest == policy.digest
+    manifest = dict(snapshot)
+    manifest.pop("digest")
+    assert validate_role_policy_contract(manifest, expected_role="developer").digest == policy.digest
+    snapshot["digest"] = None
+    with pytest.raises(RolePolicyError, match="digest mismatch"):
+        validate_role_policy_contract(snapshot, expected_role="developer")
 
 
 def test_legacy_role_policy_snapshot_without_mcp_servers_remains_valid(tmp_path: Path):

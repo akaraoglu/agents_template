@@ -69,7 +69,7 @@ automatic retry or model transfer.
 
 Options:
   --profile PROFILE          Codex profile for every responsible AI (required live)
-  --reasoning-effort LEVEL   minimal, low, medium, high, or xhigh (required live)
+  --reasoning-effort LEVEL   low, medium, high, or xhigh (required live)
   --timeout-seconds N        Timeout for each agent turn (default: 300)
   --budget-seconds N         Elapsed-time budget reported at exit (default: 1800)
   --enforce-budget           Exit nonzero when a functional run exceeds the budget
@@ -266,8 +266,6 @@ run_task() {
     local session="${PROJECT}/.codexteam/runtime/sessions/${PROJECT_ID}/${task}/${attempt}/session.json"
     local draft_thread final_thread
     local -a identity=(
-        --profile "${PROFILE}"
-        --reasoning-effort "${REASONING_EFFORT}"
         --team "${PROJECT_ID}"
         --task "${task}"
         --attempt "${attempt}"
@@ -281,14 +279,16 @@ run_task() {
     CURRENT_PHASE="draft"
     CURRENT_STAGE="${task} draft turn"
     ((AGENT_TURNS += 1))
-    run_command "${SPAWN}" --phase draft "${identity[@]}" --prompt-file "${handoff}"
+    run_command "${SPAWN}" --phase draft --backend codex --profile "${PROFILE}" \
+        --reasoning-effort "${REASONING_EFFORT}" "${identity[@]}" --prompt-file "${handoff}"
 
     [[ -s "${session}" ]] || fail "draft did not persist session metadata: ${session}"
     [[ ! -e "${result}" ]] || fail "draft created the reserved final result: ${result}"
     draft_thread="$(session_value "${session}" thread_id)"
     [[ -n "${draft_thread}" ]] || fail "draft session has no thread_id: ${session}"
     assert_file_contains "${session}" "\"last_phase\": \"draft\""
-    assert_file_contains "${session}" "\"model_reasoning_effort\": \"${REASONING_EFFORT}\""
+    assert_file_contains "${PROJECT}/.codexteam/runtime/sessions/${PROJECT_ID}/${task}/${attempt}/execution-spec.json" \
+        "\"requested\": \"${REASONING_EFFORT}\""
 
     CURRENT_STAGE="${task} deterministic draft gate"
     draft_gate "${task}"
@@ -392,14 +392,13 @@ print_dry_run_plan() {
         task="${tasks[index]}"
         role="${roles[index]}"
         printf '\n%s (%s):\n' "${task}" "${role}"
-        print_command "${SPAWN}" --phase draft --profile "${PROFILE}" \
+        print_command "${SPAWN}" --phase draft --backend codex --profile "${PROFILE}" \
             --reasoning-effort "${REASONING_EFFORT}" --team "${PROJECT_ID}" \
             --task "${task}" --attempt att-001 --role "${role}" \
             --workspace "${PROJECT}" --timeout "${TIMEOUT_SECONDS}" \
             --prompt-file "${PROJECT}/management/tasks/${task}.md"
         printf '  [deterministic draft gate]\n'
-        print_command "${SPAWN}" --phase final --profile "${PROFILE}" \
-            --reasoning-effort "${REASONING_EFFORT}" --team "${PROJECT_ID}" \
+        print_command "${SPAWN}" --phase final --team "${PROJECT_ID}" \
             --task "${task}" --attempt att-001 --role "${role}" \
             --workspace "${PROJECT}" --timeout "${TIMEOUT_SECONDS}" \
             --prompt-file "${FIXTURE_ROOT}/prompts/${task}-final.md"
@@ -429,8 +428,7 @@ task, attempt, role, profile, reasoning effort, and workspace. Send consolidated
 new attempt unless the recorded session is irrecoverable or ownership intentionally changes.
 EOF
     printf 'Create a focused feedback prompt at %s, then run:\n  ' "${feedback_file}" >&2
-    printf '%q ' "${SPAWN}" --phase feedback --profile "${PROFILE}" \
-        --reasoning-effort "${REASONING_EFFORT}" --team "${PROJECT_ID}" \
+    printf '%q ' "${SPAWN}" --phase feedback --team "${PROJECT_ID}" \
         --task "${CURRENT_TASK}" --attempt att-001 --role "${CURRENT_ROLE}" \
         --workspace "${PROJECT}" --timeout "${TIMEOUT_SECONDS}" --prompt-file "${feedback_file}" >&2
     printf '\n' >&2
@@ -634,7 +632,7 @@ main() {
     fi
     evaluate_lead_usage
     case "${REASONING_EFFORT}" in
-        ""|minimal|low|medium|high|xhigh) ;;
+        ""|low|medium|high|xhigh) ;;
         *) fail "unsupported --reasoning-effort: ${REASONING_EFFORT}" ;;
     esac
 

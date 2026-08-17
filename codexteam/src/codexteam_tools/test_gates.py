@@ -26,6 +26,14 @@ CONFIG_PATH = "management/TEST_GATES.toml"
 RECORD_ROOT = "results/gates"
 SNAPSHOT_ROOT = f"{RECORD_ROOT}/accepted"
 EXECUTION_SURFACES = ("worker", "lead_host")
+GATE_RECORD_FIELDS = {
+    "schema_version", "gate", "status", "project_root", "execution_surface",
+    "started_at", "completed_at", "duration_seconds", "verification_paths",
+    "configuration_digest", "workspace_digest", "commands",
+}
+GATE_COMMAND_FIELDS = {
+    "gate", "argv", "exit_code", "duration_seconds", "stdout_tail", "stderr_tail",
+}
 
 
 class GateConfigError(ValueError):
@@ -168,6 +176,7 @@ def run_gate(
         "workspace_digest": _manifest_digest(manifest),
         "commands": records,
     }
+    validate_gate_record(record)
     record_path = gate_record_path(root, gate)
     atomic_write_json(record_path, record)
     return record
@@ -190,8 +199,7 @@ def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, An
         record = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise GateConfigError(f"invalid gate record JSON: {exc}") from exc
-    if not isinstance(record, dict) or record.get("schema_version") != "1.0":
-        raise GateConfigError("gate record schema_version must be '1.0'")
+    record = validate_gate_record(record)
     if record.get("gate") != gate or record.get("status") != "passed":
         raise GateConfigError(f"{gate} gate record is not a passing record")
     if record.get("project_root") != str(root):
@@ -204,9 +212,102 @@ def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, An
         raise GateConfigError("gate record verification_paths must be a list")
     if patterns != list(config.verification_paths) or record.get("configuration_digest") != _config_digest(config):
         raise GateConfigError(f"{gate} gate record is stale for the current gate configuration")
+    expected_commands = [
+        {"gate": stage, "argv": list(argv)}
+        for stage, commands in _gate_stages(config, gate)
+        for argv in commands
+    ]
+    observed_commands = [
+        {"gate": item["gate"], "argv": item["argv"]}
+        for item in record["commands"]
+    ]
+    if observed_commands != expected_commands:
+        raise GateConfigError(f"{gate} gate record command observations do not match configuration")
     current = _manifest_digest(verification_manifest(root, tuple(patterns)))
     if current != record.get("workspace_digest"):
         raise GateConfigError(f"{gate} gate record is stale for the current workspace")
+    return record
+
+
+def validate_gate_record(record: Any) -> dict[str, Any]:
+    if not isinstance(record, dict):
+        raise GateConfigError("gate record must be a JSON object")
+    required = GATE_RECORD_FIELDS - {"execution_surface"}
+    missing = sorted(required - set(record))
+    unknown = sorted(set(record) - GATE_RECORD_FIELDS)
+    errors: list[str] = []
+    if missing:
+        errors.append("missing fields: " + ", ".join(missing))
+    if unknown:
+        errors.append("unknown fields: " + ", ".join(unknown))
+    if record.get("schema_version") != "1.0":
+        errors.append("schema_version must be '1.0'")
+    if record.get("gate") not in GATES:
+        errors.append("gate must be development or integration")
+    if record.get("status") not in {"passed", "failed"}:
+        errors.append("status must be passed or failed")
+    if not isinstance(record.get("project_root"), str) or not Path(record.get("project_root", "")).is_absolute():
+        errors.append("project_root must be an absolute path")
+    if record.get("execution_surface", "worker") not in EXECUTION_SURFACES:
+        errors.append("execution_surface must be worker or lead_host")
+    for field in ("started_at", "completed_at"):
+        if not _valid_timestamp(record.get(field)):
+            errors.append(f"{field} must be an ISO-8601 timestamp")
+    duration = record.get("duration_seconds")
+    if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration < 0:
+        errors.append("duration_seconds must be a non-negative number")
+    paths = record.get("verification_paths")
+    if not isinstance(paths, list) or not paths or any(not isinstance(item, str) or not item for item in paths):
+        errors.append("verification_paths must be a non-empty string list")
+    elif len(paths) != len(set(paths)):
+        errors.append("verification_paths cannot contain duplicates")
+    for field in ("configuration_digest", "workspace_digest"):
+        value = record.get(field)
+        if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            errors.append(f"{field} must be a lowercase SHA-256 digest")
+    commands = record.get("commands")
+    if not isinstance(commands, list) or not commands:
+        errors.append("commands must be a non-empty list")
+    else:
+        for index, command in enumerate(commands):
+            prefix = f"commands[{index}]"
+            if not isinstance(command, dict):
+                errors.append(f"{prefix} must be an object")
+                continue
+            if set(command) != GATE_COMMAND_FIELDS:
+                errors.append(f"{prefix} must contain only the gate-record command fields")
+            if command.get("gate") not in GATES:
+                errors.append(f"{prefix}.gate must be development or integration")
+            argv = command.get("argv")
+            if not isinstance(argv, list) or not argv or any(not isinstance(item, str) or not item for item in argv):
+                errors.append(f"{prefix}.argv must be a non-empty string list")
+            exit_code = command.get("exit_code")
+            if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+                errors.append(f"{prefix}.exit_code must be an integer")
+            item_duration = command.get("duration_seconds")
+            if not isinstance(item_duration, (int, float)) or isinstance(item_duration, bool) or item_duration < 0:
+                errors.append(f"{prefix}.duration_seconds must be a non-negative number")
+            for field in ("stdout_tail", "stderr_tail"):
+                if not isinstance(command.get(field), str):
+                    errors.append(f"{prefix}.{field} must be a string")
+        if record.get("status") == "passed" and any(
+            isinstance(command.get("exit_code"), int)
+            and not isinstance(command.get("exit_code"), bool)
+            and command.get("exit_code") != 0
+            for command in commands
+            if isinstance(command, dict)
+        ):
+            errors.append("passed gate records require every command to exit zero")
+        if record.get("status") == "failed" and not any(
+            isinstance(command.get("exit_code"), int)
+            and not isinstance(command.get("exit_code"), bool)
+            and command.get("exit_code") != 0
+            for command in commands
+            if isinstance(command, dict)
+        ):
+            errors.append("failed gate records require a failing command observation")
+    if errors:
+        raise GateConfigError("invalid gate record: " + "; ".join(errors))
     return record
 
 
@@ -375,6 +476,16 @@ def _gate_table(
     return tuple(commands), timeout, tuple(includes_value), execution_surface
 
 
+def _gate_stages(
+    config: GateConfig,
+    gate: str,
+) -> tuple[tuple[str, tuple[tuple[str, ...], ...]], ...]:
+    stages = [("development", config.development_commands)]
+    if gate == "integration":
+        stages.append(("integration", config.integration_commands))
+    return tuple(stages)
+
+
 def _patterns(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list) or not value or any(not isinstance(item, str) or not item for item in value):
         raise GateConfigError("verification_paths must be a non-empty string array")
@@ -406,6 +517,20 @@ def _config_digest(config: GateConfig) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def gate_config_digest(config: GateConfig) -> str:
+    return _config_digest(config)
+
+
+def _valid_timestamp(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
 
 
 def _excluded(relative: str) -> bool:

@@ -148,6 +148,10 @@ def validate_commit_plan(plan: Any, project: Path) -> dict[str, Any]:
                 reason = _unsafe_reason(normalized)
                 if field in {"paths", "untrack_paths"} and reason:
                     errors.append(f"unsafe approved path {normalized!r}: {reason}")
+                if field == "paths" and contained_path(
+                    project, normalized, label="approved path"
+                ).is_dir():
+                    errors.append(f"approved path cannot select a directory: {normalized}")
             except (AttributeError, ValueError) as exc:
                 errors.append(str(exc))
         normalized_paths[field] = normalized_values

@@ -1,6 +1,0 @@
-schema_version = "2.0"
-kind = "guidance_module"
-definition_version = "1"
-module_id = "implementation"
-path = "guidance/implementation.md"
-digest = "c2c1e9ed65cad796e1bc9ba884178e2201e100ea7772797321ad646ca5699870"

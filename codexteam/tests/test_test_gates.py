@@ -12,6 +12,7 @@ from codexteam_tools.test_gates import (
     run_gate,
     snapshot_current_gate_record,
     validate_current_gate_record,
+    validate_gate_record,
 )
 
 
@@ -65,6 +66,90 @@ def test_gate_record_is_stale_when_commands_change(tmp_path: Path):
 
     with pytest.raises(GateConfigError, match="configuration"):
         validate_current_gate_record(project, "integration")
+
+
+def test_gate_record_contract_rejects_unknown_fields_and_accepts_legacy_surface(
+    tmp_path: Path,
+):
+    project = tmp_path / "project"
+    (project / "src").mkdir(parents=True)
+    (project / "src" / "main.py").write_text("VALUE = 1\n")
+    configure(project)
+    record = run_gate(project, "development")
+
+    legacy = dict(record)
+    legacy.pop("execution_surface")
+    assert validate_gate_record(legacy) is legacy
+
+    tampered = dict(record)
+    tampered["unexpected"] = True
+    with pytest.raises(GateConfigError, match="unknown fields"):
+        validate_gate_record(tampered)
+
+    changed_commands = dict(record)
+    changed_commands["commands"] = [dict(item) for item in record["commands"]]
+    changed_commands["commands"][0]["argv"] = [sys.executable, "-c", "print('different')"]
+    (project / "results" / "gates" / "development.json").write_text(
+        json.dumps(changed_commands)
+    )
+    with pytest.raises(GateConfigError, match="command observations"):
+        validate_current_gate_record(project, "development")
+
+    contradictory = dict(record)
+    contradictory["commands"] = [dict(item) for item in record["commands"]]
+    contradictory["commands"][0]["exit_code"] = 1
+    with pytest.raises(GateConfigError, match="require every command to exit zero"):
+        validate_gate_record(contradictory)
+
+    malformed_exit = dict(record)
+    malformed_exit["commands"] = [dict(item) for item in record["commands"]]
+    malformed_exit["status"] = "failed"
+    malformed_exit["commands"][0]["exit_code"] = []
+    with pytest.raises(GateConfigError, match="exit_code must be an integer"):
+        validate_gate_record(malformed_exit)
+
+
+def test_gate_failure_stops_later_commands_in_configured_order(tmp_path: Path):
+    project = tmp_path / "project"
+    (project / "src").mkdir(parents=True)
+    (project / "src" / "main.py").write_text("VALUE = 1\n")
+    marker = project / "order.txt"
+    commands = [
+        [sys.executable, "-c", "from pathlib import Path; Path('order.txt').write_text('development-1\\n')"],
+        [sys.executable, "-c", "from pathlib import Path; Path('order.txt').write_text(Path('order.txt').read_text() + 'development-2\\n'); raise SystemExit(9)"],
+    ]
+    integration = [
+        sys.executable,
+        "-c",
+        "from pathlib import Path; Path('order.txt').write_text(Path('order.txt').read_text() + 'integration\\n')",
+    ]
+    (project / "management").mkdir()
+    (project / "management" / "TEST_GATES.toml").write_text(
+        'schema_version = "1.0"\nverification_paths = ["src/**"]\n\n'
+        '[development]\nconfigured = true\nexpected_max_seconds = 30\n'
+        f"commands = {json.dumps(commands)}\n\n"
+        '[integration]\nconfigured = true\nexpected_max_seconds = 60\n'
+        'includes = ["development"]\n'
+        f"commands = [{json.dumps(integration)}]\n"
+    )
+
+    record = run_gate(project, "integration")
+
+    assert record["status"] == "failed"
+    assert [item["exit_code"] for item in record["commands"]] == [0, 9]
+    assert marker.read_text() == "development-1\ndevelopment-2\n"
+
+
+def test_changes_outside_verification_paths_do_not_stale_gate(tmp_path: Path):
+    project = tmp_path / "project"
+    (project / "src").mkdir(parents=True)
+    (project / "src" / "main.py").write_text("VALUE = 1\n")
+    configure(project)
+    record = run_gate(project, "development")
+
+    (project / "notes.txt").write_text("outside configured verification scope\n")
+
+    assert validate_current_gate_record(project, "development") == record
 
 
 def test_gate_dry_run_is_non_mutating_and_rejects_unconfigured(tmp_path: Path):

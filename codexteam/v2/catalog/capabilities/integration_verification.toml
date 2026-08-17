@@ -1,8 +1,0 @@
-schema_version = "2.0"
-kind = "capability"
-definition_version = "1"
-capability_id = "integration_verification"
-name = "Integration verification"
-description = "Run independent checks and write verification evidence."
-required_operations = ["read", "write", "execute", "send"]
-required_resources = ["project_path", "process", "evidence", "mailbox"]

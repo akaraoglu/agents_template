@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -60,7 +61,12 @@ Make project documentation agree with the implementation and independently verif
 
 ## Responsible AI
 
-`documenter-01` — documenter role; default `qwen36-27b` profile.
+- Owner: `documenter-01`
+- Role: `documenter`
+- AgentSpec: none
+- Backend: `codex`
+- Profile: `qwen36-27b`
+- Reasoning: `medium`
 
 ## Context
 
@@ -73,6 +79,13 @@ Operator-facing documentation and delivery records only. Do not change implement
 ## Allowed Paths
 
 Project Markdown files, delivery documentation, and documentation-focused tests when explicitly required.
+
+## Task Write Scope
+
+- `*.md`
+- `docs/**`
+- `tests/docs/**`
+- `results/**`
 
 ## Required Outputs
 
@@ -104,6 +117,28 @@ class InitializationPlan:
     files: tuple[str, ...]
     tasks: tuple[str, ...]
     initialize_git: bool
+
+
+def _validate_task_write_scope(handoff: str, path: str) -> None:
+    lines = handoff.splitlines()
+    headings = [index for index, line in enumerate(lines) if line.strip() == "## Task Write Scope"]
+    if len(headings) != 1:
+        raise ValueError(f"canonical task handoff requires one Task Write Scope: {path}")
+    patterns: list[str] = []
+    for line in lines[headings[0] + 1:]:
+        if line.startswith("## "):
+            break
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"\s*-\s+`([^`]+)`\s*", line)
+        if match is None:
+            raise ValueError(f"canonical task handoff has malformed Task Write Scope: {path}")
+        pattern = match.group(1)
+        if pattern.startswith("/") or "\\" in pattern or ".." in Path(pattern).parts:
+            raise ValueError(f"canonical task handoff has unsafe Task Write Scope: {path}")
+        patterns.append(pattern)
+    if not patterns:
+        raise ValueError(f"canonical task handoff requires non-empty Task Write Scope: {path}")
 
 
 def initialize_project(
@@ -172,6 +207,11 @@ def initialize_project(
         optional_handoff = OPTIONAL_TASK_HANDOFFS.get(task_id)
         if optional_handoff is not None:
             rendered.setdefault(f"management/tasks/{task_id}.md", optional_handoff)
+        handoff_path = f"management/tasks/{task_id}.md"
+        handoff = rendered.get(handoff_path)
+        if handoff is None:
+            raise ValueError(f"canonical task handoff is missing: {handoff_path}")
+        _validate_task_write_scope(handoff, handoff_path)
 
     active_task = normalized_tasks[0]
     active_description, _ = TASK_DEFINITIONS[active_task]
@@ -283,7 +323,7 @@ def _normalize_tasks(tasks: tuple[str, ...]) -> tuple[str, ...]:
         raise ValueError("task IDs must be unique")
     unsupported = sorted(set(normalized) - TASK_DEFINITIONS.keys())
     if unsupported:
-        raise ValueError(f"unsupported task IDs for template v1: {', '.join(unsupported)}")
+        raise ValueError(f"unsupported task IDs for project template: {', '.join(unsupported)}")
     return normalized
 
 

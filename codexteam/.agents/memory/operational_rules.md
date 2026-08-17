@@ -28,7 +28,7 @@
 ## Completion
 
 - Worker output is untrusted.
-- Validate result contract v1 and declared artifacts.
+- Validate result contract current and declared artifacts.
 - Before final result persistence, require every declared created or modified path and evidence artifact reference to exist and every declared deleted path to be absent. Keep boundary failures resumable in the same session.
 - Run independent verification.
 - Advance task and project state only through `close-loop.sh`.

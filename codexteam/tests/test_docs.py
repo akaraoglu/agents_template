@@ -12,7 +12,7 @@ def test_machine_schemas_are_valid_json():
     for path in sorted((CODEXTEAM_ROOT / "schemas").glob("*.json")):
         assert json.loads(path.read_text(encoding="utf-8"))["$schema"]
 
-    result_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "result-v1.json").read_text(encoding="utf-8"))
+    result_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "result.json").read_text(encoding="utf-8"))
     assert result_schema["properties"]["file_changes"]["items"]["required"] == ["path", "action"]
     assert result_schema["properties"]["evidence"]["items"]["required"] == ["type", "artifact_ref", "summary"]
     expected_roles = {
@@ -26,27 +26,35 @@ def test_machine_schemas_are_valid_json():
         "tester",
         "ux_designer",
     }
-    handoff_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "handoff-v1.json").read_text(encoding="utf-8"))
+    handoff_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "handoff.json").read_text(encoding="utf-8"))
     assert set(handoff_schema["properties"]["agent_role"]["enum"]) == expected_roles
     assert set(result_schema["properties"]["agent_role"]["enum"]) == expected_roles
     openai_schema = json.loads(
-        (CODEXTEAM_ROOT / "schemas" / "result-v1-openai.json").read_text(
+        (CODEXTEAM_ROOT / "schemas" / "result-openai.json").read_text(
             encoding="utf-8"
         )
     )
     assert set(openai_schema["properties"]["agent_role"]["enum"]) == expected_roles
     assert openai_schema["properties"]["produced_at"]["pattern"] == "Z$"
-    gate_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "gate-record-v1.json").read_text(encoding="utf-8"))
+    gate_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "gate-record.json").read_text(encoding="utf-8"))
     assert "configuration_digest" in gate_schema["required"]
-    assert "execution_surface" in gate_schema["required"]
+    assert "execution_surface" in gate_schema["properties"]
+    assert "execution_surface" not in gate_schema["required"]
+    role_schema = json.loads(
+        (CODEXTEAM_ROOT / "schemas" / "role-policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert role_schema["properties"]["digest"]["pattern"] == "^[a-f0-9]{64}$"
+    assert role_schema["properties"]["mcp_tools"]["minProperties"] == 1
 
 
-def test_openai_result_schema_is_a_strict_v1_projection():
+def test_openai_result_schema_is_a_strict_projection():
     stored = json.loads(
-        (CODEXTEAM_ROOT / "schemas" / "result-v1.json").read_text(encoding="utf-8")
+        (CODEXTEAM_ROOT / "schemas" / "result.json").read_text(encoding="utf-8")
     )
     output = json.loads(
-        (CODEXTEAM_ROOT / "schemas" / "result-v1-openai.json").read_text(
+        (CODEXTEAM_ROOT / "schemas" / "result-openai.json").read_text(
             encoding="utf-8"
         )
     )
@@ -86,6 +94,15 @@ def test_documentation_has_no_obsolete_runtime_references():
         content = path.read_text(encoding="utf-8")
         for marker in banned:
             assert marker not in content, f"obsolete reference {marker!r} in {path}"
+
+
+def test_active_docs_describe_one_execution_system():
+    readme = (CODEXTEAM_ROOT / "README.md").read_text(encoding="utf-8")
+    scripts = (CODEXTEAM_ROOT / "scripts" / "README.md").read_text(encoding="utf-8")
+    assert "CodexTeam has one project execution system" in readme
+    assert "Codex and OpenCode are supported backends" in readme
+    assert "version selector" not in readme
+    assert not (CODEXTEAM_ROOT / "scripts" / ("run-" + "project.sh")).exists()
 
 
 def test_public_command_wrappers_are_executable_and_have_help():
@@ -131,6 +148,7 @@ def test_documentation_index_targets_exist():
         "E2E_ACCEPTANCE_PLAN.md",
         "COLD_START_CANARY_2026-07-17.md",
         "ADAPTER_GUIDE.md",
+        "AGENT_SPECS.md",
         "OPTIONAL_INTERFACES.md",
         "TROUBLESHOOTING.md",
         "rules/project_isolation.md",

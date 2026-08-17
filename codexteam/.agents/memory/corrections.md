@@ -5,7 +5,7 @@
 - Do not infer current functionality from obsolete archives or old application-oriented documents.
 - Do not create cold-start projects outside the approved repository project area; from the guaranteed base folder the default root is `./projects`.
 - Do not accept lowercase task IDs inside persisted contracts.
-- Do not accept a result with only `task_id`, `status`, and `summary`; enforce result contract v1 completely.
+- Do not accept a result with only `task_id`, `status`, and `summary`; enforce result contract current completely.
 - Do not mark tasks complete from worker output alone.
 - Do not use `eval`, shell pipelines, or compound shell strings for verification.
 - Do not update a missing or malformed task row and report success.
@@ -17,7 +17,7 @@
 - Do not let workers create scratch files, one-off Python document writers, or patch experiments outside their handoff. Inspect the full root after failed editing turns and remove attributed artifacts before delivery.
 - Do not let draft evidence occupy `results/<TASK>-<attempt>.json` or `results/<TASK>-verification.txt`; those paths belong to launcher finalization and leader closure. Resume the same session with corrective feedback when this happens.
 - Do not update only `TASKS.md` when assigning a task; synchronize the matching `CURRENT_TASK.md` status before the independent reviewer sees it.
-- Do not rely on a generic finalization request for result-v1 details. State the allowed file actions and evidence types, require project-relative artifact references, and require a UTC `Z` timestamp.
+- Do not rely on a generic finalization request for result details. State the allowed file actions and evidence types, require project-relative artifact references, and require a UTC `Z` timestamp.
 - Do not append an exact optional filename to an array while relying on `nullglob`; an unmatched literal remains present and can falsely report a nonexistent helper. Use a wildcard pattern for optional helper families and cover the empty match in the runner tests.
 - Do not finalize a session merely because its result JSON is schema-valid. Before persistence, verify that declared created and modified paths plus evidence artifact references exist, that deleted paths are absent, and leave failures resumable as `correction_needed` in the same thread.
 - Do not give only evidence enums in a final prompt. Include one complete task-specific evidence object with `type`, `artifact_ref`, `summary`, and optional metadata so communication errors are corrected before result persistence.

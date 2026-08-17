@@ -9,8 +9,6 @@ def test_ux_designer_manifest_has_design_only_boundary():
     policy = load_role_policy("ux_designer")
 
     assert policy.name == "codexteam_ux_designer"
-    assert policy.default_profile == "qwen36-27b"
-    assert policy.default_reasoning_effort == "high"
     assert policy.skill_files == ("ux-ui-design.md",)
     assert policy.allows_change("docs/ux/dashboard-design.md")
     assert policy.allows_change("prototypes/dashboard/index.html")
@@ -29,7 +27,10 @@ def test_ux_designer_is_valid_in_handoff_and_result_contracts(result_factory):
         "task_id": "T007",
         "attempt_id": "att-001",
         "agent_role": "ux_designer",
-        "model_profile": "qwen36-27b",
+        "execution_spec": {
+            "contract": "execution-spec", "path": "execution-spec.json",
+            "digest": "a" * 64,
+        },
         "workspace_root": "/tmp/project",
         "task_context": {"prompt": "Design the dashboard."},
         "constraints": {},
@@ -61,6 +62,12 @@ def test_spawn_dry_run_preparation_selects_ux_policy_and_skill(
         [
             "--phase",
             "draft",
+            "--backend",
+            "codex",
+            "--profile",
+            "qwen36-27b",
+            "--reasoning-effort",
+            "high",
             "--team",
             "team-1",
             "--task",

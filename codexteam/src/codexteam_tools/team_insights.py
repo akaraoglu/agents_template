@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import AGENT_ROLES, ResultValidationError, validate_result
+from .execution_spec import ExecutionSpecError, execution_spec_reference, load_execution_spec
 from .paths import (
     PathValidationError,
     contained_path,
@@ -277,12 +278,14 @@ class TeamInsightsReader:
                 allowed_paths,
                 attempt["task"],
             )
-            concurrent.append(
-                {
-                    **_compact_attempt(attempt),
-                    "possible_path_conflicts": conflicts,
-                }
-            )
+            compact = _compact_attempt(attempt)
+            if compact is not None:
+                concurrent.append(
+                    {
+                        **compact,
+                        "possible_path_conflicts": conflicts,
+                    }
+                )
             if len(concurrent) >= 10:
                 break
 
@@ -362,6 +365,24 @@ class TeamInsightsReader:
         turn_state_path = attempt_dir / "turn-state.json"
         session = _read_json_object(session_path)
         turn_state = _read_json_object(turn_state_path)
+        execution_spec_path = attempt_dir / "execution-spec.json"
+        execution_spec_error: str | None = None
+        try:
+            execution_spec = load_execution_spec(execution_spec_path)
+            execution_spec_status = "valid"
+        except (ExecutionSpecError, OSError) as exc:
+            execution_spec = {}
+            execution_spec_status = "invalid" if execution_spec_path.exists() else "absent"
+            execution_spec_error = str(exc) if execution_spec_status == "invalid" else None
+        expected_spec = session.get("execution_spec")
+        if execution_spec_status == "absent" and isinstance(expected_spec, dict):
+            execution_spec_status = "invalid"
+            execution_spec_error = "session references a missing execution specification"
+        if execution_spec_status == "valid" and isinstance(expected_spec, dict):
+            if expected_spec != execution_spec_reference(execution_spec):
+                execution_spec_status = "invalid"
+                execution_spec_error = "session execution specification reference mismatch"
+                execution_spec = {}
         status_record = next(
             (
                 item
@@ -385,7 +406,7 @@ class TeamInsightsReader:
         result = _read_json_object(result_path) if result_path is not None else {}
         source_paths = [
             path
-            for path in (session_path, turn_state_path, result_path)
+            for path in (session_path, turn_state_path, execution_spec_path, result_path)
             if path is not None and path.is_file() and not path.is_symlink()
         ]
         source_paths.extend(path for path, _ in selected_metrics)
@@ -395,21 +416,33 @@ class TeamInsightsReader:
             "attempt_id": attempt,
             "status": _compact_attempt(status_record) if status_record else None,
             "session": {
-                key: session.get(key)
-                for key in (
-                    "team_id",
-                    "agent_role",
-                    "model_profile",
-                    "model_provider",
-                    "model_reasoning_effort",
-                    "last_phase",
-                    "last_status",
-                    "turn_count",
-                    "created_at",
-                    "updated_at",
-                    "final_result_path",
-                )
+                "team_id": session.get("team_id"),
+                "agent_role": execution_spec.get("identity", {}).get("role") or session.get("agent_role"),
+                "model_profile": execution_spec.get("execution_profile", {}).get("profile", {}).get("id"),
+                "model_provider": execution_spec.get("execution_profile", {}).get("model", {}).get("provider"),
+                "model_reasoning_effort": execution_spec.get("execution_profile", {}).get("reasoning", {}).get("effective"),
+                **{
+                    key: session.get(key)
+                    for key in (
+                        "last_phase", "last_status", "turn_count", "created_at",
+                        "updated_at", "final_result_path",
+                    )
+                },
             },
+            "execution_spec": (
+                {
+                    "execution_spec_id": execution_spec.get("execution_spec_id"),
+                    "execution_spec_digest": execution_spec.get("execution_spec_digest"),
+                    "role": execution_spec.get("identity", {}).get("role"),
+            "agent_spec": execution_spec.get("agent_spec"),
+                    "profile": execution_spec.get("execution_profile", {}).get("profile", {}).get("id"),
+                }
+                if execution_spec
+                else {
+                    "status": execution_spec_status,
+                    "error": execution_spec_error if execution_spec_status == "invalid" else None,
+                }
+            ),
             "turns": turns,
             "turns_total": len(metrics),
             "turns_truncated": len(metrics) > len(selected_metrics),
@@ -752,6 +785,8 @@ def _compact_attempt(record: dict[str, Any] | None) -> dict[str, Any] | None:
             "updated_at",
             "result",
             "state_path",
+            "execution_spec_digest",
+            "execution_spec_pinned",
         )
     }
 
@@ -825,8 +860,6 @@ def _role_policy(
             "role": policy.role,
             "name": policy.name,
             "description": policy.description,
-            "default_profile": policy.default_profile,
-            "default_reasoning_effort": policy.default_reasoning_effort,
             "sandbox_mode": policy.sandbox_mode,
             "skill_files": list(policy.skill_files),
             "allowed_change_patterns": list(policy.allowed_change_patterns),

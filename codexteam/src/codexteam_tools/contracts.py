@@ -5,10 +5,13 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from .paths import PathValidationError, normalize_task_id, safe_relative_path, validate_identifier, validate_profile
+from .contract_registry import DRAFT_FORMATS
 
 RESULT_SCHEMA_VERSION = "1.0"
 HANDOFF_SCHEMA_VERSION = "1.0"
+DRAFT_SCHEMA_VERSION = "1.0"
 RESULT_STATUSES = {"completed", "failed", "partial", "blocked", "needs_review"}
+DRAFT_DISPOSITIONS = {"ready_for_review", "correction_needed", "blocked"}
 AGENT_ROLES = {
     "architect",
     "developer",
@@ -49,12 +52,21 @@ REQUIRED_HANDOFF_FIELDS = {
     "task_id",
     "attempt_id",
     "agent_role",
-    "model_profile",
+    "execution_spec",
     "workspace_root",
     "task_context",
     "constraints",
     "completion_criteria",
 }
+REQUIRED_DRAFT_FIELDS = {
+    "schema_version",
+    "outcome",
+    "evidence",
+    "findings",
+    "limitations",
+    "proposed_disposition",
+}
+HANDOFF_FIELDS = REQUIRED_HANDOFF_FIELDS | {"role_policy", "instruction_bundle"}
 
 
 class ResultValidationError(ValueError):
@@ -141,8 +153,11 @@ def validate_handoff(data: Any) -> dict[str, Any]:
         raise ResultValidationError(["handoff must be a JSON object"])
 
     missing = sorted(REQUIRED_HANDOFF_FIELDS - data.keys())
+    unknown = sorted(set(data) - HANDOFF_FIELDS)
     if missing:
         errors.append(f"missing required handoff fields: {', '.join(missing)}")
+    if unknown:
+        errors.append(f"unknown handoff fields: {', '.join(unknown)}")
     if data.get("schema_version") != HANDOFF_SCHEMA_VERSION:
         errors.append(f"schema_version must be {HANDOFF_SCHEMA_VERSION!r}")
     _identifier(data.get("handoff_id"), "handoff_id", errors)
@@ -151,19 +166,22 @@ def validate_handoff(data: Any) -> dict[str, Any]:
     _identifier(data.get("attempt_id"), "attempt_id", errors)
     if data.get("agent_role") not in AGENT_ROLES:
         errors.append(f"agent_role must be one of {sorted(AGENT_ROLES)}")
-    model_profile = data.get("model_profile")
-    if not isinstance(model_profile, str):
-        errors.append("model_profile must be a string")
+    execution_spec = data.get("execution_spec")
+    if not isinstance(execution_spec, dict) or set(execution_spec) != {"contract", "path", "digest"}:
+        errors.append("execution_spec must contain contract, path, and digest")
     else:
-        try:
-            validate_profile(model_profile)
-        except PathValidationError as exc:
-            errors.append(str(exc))
+        if execution_spec.get("contract") != "execution-spec" or execution_spec.get("path") != "execution-spec.json":
+            errors.append("execution_spec must reference execution-spec.json")
+        digest = execution_spec.get("digest")
+        if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            errors.append("execution_spec.digest must be a lowercase SHA-256 digest")
     role_policy = data.get("role_policy")
     if role_policy is not None:
         if not isinstance(role_policy, dict):
             errors.append("role_policy must be an object")
         else:
+            if set(role_policy) != {"name", "schema_version", "digest"}:
+                errors.append("role_policy must contain only name, schema_version, and digest")
             policy_name = role_policy.get("name")
             if (
                 not isinstance(policy_name, str)
@@ -212,8 +230,19 @@ def validate_handoff(data: Any) -> dict[str, Any]:
         or not task_context.get("prompt", "").strip()
     ):
         errors.append("task_context.prompt must be a non-empty string")
-    if not isinstance(data.get("constraints"), dict):
+    elif "guidance_files" in task_context and (
+        not isinstance(task_context["guidance_files"], list)
+        or any(not isinstance(item, str) or not item.strip() for item in task_context["guidance_files"])
+    ):
+        errors.append("task_context.guidance_files must be a list of non-empty strings")
+    constraints = data.get("constraints")
+    if not isinstance(constraints, dict):
         errors.append("constraints must be an object")
+    elif constraints.get("task_write_scope") is not None and (
+        not isinstance(constraints["task_write_scope"], list)
+        or any(not isinstance(item, str) or not item for item in constraints["task_write_scope"])
+    ):
+        errors.append("constraints.task_write_scope must be a string list or null")
     criteria = data.get("completion_criteria")
     if (
         not isinstance(criteria, list)
@@ -222,6 +251,137 @@ def validate_handoff(data: Any) -> dict[str, Any]:
     ):
         errors.append("completion_criteria must be a non-empty list of non-empty strings")
 
+    if errors:
+        raise ResultValidationError(errors)
+    return data
+
+
+def validate_draft(data: Any) -> dict[str, Any]:
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        raise ResultValidationError(["draft must be a JSON object"])
+
+    missing = sorted(REQUIRED_DRAFT_FIELDS - data.keys())
+    unknown = sorted(set(data) - REQUIRED_DRAFT_FIELDS)
+    if missing:
+        errors.append(f"missing required draft fields: {', '.join(missing)}")
+    if unknown:
+        errors.append(f"unknown draft fields: {', '.join(unknown)}")
+    if data.get("schema_version") != DRAFT_SCHEMA_VERSION:
+        errors.append(f"schema_version must be {DRAFT_SCHEMA_VERSION!r}")
+    _bounded_text(data.get("outcome"), "outcome", 1_200, errors)
+    _validate_draft_evidence(data.get("evidence"), errors)
+    _validate_bounded_string_list(data.get("findings"), "findings", errors)
+    _validate_bounded_string_list(data.get("limitations"), "limitations", errors)
+    if data.get("proposed_disposition") not in DRAFT_DISPOSITIONS:
+        errors.append(
+            "proposed_disposition must be one of "
+            + str(sorted(DRAFT_DISPOSITIONS))
+        )
+
+    if errors:
+        raise ResultValidationError(errors)
+    return data
+
+
+def validate_conversational_draft(data: Any) -> str:
+    if not isinstance(data, str) or not data.strip():
+        raise ResultValidationError(["conversational draft must be non-empty text"])
+    return data
+
+
+def validate_session(data: Any) -> dict[str, Any]:
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        raise ResultValidationError(["session must be a JSON object"])
+    allowed = {
+        "schema_version", "team_id", "task_id", "attempt_id", "agent_role",
+        "result_schema_sha256", "workspace_root", "thread_id", "turn_count",
+        "last_phase", "last_status", "last_turn_path", "created_at", "updated_at",
+        "turns", "execution_spec", "final_result_path", "backend_version",
+        "backend_config_digest", "opencode_session_id", "workspace_baseline_sha256",
+        "worker_change_manifest", "accepted_checkpoint",
+    }
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        errors.append("session contains unknown fields: " + ", ".join(unknown))
+    if data.get("schema_version") != "1.0":
+        errors.append("session schema_version must be '1.0'")
+    required = {
+        "schema_version", "team_id", "task_id", "attempt_id", "agent_role",
+        "result_schema_sha256", "workspace_root", "thread_id", "turn_count",
+        "last_phase", "last_status", "last_turn_path", "created_at", "updated_at",
+        "turns", "execution_spec",
+    }
+    missing = sorted(required - data.keys())
+    if missing:
+        errors.append("session missing required fields: " + ", ".join(missing))
+    thread_id = data.get("thread_id")
+    if not isinstance(thread_id, str) or not thread_id.strip():
+        errors.append("session thread_id must be a non-empty string")
+    if "execution_spec" in data:
+        reference = data.get("execution_spec")
+        if not isinstance(reference, dict) or set(reference) != {"contract", "path", "digest"}:
+            errors.append("session execution_spec must contain contract, path, and digest")
+        else:
+            if reference.get("contract") != "execution-spec":
+                errors.append("session execution_spec.contract must be execution-spec")
+            if reference.get("path") != "execution-spec.json":
+                errors.append("session execution_spec.path must be execution-spec.json")
+            digest = reference.get("digest")
+            if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                errors.append("session execution_spec.digest must be a lowercase SHA-256 digest")
+    for field in ("team_id", "attempt_id"):
+        if field in data:
+            _identifier(data.get(field), f"session {field}", errors)
+    if "task_id" in data:
+        _task_id(data.get("task_id"), "session task_id", errors)
+    if "agent_role" in data and data.get("agent_role") not in AGENT_ROLES:
+        errors.append(f"session agent_role must be one of {sorted(AGENT_ROLES)}")
+    if "workspace_root" in data and (
+        not isinstance(data.get("workspace_root"), str)
+        or not PurePosixPath(data["workspace_root"]).is_absolute()
+    ):
+        errors.append("session workspace_root must be an absolute path string")
+    if "last_phase" in data and data.get("last_phase") not in {"draft", "feedback", "final"}:
+        errors.append("session last_phase must be draft, feedback, or final")
+    if "last_status" in data and (
+        not isinstance(data.get("last_status"), str)
+        or not data.get("last_status", "").strip()
+    ):
+        errors.append("session last_status must be a non-empty string")
+    for field in ("created_at", "updated_at"):
+        if field in data:
+            _validate_iso_timestamp(data.get(field), f"session {field}", errors)
+    if "turn_count" in data and (
+        not isinstance(data.get("turn_count"), int)
+        or isinstance(data.get("turn_count"), bool)
+        or data.get("turn_count", 0) < 1
+    ):
+        errors.append("session turn_count must be a positive integer")
+    if "turns" in data:
+        turns = data.get("turns")
+        if not isinstance(turns, list):
+            errors.append("session turns must be a list")
+        else:
+            for index, turn in enumerate(turns):
+                prefix = f"session turns[{index}]"
+                if not isinstance(turn, dict):
+                    errors.append(f"{prefix} must be an object")
+                    continue
+                expected_turn_fields = {"number", "phase", "status", "duration_seconds"}
+                if set(turn) != expected_turn_fields:
+                    errors.append(f"{prefix} fields must be number, phase, status, and duration_seconds")
+                number = turn.get("number")
+                if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+                    errors.append(f"{prefix}.number must be a positive integer")
+                if turn.get("phase") not in {"draft", "feedback", "final"}:
+                    errors.append(f"{prefix}.phase must be draft, feedback, or final")
+                if not isinstance(turn.get("status"), str) or not turn.get("status", "").strip():
+                    errors.append(f"{prefix}.status must be a non-empty string")
+                duration = turn.get("duration_seconds")
+                if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration < 0:
+                    errors.append(f"{prefix}.duration_seconds must be a non-negative number")
     if errors:
         raise ResultValidationError(errors)
     return data
@@ -302,7 +462,7 @@ def _validate_output(value: Any, errors: list[str]) -> None:
     missing = sorted(required - value.keys())
     if missing:
         errors.append(f"output missing fields: {', '.join(missing)}")
-    if not isinstance(value.get("exit_code"), int):
+    if not isinstance(value.get("exit_code"), int) or isinstance(value.get("exit_code"), bool):
         errors.append("output.exit_code must be an integer")
     if (
         not isinstance(value.get("duration_seconds"), (int, float))
@@ -330,7 +490,7 @@ def _validate_file_changes(value: Any, errors: list[str]) -> None:
         if item.get("action") not in FILE_ACTIONS:
             errors.append(f"{prefix}.action must be one of {sorted(FILE_ACTIONS)}")
         size = item.get("size_bytes")
-        if size is not None and (not isinstance(size, int) or size < 0):
+        if size is not None and (not isinstance(size, int) or isinstance(size, bool) or size < 0):
             errors.append(f"{prefix}.size_bytes must be a non-negative integer")
 
 
@@ -384,6 +544,41 @@ def _validate_string_list(value: Any, field: str, errors: list[str]) -> None:
         errors.append(f"{field} must be a list of strings")
 
 
+def _bounded_text(value: Any, field: str, maximum: int, errors: list[str]) -> None:
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"{field} must be a non-empty string")
+    elif len(value) > maximum:
+        errors.append(f"{field} must be at most {maximum} characters")
+
+
+def _validate_bounded_string_list(value: Any, field: str, errors: list[str]) -> None:
+    if not isinstance(value, list):
+        errors.append(f"{field} must be a list")
+        return
+    if len(value) > 8:
+        errors.append(f"{field} must contain at most 8 items")
+    for index, item in enumerate(value):
+        _bounded_text(item, f"{field}[{index}]", 500, errors)
+
+
+def _validate_draft_evidence(value: Any, errors: list[str]) -> None:
+    if not isinstance(value, list):
+        errors.append("evidence must be a list")
+        return
+    if len(value) > 8:
+        errors.append("evidence must contain at most 8 items")
+    for index, item in enumerate(value):
+        prefix = f"evidence[{index}]"
+        if not isinstance(item, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        if set(item) != {"artifact_ref", "summary"}:
+            errors.append(f"{prefix} must contain only artifact_ref and summary")
+        _bounded_text(item.get("artifact_ref"), f"{prefix}.artifact_ref", 500, errors)
+        _relative(item.get("artifact_ref"), f"{prefix}.artifact_ref", errors)
+        _bounded_text(item.get("summary"), f"{prefix}.summary", 500, errors)
+
+
 def _validate_timestamp(value: Any, errors: list[str]) -> None:
     if not isinstance(value, str):
         errors.append("produced_at must be an ISO-8601 UTC string")
@@ -395,6 +590,19 @@ def _validate_timestamp(value: Any, errors: list[str]) -> None:
         return
     if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
         errors.append("produced_at must use UTC")
+
+
+def _validate_iso_timestamp(value: Any, field: str, errors: list[str]) -> None:
+    if not isinstance(value, str) or "T" not in value:
+        errors.append(f"{field} must be an ISO-8601 timestamp")
+        return
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        errors.append(f"{field} must be an ISO-8601 timestamp")
+        return
+    if parsed.tzinfo is None:
+        errors.append(f"{field} must include a timezone")
 
 
 def _relative(value: Any, field: str, errors: list[str]) -> PurePosixPath | None:

@@ -6,7 +6,7 @@
 - Historical archives are obsolete and are never merged into the current system.
 - Generated cold-start projects default to `./projects` beneath `/home/alik/workspace/agent_template/codexteam`.
 - Task IDs use canonical uppercase form; the default initialized sequence is `T001` requirements, `T002` architecture, `T003` development, `T004` integration testing, and `T005` review. `T006` documentation reconciliation is optional.
-- Handoff and result v1 shapes are machine-readable and enforced by Python.
+- Handoff and result current shapes are machine-readable and enforced by Python.
 - `qwen36-27b` is the default tool-using profile for implementation, testing, review, and documentation. `gemma4-26b` is optional for bounded secondary review, not default ownership of evidence-producing or editing tasks.
 - Worker completion is a claim. Only independent verification and leader-owned closure complete a task.
 - Process commands use structured argument arrays; raw shell evaluation is prohibited.
@@ -24,7 +24,7 @@
 - A clean Fibonacci-class cold-start canary has four independent verdict dimensions: lifecycle, product, evidence integrity, and proportional performance. Canonical delivery alone cannot pass the canary.
 - The cold-start performance target is at most 30 minutes, 12 worker turns, one correction round per role, one million uncached lead-input tokens, and 50,000 lead-output tokens when usage is available. Exceeding a target must be reported rather than hidden by eventual delivery.
 - Stable lead-authored feedback lives at `<project>/.codexteam/lead-prompt-<task>-<attempt>.md`; the Project Lead reuses the exact path across feedback and finalization.
-- CodexTeam role-policy v1 is the single source for nine identities: Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), and Leader. Project `AGENTS.md` is common guidance; the launcher injects one role policy and pins the complete role and skill instruction bundle for the logical attempt.
+- CodexTeam role-policy current is the single source for nine identities: Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), and Leader. Project `AGENTS.md` is common guidance; the launcher injects one role policy and pins the complete role and skill instruction bundle for the logical attempt.
 - Feature Planner is an optional post-architecture advisor for materially multi-part implementation. It defaults to `gpt54-mini`, permits an explicit `qwen36-27b` local override, writes only advisory artifacts under `results/`, and never implements, assigns canonical task IDs, changes lifecycle state, spawns workers, or approves its own plan.
 - UX Designer owns implementation-ready interface design, disposable design prototypes, and focused design QA. It never owns production code, product acceptance, or canonical lifecycle state, and it is not part of the default non-UI task scaffold.
 - The persistent external `spawn-subagent.sh` launcher remains authoritative. Namespaced native Codex agent files are deterministic optional projections installed only by explicit operator action.
@@ -57,7 +57,7 @@
   milestone commit. Those changes require a separately authorized metadata-only
   closure commit; the committed HEAD must not be described as fully delivered while
   its lifecycle files still show the Steward task active.
-- Role-policy v1 may pin a non-empty `mcp_tools` subset for an allowed server.
+- Role-policy current may pin a non-empty `mcp_tools` subset for an allowed server.
   Developer, Test Engineer, Reviewer, and Git Steward receive bounded
   `codexteam-context` subsets on future attempts; existing attempts keep their pinned
   server and tool policy. Context tools orient discovery, while exact source reads,

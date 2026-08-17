@@ -1,6 +1,0 @@
-schema_version = "2.0"
-kind = "guidance_module"
-definition_version = "1"
-module_id = "assurance"
-path = "guidance/assurance.md"
-digest = "c5416781482e2aa4d9d4f4a412583f3455e9de17ae9553c1f516eb5dd20328f5"

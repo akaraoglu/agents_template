@@ -14,6 +14,22 @@ Your job is to turn the operator's goal into an approved, initialized, designed,
 4. Inspect `README.md` and existing project state only when relevant; do not scan all guidance, history, or generated projects.
 5. Reuse facts already stated by the operator. Ask only for missing choices that materially affect the result.
 
+## Execution System
+
+- Use only `.agents/scripts/spawn-subagent.sh`; there is no version router or
+  alternate project executor.
+- Before assigning a draft, query
+  `./scripts/inspect-execution-catalog.py profiles --backend <backend>` and use
+  only a supported, host-available profile.
+- Draft requires explicit `--backend`, `--profile`, and `--reasoning-effort`.
+  `--agent-spec` is optional and only narrows or specializes the selected role.
+- Feedback and final omit backend, profile, reasoning, draft-format, and
+  AgentSpec selectors. The launcher loads `execution-spec.json` and pinned
+  attempt guidance.
+- Do not resume or convert attempts created before the current contract cutover.
+  Start a new task attempt when new work is authorized; accepted historical
+  results remain project history.
+
 ## New-Project Protocol
 
 ### 1. Understand and propose
@@ -57,11 +73,15 @@ Start a worker draft with the approved handoff:
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase draft --profile <local-profile> --reasoning-effort medium \
+  --phase draft --backend codex --profile <profile> --reasoning-effort medium \
   --team <project-id> --task T002 --attempt att-001 --role architect \
   --workspace ./projects/<project-id> --timeout 300 \
   --prompt-file ./projects/<project-id>/management/tasks/T002.md
 ```
+
+Use `--backend opencode --reasoning-effort provider_default` only for a curated
+OpenCode profile reported host-available by the execution catalog. OpenCode runs
+at the approved host level and does not accept `--trust-parent-sandbox`.
 
 Before launching, test `http://127.0.0.1:11434/api/version` from the same execution surface. For the default Codex backend, if it is reachable from this already-sandboxed lead, add `--trust-parent-sandbox` on every turn to skip redundant `bwrap`; otherwise launch at the approved host level without that flag and retain the normal Codex worker sandbox. For `--backend opencode`, run at the approved host level and never add `--trust-parent-sandbox`; OpenCode permissions and auditing are not a replacement OS sandbox. A dry run validates command construction but does not test model connectivity. MCP is not required. Follow `.agents/playbooks/nested-worker-sandbox.md` for Codex recovery rules.
 
@@ -71,7 +91,7 @@ Before launching, test `http://127.0.0.1:11434/api/version` from the same execut
 - Inspect the draft and changed files.
 - After the Developer draft passes the Development Gate, start the Test Engineer (`tester` protocol role) against that draft. Return classified product defects to the same Developer session, rerun both gates after correction, and do not authorize finalization while an integration defect remains unresolved.
 - Use `./scripts/subagent-status.py <created-path>` for project-local running, stale, interrupted, and finalized attempt state; do not search global Codex history.
-- Send consolidated, evidence-based feedback through `--phase feedback` in the same team, task, attempt, role, profile, and workspace.
+- Send consolidated, evidence-based feedback through `--phase feedback` in the same team, task, attempt, role, and workspace. Omit backend/profile/reasoning/AgentSpec selectors; the ExecutionSpec supplies them.
 - Use `--phase final` only after accepting the revised draft.
 - Never retry or transfer ownership silently.
 - Let CodexTeam persist worker JSONL, stderr, result, and independent verification output. Do not use shell redirection, `tee`, heredocs, or command substitution to manufacture project evidence; use the file-editing tool for planned files.

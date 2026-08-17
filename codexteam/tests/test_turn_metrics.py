@@ -94,6 +94,7 @@ def test_summary_records_tool_cycles_deltas_repeats_and_redacted_previews():
         "phase": "draft",
         "completed": True,
         "duration_seconds": 12.346,
+        "terminal_reason": "completed",
     }
     assert summary["usage"]["cumulative"]["uncached_input_tokens"] == 300
     assert summary["usage"]["delta"] == summary["usage"]["cumulative"]
@@ -144,6 +145,9 @@ def test_codex_summary_retains_exact_top_level_shape_and_values():
         "usage",
         "activity",
         "events",
+        "reasoning",
+        "process",
+        "prompt_bytes",
         "generated_at",
     }
     assert summary["usage"] == {
@@ -163,7 +167,62 @@ def test_codex_summary_retains_exact_top_level_shape_and_values():
         },
         "delta_mode": "initial",
     }
-    assert summary["activity"]["agent_messages"] == 1
+
+
+def test_summary_records_private_runtime_telemetry_without_content():
+    summary = summarize(
+        jsonl({"type": "turn.completed", "usage": {}}),
+        requested_reasoning="high",
+        effective_reasoning="high",
+        exit_code=0,
+        prompt_bytes=17,
+        events_sha256="a" * 64,
+        stderr_sha256="b" * 64,
+    )
+
+    assert summary["reasoning"] == {"requested": "high", "effective": "high"}
+    assert summary["process"] == {
+        "exit_code": 0,
+        "timed_out": False,
+        "guard_triggered": False,
+        "classification": "success",
+    }
+    assert summary["prompt_bytes"] == 17
+    assert summary["events"]["diagnostics"] == {
+        "events_sha256": "a" * 64,
+        "stderr_sha256": "b" * 64,
+    }
+    serialized = json.dumps(summary)
+    assert "prompt text" not in serialized
+    assert "stderr text" not in serialized
+
+
+def test_mcp_metrics_keep_source_digests_without_response_content():
+    digest = "c" * 64
+    summary = summarize(
+        jsonl(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "mcp_tool_call",
+                    "server": "local-docs",
+                    "tool": "read_doc",
+                    "status": "completed",
+                    "result": {
+                        "structuredContent": {
+                            "sha256": digest,
+                            "text": "CONFIDENTIAL RESPONSE",
+                            "query_stats": {"returned_bytes": 10, "source_bytes": 20},
+                        }
+                    },
+                },
+            },
+            {"type": "turn.completed", "usage": {}},
+        )
+    )
+
+    assert summary["activity"]["mcp"]["source_digests"] == [digest]
+    assert "CONFIDENTIAL RESPONSE" not in json.dumps(summary)
 
 
 def test_summary_derives_delta_from_previous_cumulative_usage():
@@ -287,6 +346,7 @@ def test_summary_aggregates_mcp_calls_without_persisting_payloads():
         "source_bytes": 1200,
         "response_bytes": 202,
         "cache_hits": 1,
+        "source_digests": [],
         "max_returned_bytes": 400,
         "max_response_bytes": 186,
         "command_calls_after_failure": 1,
@@ -303,6 +363,7 @@ def test_summary_aggregates_mcp_calls_without_persisting_payloads():
                 "source_bytes": 1200,
                 "response_bytes": 186,
                 "cache_hits": 1,
+                "source_digests": [],
             },
             {
                 "server": "codexteam-context",
@@ -315,6 +376,7 @@ def test_summary_aggregates_mcp_calls_without_persisting_payloads():
                 "source_bytes": 0,
                 "response_bytes": 16,
                 "cache_hits": 0,
+                "source_digests": [],
             },
         ],
     }
@@ -779,7 +841,7 @@ def test_opencode_error_metrics_keep_only_bounded_name_and_data_message():
         backend="opencode",
     )
 
-    assert summary["events"]["last_error"] == "ProviderError: request failed"
+    assert summary["events"]["last_error"].startswith("ProviderError:sha256:")
     serialized = json.dumps(summary)
     assert "SECRET" not in serialized
 

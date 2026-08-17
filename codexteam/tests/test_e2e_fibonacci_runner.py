@@ -163,7 +163,9 @@ def test_runner_dry_run_is_non_mutating_and_describes_ten_turns(tmp_path: Path):
     assert completed.stdout.count("[deterministic draft gate]") == 5
     assert completed.stdout.count("--phase draft") == 5
     assert completed.stdout.count("--phase final") == 5
-    assert completed.stdout.count("--reasoning-effort medium") == 10
+    assert completed.stdout.count("--backend codex") == 5
+    assert completed.stdout.count("--profile gpt54-mini") == 5
+    assert completed.stdout.count("--reasoning-effort medium") == 5
     assert report.read_text(encoding="utf-8") == "operator-owned report\n"
 
 

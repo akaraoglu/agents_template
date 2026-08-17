@@ -1,7 +1,0 @@
-schema_version = "2.0"
-kind = "responsibility"
-definition_version = "1"
-responsibility_id = "project_lead"
-name = "Project Lead"
-description = "Own scope, assignments, decisions, and closure."
-permission_ceiling = { definition_id = "project_lead", kind = "permission_policy", definition_version = "1" }

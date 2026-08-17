@@ -20,7 +20,7 @@ Project: `projects/fibonacci-tree-cli-lead-canary-20260717-110304`
 - The Reviewer said `results/T003-verification.txt` proved exact rendering, determinism, input range, and error handling. That artifact contains only the seven-test unittest run; the stronger observations were in a different tester note and were not independently checked by the Reviewer.
 - `run1.txt`, `run2.txt`, and the incomplete exploratory `test_tree.py` remained in the delivered project.
 - The lead mistyped one temporary feedback filename. Recovery was immediate, but the path-continuity rule did not cover lead-authored prompt files.
-- Tester and Documenter finalization repeatedly missed result-v1 object keys or enum values despite focused feedback.
+- Tester and Documenter finalization repeatedly missed result object keys or enum values despite focused feedback.
 - Persisted sessions recorded 24 worker turns (including the preserved T002 sandbox diagnostic), and project execution ran for about 49 minutes from initialization to delivery. The clean-path target is 12 turns and 30 minutes.
 - The root turn reported 25,636,272 input tokens (24,902,912 cached) and 92,344 output tokens. This is disproportionate for the product and exceeds the E2E performance target.
 

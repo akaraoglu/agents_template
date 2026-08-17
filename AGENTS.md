@@ -18,6 +18,35 @@ repository guidance available for the files being changed.
 5. Treat filesystem access as capability, not authorization. Modify only files
    relevant to the user's request.
 
+## Durable Discovery Notes
+
+Substantial discovery or deep research may produce findings that future agents
+should reuse instead of repeating the same investigation. Persist those findings
+only when they are durable, evidence-backed, and materially useful beyond the
+current conversation.
+
+- First identify the exact active project root. A repository may contain several
+  projects, so the current working directory or repository root is not sufficient
+  proof of the active project.
+- If the active project or its root path is unclear, ask the user before creating
+  a discovery note. Do not guess a destination.
+- Write discovery notes only under
+  `<active-project-root>/design/architecture/` using
+  `YYYY-MM-DD_descriptive_title.md`.
+- Use one coherent subject per note. Include the research scope, decision-bearing
+  evidence and source locations, findings, implications, and unresolved risks or
+  follow-up questions.
+- Prefer updating an existing note when the same subject has materially evolved;
+  create a new note for a distinct finding or investigation.
+- Do not create notes for routine file inspection, transient debugging output,
+  speculative ideas, or information already captured accurately in project
+  documentation.
+- A request for deep research or substantial project analysis authorizes a
+  relevant discovery note unless the user explicitly requests read-only work or
+  no file changes. Explicit read-only instructions always win.
+- Never save one project's findings in a parent toolkit, another project, or a
+  shared repository folder merely because that location is convenient.
+
 ## Engineering Lifecycle
 
 Use the smallest relevant workflow under `.agents/skills/`:
@@ -43,6 +72,21 @@ apply only when their named platform or tool is part of the task.
 
 ## Core Rules
 
+- Implement the user's stated request directly and minimally. Do not add
+  speculative features, abstractions, wrappers, compatibility layers, files, or
+  adjacent cleanup that the requested outcome does not require.
+- Prefer modifying existing files, functions, and repository patterns over
+  introducing new structure. Every changed file must have a clear, necessary
+  connection to the accepted scope.
+- Do not reinterpret a narrow request as permission for a redesign. If the
+  correct solution requires materially broader changes, stop and agree on a
+  plan with the user before implementation.
+- Before creating multiple files, splitting components, renaming public
+  interfaces, or changing the planned file set, explain why it is necessary and
+  obtain explicit user approval. A single unavoidable generated or conventional
+  companion file may be created only when the repository workflow requires it.
+- When new information invalidates the agreed plan, report the conflict and ask
+  for direction rather than improvising a different design.
 - Prefer the smallest coherent change that fully satisfies the request.
 - Preserve existing behavior unless the request intentionally changes it.
 - Follow established repository patterns before introducing new abstractions,

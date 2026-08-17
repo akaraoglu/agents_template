@@ -29,10 +29,18 @@ proportional to the requested outcome and relevant regressions.
 - Architects define requirement-traceable system and repository structure without changing source or approving their own design.
 - Feature Planners may turn accepted architecture into advisory subtasks under `results/`; they do not implement, create canonical task IDs, change lifecycle state, spawn workers, or approve their own plans.
 - Local Git Steward model turns are read-only. Only the deterministic executor may stage explicit Project Lead-approved paths and create one local commit at a verified boundary; all remote Git actions are prohibited.
-- A worker draft is conversational output, not a `result-v1` record or a state transition.
+- A worker draft is conversational output, not a `result` record or a state transition.
 - Ordinary feedback resumes the same responsible AI session and attempt.
 - Only the Project Lead authorizes finalization and advances canonical management state.
 - Workers report routine uncertainty to the Project Lead; only a genuine showstopper reaches the operator.
 - Preserve unrelated files and document content.
 - Stop when a task handoff's stop condition is reached.
 - Do not repeat the same command or failure path when no relevant state changed and no new evidence was produced. Choose a materially different diagnostic or return the unresolved evidence to the Project Lead.
+- For substantial discovery or deep research, preserve durable evidence-backed
+  findings under this project root at
+  `design/architecture/YYYY-MM-DD_descriptive_title.md`. Update an existing
+  same-subject note when appropriate. Do not write project findings into the
+  parent CodexTeam toolkit, another project, or a shared repository directory.
+  If this project's exact root is unclear, ask the user or Project Lead before
+  writing. Skip notes for routine inspection, transient diagnostics, duplicated
+  documentation, or explicitly read-only work.

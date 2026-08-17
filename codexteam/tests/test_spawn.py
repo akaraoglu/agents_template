@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+import shutil
 import stat
 from dataclasses import replace
 from pathlib import Path
@@ -15,7 +16,25 @@ from codexteam_tools.contracts import validate_result
 THREAD_ID = "0199a213-81c0-7800-8aa1-bbab2a035a53"
 
 
+def draft_message(**overrides) -> str:
+    value = {
+        "schema_version": "1.0",
+        "outcome": "Completed the assigned work.",
+        "evidence": [],
+        "findings": [],
+        "limitations": [],
+        "proposed_disposition": "ready_for_review",
+    }
+    value.update(overrides)
+    return json.dumps(value)
+
+
 def request_args(tmp_path: Path, monkeypatch, **overrides):
+    monkeypatch.setattr(
+        spawn,
+        "host_availability",
+        lambda *args, **kwargs: {"host_available": True, "reason_unavailable": None},
+    )
     codex_home = tmp_path / "source-codex-home"
     codex_home.mkdir(exist_ok=True)
     (codex_home / "qwen36-27b.config.toml").write_text(
@@ -30,9 +49,10 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
     workspace.mkdir(exist_ok=True)
     values = {
         "backend": "codex",
+        "draft_format": None,
         "phase": "draft",
         "profile": "qwen36-27b",
-        "reasoning_effort": None,
+        "reasoning_effort": "medium",
         "team": "team-1",
         "task": "T002",
         "attempt": "att-001",
@@ -49,6 +69,12 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
         "dry_run": False,
     }
     values.update(overrides)
+    if values["phase"] != "draft":
+        values["backend"] = None
+        values["profile"] = None
+        values["reasoning_effort"] = None
+    elif values["backend"] == "opencode" and "reasoning_effort" not in overrides:
+        values["reasoning_effort"] = "provider_default"
     return argparse.Namespace(**values)
 
 
@@ -143,7 +169,8 @@ def run_draft(tmp_path: Path, monkeypatch) -> tuple[spawn.SpawnRequest, dict]:
         spawn,
         "run_process",
         lambda *args, **kwargs: successful_process(
-            "DRAFT T002/att-001\n\nOutcome: implemented\nEvidence: focused tests pass"
+            "DRAFT T002/att-001\n\nOutcome: implemented\nEvidence: focused tests pass\n"
+            "Uncertainties or conflicts: none\nProposed disposition: ready for review"
         ),
     )
     outcome, code = spawn.run_spawn(request)
@@ -167,21 +194,243 @@ def test_prepare_request_uses_deterministic_result_and_session_paths(tmp_path: P
     )
 
 
-def test_handoff_prompt_requires_draft_not_final_result(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+def test_handoff_prompt_requires_conversational_draft_and_contains_task_once(tmp_path: Path, monkeypatch):
+    task = "Implement the uniquely named task once."
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch, prompt=task))
     handoff = spawn.build_handoff(request)
     prompt = spawn.build_prompt(request, spawn.prepare_turn(request))
     assert handoff["workspace_root"] == str(request.workspace)
     assert any("Return a draft" in item for item in handoff["completion_criteria"])
-    assert "Do not emit result-v1" in prompt
+    assert "Do not emit result" in prompt
     assert "DRAFT T002/att-001" in prompt
+    assert "Outcome, Evidence, Uncertainties or conflicts" in prompt
+    assert prompt.count(task) == 1
+    assert "[TASK DETAILS]" not in prompt
+
+
+def test_invalid_draft_stays_resumable_as_correction_needed(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, draft_format="compact-json")
+    )
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(draft_message(outcome="x" * 1201)),
+    )
+
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert "compact JSON draft validation failed" in outcome["errors"]
+    session = json.loads(request.session_path.read_text())
+    assert session["thread_id"] == THREAD_ID
+    assert session["last_status"] == "correction_needed"
+
+
+def test_draft_rejects_malformed_json_like_output(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, draft_format="compact-json")
+    )
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(draft_message() + "\ntrailing prose"),
+    )
+
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert any("one JSON object" in error for error in outcome["errors"])
+
+
+def test_compact_draft_rejects_prose_prefix_bypass(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, draft_format="compact-json")
+    )
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("Here is the draft:\n" + draft_message()),
+    )
+
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert any("one JSON object" in error for error in outcome["errors"])
+
+
+def test_compact_draft_format_is_pinned_and_used_for_feedback(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, draft_format="compact-json")
+    )
+    assert "compact JSON draft contract" in spawn.build_prompt(request, spawn.prepare_turn(request))
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(draft_message()),
+    )
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 0
+    assert outcome["draft_format"] == "compact-json"
+    assert json.loads(request.draft_format_path.read_text()) == {
+        "schema_version": "1.0",
+        "draft_format": "compact-json",
+    }
+    assert request.execution_spec["guidance"]
+
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+    )
+    assert feedback.draft_format == "compact-json"
+    assert "compact JSON draft contract" in spawn.build_prompt(
+        feedback, spawn.prepare_turn(feedback)
+    )
+
+
+@pytest.mark.parametrize("phase", ("feedback", "final"))
+def test_continuation_rejects_draft_format_override(tmp_path: Path, monkeypatch, phase: str):
+    run_draft(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="valid only when creating"):
+        spawn.prepare_request(
+            request_args(
+                tmp_path,
+                monkeypatch,
+                phase=phase,
+                prompt="continue",
+                draft_format="conversational",
+            )
+        )
+
+
+def test_session_draft_format_duplicate_is_rejected(tmp_path: Path, monkeypatch):
+    request, _ = run_draft(tmp_path, monkeypatch)
+    session = json.loads(request.session_path.read_text())
+    session["draft_format"] = "compact-json"
+    request.session_path.write_text(json.dumps(session))
+
+    with pytest.raises(ValueError, match="unknown fields"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+        )
+
+
+def test_specialist_agent_spec_is_pinned_with_guidance(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, agent_spec="python-developer")
+    )
+    assert request.role == "developer"
+    assert request.agent_spec.agent_spec_id == "python-developer"
+    assert request.skill_files[-1].name == "python-specialization.md"
+    assert request.execution_spec["agent_spec"] == request.agent_spec.reference()
+    assert request.profile == "qwen36-27b"
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("DRAFT")
+    )
+    spawn.run_spawn(request)
+    assert request.agent_spec_path.is_file()
+    assert request.execution_spec["agent_spec"]["id"] == "python-developer"
+
+
+def test_agent_spec_override_on_continuation_is_rejected(tmp_path: Path, monkeypatch):
+    run_draft(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="valid only when creating"):
+        spawn.prepare_request(
+            request_args(
+                tmp_path, monkeypatch, phase="feedback", prompt="continue",
+                agent_spec="python-developer",
+            )
+        )
+
+
+def test_pre_cutover_phase_two_attempt_is_rejected(
+    tmp_path: Path, monkeypatch
+):
+    request, _ = run_draft(tmp_path, monkeypatch)
+    session = json.loads(request.session_path.read_text())
+    spec = json.loads(request.execution_spec_path.read_text())
+    spec["backend"] = spec.pop("execution_profile")["backend"]
+    request.execution_spec_path.write_text(json.dumps(spec))
+
+    with pytest.raises(ValueError, match="execution spec"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+        )
+
+
+def test_malformed_draft_format_sidecar_fails_closed(tmp_path: Path, monkeypatch):
+    request, _ = run_draft(tmp_path, monkeypatch)
+    request.draft_format_path.write_text('{"schema_version":"1.0","draft_format":"bad"}')
+
+    with pytest.raises(ValueError, match="unsupported contract"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+        )
+
+
+def test_session_additions_are_rejected(tmp_path: Path, monkeypatch):
+    request, _ = run_draft(tmp_path, monkeypatch)
+    session = json.loads(request.session_path.read_text())
+    session["future_addition"] = {"preserve": True}
+    request.session_path.write_text(json.dumps(session))
+    with pytest.raises(ValueError, match="unknown fields"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+        )
+
+
+def test_draft_rejects_missing_evidence_artifact(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, draft_format="compact-json")
+    )
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(
+            draft_message(evidence=[{"artifact_ref": "results/missing.txt", "summary": "Claimed pass."}])
+        ),
+    )
+
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert any("does not exist" in error for error in outcome["errors"])
+
+
+def test_draft_rejects_escaping_evidence_symlink_without_losing_session(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, draft_format="compact-json")
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    evidence_link = request.workspace / "evidence-link"
+    evidence_link.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(
+            draft_message(evidence=[{"artifact_ref": "evidence-link/proof.txt", "summary": "Claimed proof."}])
+        ),
+    )
+
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert any("escapes workspace root" in error for error in outcome["errors"])
+    session = json.loads(request.session_path.read_text())
+    assert session["thread_id"] == THREAD_ID
+    assert session["last_status"] == "correction_needed"
 
 
 def test_tester_handoff_carries_host_only_gate_routing(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, role="tester", task="T003")
-    )
-    configure_test_gates(request.workspace, integration_surface="lead_host")
+    args = request_args(tmp_path, monkeypatch, role="tester", task="T003")
+    configure_test_gates(Path(args.workspace), integration_surface="lead_host")
+    request = spawn.prepare_request(args)
 
     handoff = spawn.build_handoff(request)
     prompt = spawn.build_prompt(request, spawn.prepare_turn(request))
@@ -202,7 +451,7 @@ def test_final_prompt_relies_on_schema_and_keeps_task_specific_truth(tmp_path: P
     )
     prompt = spawn.build_prompt(request, spawn.prepare_turn(request))
 
-    assert "matching the result-v1 contract" in prompt
+    assert "matching the result contract" in prompt
     assert "team_id: team-1" in prompt
     assert "task_id: T002" in prompt
     assert "agent_role: developer" in prompt
@@ -210,7 +459,7 @@ def test_final_prompt_relies_on_schema_and_keeps_task_specific_truth(tmp_path: P
     assert "requested_followups, errors, warnings, limitations, and produced_at" in prompt
     assert "actual existing project-relative path" in prompt
     assert '"artifact_ref": "<actual existing project-relative evidence artifact>"' not in prompt
-    assert "Allowed evidence types for this role" in prompt
+    assert "Allowed evidence types for this effective policy" in prompt
     assert "normalized by the launcher" in prompt
     assert len(prompt) < 1600
 
@@ -409,12 +658,10 @@ def test_mcp_tool_subsets_are_persisted_in_session_and_turn_state(
             "get_change_summary",
         ]
     }
-    assert session["mcp_allowed_tools"] == expected
-    assert session["mcp_effective_tools"] == expected
-    assert state["mcp_allowed_tools"] == expected
-    assert state["mcp_effective_tools"] == expected
-    assert session["mcp_context_project"] == "workspace"
-    assert state["mcp_context_project"] == "workspace"
+    permissions = request.execution_spec["permissions"]
+    assert permissions["mcp_allowed_tools"] == expected
+    assert permissions["mcp_effective_tools"] == expected
+    assert permissions["bound_mcp_project"] == "workspace"
 
 
 def test_context_binding_is_pinned_across_continuation_turns(
@@ -450,7 +697,7 @@ def test_context_binding_is_pinned_across_continuation_turns(
     )
 
 
-def test_legacy_continuation_remains_unbound(tmp_path: Path, monkeypatch):
+def test_pre_cutover_continuation_without_execution_spec_is_rejected(tmp_path: Path, monkeypatch):
     args = request_args(tmp_path, monkeypatch)
     source_home = Path(spawn.os.environ["CODEX_HOME"])
     configure_mcp_servers(source_home, Path(args.workspace).parent)
@@ -463,25 +710,14 @@ def test_legacy_continuation_remains_unbound(tmp_path: Path, monkeypatch):
     _outcome, code = spawn.run_spawn(draft)
     assert code == 0
     session = json.loads(draft.session_path.read_text())
-    del session["mcp_context_project"]
+    session.pop("execution_spec", None)
     draft.session_path.write_text(json.dumps(session))
+    draft.execution_spec_path.unlink()
 
-    feedback = spawn.prepare_request(
-        request_args(
-            tmp_path,
-            monkeypatch,
-            phase="feedback",
-            prompt="FEEDBACK: REVISE",
+    with pytest.raises(ValueError, match="execution_spec"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="FEEDBACK: REVISE")
         )
-    )
-
-    assert feedback.mcp_context_project is None
-    assert not any(
-        "CODEXTEAM_CONTEXT_PROJECT" in override
-        for override in mcp_overrides(
-            spawn.build_command(feedback, spawn.prepare_turn(feedback))
-        )
-    )
 
 
 def test_context_binding_rejects_tampered_session(tmp_path: Path, monkeypatch):
@@ -496,11 +732,11 @@ def test_context_binding_rejects_tampered_session(tmp_path: Path, monkeypatch):
     )
     _outcome, code = spawn.run_spawn(draft)
     assert code == 0
-    session = json.loads(draft.session_path.read_text())
-    session["mcp_context_project"] = "different-project"
-    draft.session_path.write_text(json.dumps(session))
+    spec = json.loads(draft.execution_spec_path.read_text())
+    spec["permissions"]["bound_mcp_project"] = "different-project"
+    draft.execution_spec_path.write_text(json.dumps(spec))
 
-    with pytest.raises(ValueError, match="session MCP context project mismatch"):
+    with pytest.raises(ValueError, match="digest mismatch"):
         spawn.prepare_request(
             request_args(
                 tmp_path,
@@ -565,21 +801,112 @@ def test_parent_sandbox_mode_skips_redundant_worker_namespace_and_persists(
             monkeypatch,
             phase="feedback",
             prompt="FEEDBACK: REVISE",
-            trust_parent_sandbox=True,
         )
     )
     resume_command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
     session = json.loads(feedback.session_path.read_text())
     assert resume_command[:5] == ["codex", "-s", "danger-full-access", "exec", "resume"]
-    assert session["trust_parent_sandbox"] is True
+    assert feedback.execution_spec["permissions"]["additional_write_roots"] == []
+
+
+def test_continuation_restores_additional_write_roots_from_execution_spec(
+    tmp_path: Path, monkeypatch
+):
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    draft = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, add_dir=[str(extra)])
+    )
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("DRAFT T002/att-001")
+    )
+    spawn.run_spawn(draft)
+
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+    )
+
+    assert feedback.add_dirs == (extra.resolve(),)
+
+
+def test_additional_write_root_changes_are_audited(tmp_path: Path, monkeypatch):
+    extra = tmp_path / "extra"
+    extra.mkdir()
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, add_dir=[str(extra)])
+    )
+
+    def change_extra(*args, **kwargs):
+        (extra / "management").mkdir()
+        (extra / "management/forbidden.txt").write_text("changed\n")
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", change_extra)
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert any("role policy" in error for error in outcome["errors"])
+
+
+def test_session_reasoning_field_is_rejected(tmp_path: Path, monkeypatch):
+    draft, _ = run_draft(tmp_path, monkeypatch)
+    session = json.loads(draft.session_path.read_text())
+    session["model_reasoning_effort"] = "low"
+    draft.session_path.write_text(json.dumps(session))
+
+    with pytest.raises(ValueError, match="unknown fields"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+        )
+
+
+def test_declared_task_write_scope_rejects_role_allowed_out_of_scope_change(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(tmp_path, monkeypatch)
+    handoff = Path(args.workspace) / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# Task T002\n\n## Task Write Scope\n\n- `src/**`\n\n## Reporting\n\nReport.\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+
+    def change_outside_scope(*args, **kwargs):
+        (request.workspace / "tests").mkdir()
+        (request.workspace / "tests/test_new.py").write_text("pass\n")
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", change_outside_scope)
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert any("task write scope" in error for error in outcome["errors"])
+    assert request.execution_spec["permissions"]["task_write_scope"] == ["src/**"]
+
+
+def test_turn_writes_private_context_pack_without_prompt_content(tmp_path: Path, monkeypatch):
+    request, _ = run_draft(tmp_path, monkeypatch)
+    path = request.session_dir / "turns/001-context-pack.json"
+    value = json.loads(path.read_text())
+
+    assert value["handoff"]["content_digest"] == request.prompt_content_digest
+    assert value["policy"]["execution_spec_digest"] == request.execution_spec["execution_spec_digest"]
+    assert value["mcp"]["effective_servers"] == list(request.effective_mcp_servers)
+    assert request.prompt not in path.read_text()
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_parent_sandbox_mode_rejects_authenticated_openai_worker(
     tmp_path: Path, monkeypatch
 ):
-    args = request_args(tmp_path, monkeypatch, trust_parent_sandbox=True)
+    args = request_args(
+        tmp_path, monkeypatch, profile="gpt54-mini", trust_parent_sandbox=True
+    )
     source_home = Path(spawn.os.environ["CODEX_HOME"])
-    (source_home / "qwen36-27b.config.toml").write_text(
+    (source_home / "gpt54-mini.config.toml").write_text(
         'model = "gpt-5.4-mini"\n'
         'model_provider = "openai"\n'
         'model_reasoning_effort = "medium"\n'
@@ -602,7 +929,7 @@ def test_reasoning_effort_override_is_validated_and_applied_to_initial_turn(
     assert request.reasoning_effort_override == "medium"
     assert 'model_reasoning_effort="medium"' in command
 
-    with pytest.raises(ValueError, match="reasoning effort override"):
+    with pytest.raises(ValueError, match="reasoning request"):
         spawn.prepare_request(
             request_args(tmp_path, monkeypatch, reasoning_effort="unsupported")
         )
@@ -632,11 +959,29 @@ def test_reasoning_effort_override_persists_when_resume_omits_flag(
         )
     )
     command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
-    session = json.loads(feedback.session_path.read_text())
-
-    assert session["model_reasoning_effort"] == "medium"
-    assert session["reasoning_effort_override"] == "medium"
+    profile = feedback.execution_spec["execution_profile"]
+    assert profile["reasoning"]["requested"] == "medium"
+    assert profile["reasoning"]["effective"] == "medium"
     assert 'model_reasoning_effort="medium"' in command
+
+
+def test_non_default_reasoning_effort_persists_in_execution_spec(
+    tmp_path: Path, monkeypatch
+):
+    draft = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, reasoning_effort="low")
+    )
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+    spawn.run_spawn(draft)
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+    )
+    assert feedback.execution_spec["execution_profile"]["reasoning"]["requested"] == "low"
+    assert feedback.execution_spec["execution_profile"]["reasoning"]["effective"] == "low"
 
 
 def test_resume_rejects_a_different_reasoning_effort_override(tmp_path: Path, monkeypatch):
@@ -650,17 +995,10 @@ def test_resume_rejects_a_different_reasoning_effort_override(tmp_path: Path, mo
     )
     spawn.run_spawn(draft)
 
-    feedback = spawn.prepare_request(
-        request_args(
-            tmp_path,
-            monkeypatch,
-            phase="feedback",
-            prompt="FEEDBACK: REVISE",
-            reasoning_effort="low",
-        )
-    )
-    with pytest.raises(ValueError, match="session model mismatch"):
-        spawn.prepare_turn(feedback)
+    args = request_args(tmp_path, monkeypatch, phase="feedback", prompt="FEEDBACK: REVISE")
+    args.reasoning_effort = "low"
+    with pytest.raises(ValueError, match="load backend, profile, and reasoning"):
+        spawn.prepare_request(args)
 
 
 def test_resume_command_uses_exact_thread_and_no_initial_only_flags(tmp_path: Path, monkeypatch):
@@ -740,7 +1078,7 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
     assert stat.S_IMODE(request.session_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(metrics.stat().st_mode) == 0o600
     prompt_path = Path(outcome["lead_prompt_path"])
-    assert prompt_path.read_text() == "Implement the task.\n"
+    assert prompt_path.read_text() == "Implement the task."
     assert stat.S_IMODE(prompt_path.stat().st_mode) == 0o600
     assert (request.session_dir / spawn.RESULT_SCHEMA_FILENAME).is_file()
     assert stat.S_IMODE(request.codex_home.stat().st_mode) == 0o700
@@ -765,38 +1103,10 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
     assert backend_fields.isdisjoint(state)
     assert backend_fields.isdisjoint(outcome)
     assert set(session) == {
-        "schema_version",
-        "team_id",
-        "task_id",
-        "attempt_id",
-        "agent_role",
-        "model_profile",
-        "role_policy_name",
-        "role_policy_version",
-        "role_policy_digest",
-        "instruction_bundle_digest",
+        "schema_version", "team_id", "task_id", "attempt_id", "agent_role",
+        "workspace_root", "thread_id", "turn_count", "last_phase", "last_status",
+        "last_turn_path", "created_at", "updated_at", "turns", "execution_spec",
         "result_schema_sha256",
-        "model",
-        "model_provider",
-        "model_catalog_json",
-        "model_reasoning_effort",
-        "reasoning_effort_override",
-        "model_verbosity",
-        "mcp_allowed_servers",
-        "mcp_effective_servers",
-        "mcp_missing_servers",
-        "mcp_allowed_tools",
-        "mcp_effective_tools",
-        "workspace_root",
-        "trust_parent_sandbox",
-        "thread_id",
-        "turn_count",
-        "last_phase",
-        "last_status",
-        "last_turn_path",
-        "created_at",
-        "updated_at",
-        "turns",
     }
     assert set(state) == {
         "schema_version",
@@ -805,10 +1115,15 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
         "attempt_id",
         "agent_role",
         "model_profile",
+        "draft_format",
+        "draft_format_pinned",
         "role_policy_name",
         "role_policy_version",
         "role_policy_digest",
+        "agent_spec",
+        "effective_policy_digest",
         "instruction_bundle_digest",
+        "execution_spec",
         "phase",
         "turn_number",
         "status",
@@ -835,10 +1150,15 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
         "task_id",
         "attempt_id",
         "agent_role",
+        "draft_format",
+        "draft_format_pinned",
         "role_policy_name",
         "role_policy_version",
         "role_policy_digest",
+        "agent_spec",
+        "effective_policy_digest",
         "instruction_bundle_digest",
+        "execution_spec",
         "result_schema_sha256",
         "mcp_context_project",
         "thread_id",
@@ -864,7 +1184,10 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
         observed["sqlite_home"] = kwargs["env"]["CODEX_SQLITE_HOME"]
         return spawn.ProcessResult(
             0,
-            event_stream("DRAFT T002/att-001\n\nOutcome: feedback addressed"),
+            event_stream(
+                "DRAFT T002/att-001\n\nOutcome: Feedback addressed.\nEvidence: focused tests pass\n"
+                "Uncertainties or conflicts: none\nProposed disposition: ready for review"
+            ),
             "",
             0.75,
         )
@@ -879,9 +1202,9 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
     assert outcome["status"] == "draft_ready"
     assert session["thread_id"] == THREAD_ID
     assert session["attempt_id"] == "att-001"
-    assert session["model"] == "qwen"
-    assert session["model_provider"] == "ollama_local"
-    assert session["model_reasoning_effort"] == "medium"
+    assert request.execution_spec["execution_profile"]["model"]["provider_locator"] == "qwen"
+    assert request.execution_spec["execution_profile"]["model"]["provider"] == "ollama_local"
+    assert request.execution_spec["execution_profile"]["reasoning"]["effective"] == "medium"
     assert session["turn_count"] == 2
     assert session["turns"][1] == {
         "number": 2,
@@ -898,9 +1221,9 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
 def test_openai_profile_reuses_authenticated_source_home_without_copying_auth(
     tmp_path: Path, monkeypatch
 ):
-    args = request_args(tmp_path, monkeypatch)
+    args = request_args(tmp_path, monkeypatch, profile="gpt54-mini")
     source_home = Path(spawn.os.environ["CODEX_HOME"])
-    (source_home / "qwen36-27b.config.toml").write_text(
+    (source_home / "gpt54-mini.config.toml").write_text(
         'model = "gpt-5.4-mini"\n'
         'model_provider = "openai"\n'
         'model_reasoning_effort = "high"\n'
@@ -1158,7 +1481,9 @@ def test_timeout_after_thread_start_preserves_resumable_session(tmp_path: Path, 
 
 
 def test_failure_before_thread_start_requires_new_attempt(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, draft_format="compact-json")
+    )
     monkeypatch.setattr(
         spawn,
         "run_process",
@@ -1168,6 +1493,7 @@ def test_failure_before_thread_start_requires_new_attempt(tmp_path: Path, monkey
     assert code == 1
     assert outcome["thread_id"] is None
     assert not request.session_path.exists()
+    assert json.loads(request.draft_format_path.read_text())["draft_format"] == "compact-json"
     assert request.session_dir.joinpath("turns", "001-draft.stderr.txt").read_text() == "worker failed"
     with pytest.raises(ValueError, match="non-resumable session data"):
         spawn.prepare_turn(spawn.prepare_request(request_args(tmp_path, monkeypatch)))
@@ -1242,7 +1568,8 @@ def test_fake_cli_runs_draft_feedback_final_in_one_persistent_session(
         "count += 1\n"
         "sentinel.write_text(str(count))\n"
         "output = Path(args[args.index('-o') + 1])\n"
-        "message = json.dumps(final_result) if 'final' in output.name else f'DRAFT T002/att-001\\n\\nOutcome: turn {count}'\n"
+        "draft = {'schema_version':'1.0','outcome':f'turn {count}','evidence':[],'findings':[],'limitations':[],'proposed_disposition':'ready_for_review'}\n"
+        "message = json.dumps(final_result) if 'final' in output.name else json.dumps(draft)\n"
         "output.parent.mkdir(parents=True, exist_ok=True)\n"
         "output.write_text(message + '\\n')\n"
         "print(json.dumps({'type':'thread.started','thread_id':thread}))\n"
@@ -1340,7 +1667,7 @@ def test_run_guard_interruption_preserves_exact_thread_for_feedback(
         "emit({'type': 'thread.started', 'thread_id': thread})\n"
         "if 'resume' in args:\n"
         "    output = Path(args[args.index('-o') + 1])\n"
-        "    message = 'DRAFT T002/att-001\\n\\nOutcome: changed diagnostic'\n"
+        "    message = json.dumps({'schema_version':'1.0','outcome':'changed diagnostic','evidence':[],'findings':[],'limitations':[],'proposed_disposition':'ready_for_review'})\n"
         "    output.write_text(message + '\\n')\n"
         "    emit({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': message}})\n"
         "    emit({'type': 'turn.completed', 'usage': {}})\n"
@@ -1396,19 +1723,16 @@ def test_prepare_request_rejects_result_escape(tmp_path: Path, monkeypatch):
 
 def test_prepare_request_rejects_missing_profile(tmp_path: Path, monkeypatch):
     args = request_args(tmp_path, monkeypatch, profile="missing-profile")
-    with pytest.raises(FileNotFoundError, match="Codex profile not found"):
+    with pytest.raises(ValueError, match="unsupported execution profile"):
         spawn.prepare_request(args)
 
 
-def test_role_policy_supplies_default_profile_guidance_and_handoff_identity(
+def test_role_policy_supplies_guidance_and_handoff_identity_not_profile(
     tmp_path: Path, monkeypatch
 ):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, profile=None, role="tester")
-    )
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch, role="tester"))
     handoff = spawn.build_handoff(request)
 
-    assert request.profile == "qwen36-27b"
     assert [path.name for path in request.skill_files] == [
         "integration-testing.md",
         "verification.md",
@@ -1475,31 +1799,14 @@ def test_draft_pins_role_policy_snapshot_for_continuations(tmp_path: Path, monke
     assert feedback.role_policy.digest == request.role_policy.digest
 
 
-def test_resume_without_profile_reuses_the_recorded_override(tmp_path: Path, monkeypatch):
+def test_installed_unregistered_profile_is_rejected(tmp_path: Path, monkeypatch):
     args = request_args(tmp_path, monkeypatch, profile="alternate")
     source_home = Path(spawn.os.environ["CODEX_HOME"])
     (source_home / "alternate.config.toml").write_text(
         'model = "qwen"\nmodel_provider = "ollama_local"\n'
     )
-    request = spawn.prepare_request(args)
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
-    )
-    _, code = spawn.run_spawn(request)
-    assert code == 0
-
-    feedback = spawn.prepare_request(
-        request_args(
-            tmp_path,
-            monkeypatch,
-            phase="feedback",
-            profile=None,
-            prompt="FEEDBACK: REVISE",
-        )
-    )
-    assert feedback.profile == "alternate"
+    with pytest.raises(ValueError, match="unsupported execution profile"):
+        spawn.prepare_request(args)
 
 
 def test_forbidden_tester_write_requires_correction(tmp_path: Path, monkeypatch):
@@ -1557,28 +1864,61 @@ def test_running_turn_state_is_written_before_worker_execution(tmp_path: Path, m
     assert outcome["role_policy_name"] == "codexteam_developer"
 
 
-def test_parser_and_legacy_session_default_to_codex(tmp_path: Path, monkeypatch):
+def test_parser_requires_explicit_backend_for_draft(tmp_path: Path, monkeypatch):
     assert spawn.build_parser().parse_args(
         [
             "--phase", "draft", "--team", "team-1", "--task", "T002",
             "--attempt", "att-001", "--role", "developer", "--workspace", str(tmp_path),
             "--prompt", "work",
         ]
-    ).backend == "codex"
-    request, _ = run_draft(tmp_path, monkeypatch)
-    session = json.loads(request.session_path.read_text())
-    assert "execution_backend" not in session
-    request.session_path.write_text(json.dumps(session))
-    feedback = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+    ).backend is None
+
+
+def test_pre_cutover_conversational_attempt_is_rejected(
+    tmp_path: Path, monkeypatch, result_factory
+):
+    initial, _ = run_draft(tmp_path, monkeypatch)
+    session = json.loads(initial.session_path.read_text())
+    for field in (
+        "execution_backend",
+        "mcp_context_project",
+        "role_policy_name",
+        "role_policy_version",
+        "role_policy_digest",
+        "instruction_bundle_digest",
+        "result_schema_sha256",
+        "draft_format",
+        "execution_spec",
+    ):
+        session.pop(field, None)
+    initial.execution_spec_path.unlink()
+    initial.session_path.write_text(json.dumps(session))
+    initial.draft_format_path.unlink()
+    initial.role_policy_path.unlink()
+    (initial.session_dir / spawn.GUIDANCE_MANIFEST_FILENAME).unlink()
+    shutil.rmtree(initial.session_dir / "guidance")
+    (initial.session_dir / spawn.RESULT_SCHEMA_FILENAME).unlink()
+
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process(
+            "DRAFT T002/att-001\n\nOutcome: legacy feedback applied\n"
+            "Evidence: focused tests pass\nUncertainties or conflicts: none\n"
+            "Proposed disposition: ready for review"
+        ),
     )
-    assert feedback.backend == "codex"
+    with pytest.raises(ValueError, match="execution_spec"):
+        spawn.prepare_request(
+            request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+        )
 
 
 def test_codex_dry_run_retains_pre_backend_shape(tmp_path: Path, monkeypatch, capsys):
     args = request_args(tmp_path, monkeypatch)
     code = spawn.main([
-        "--phase", "draft", "--profile", args.profile,
+        "--phase", "draft", "--backend", args.backend, "--profile", args.profile,
+        "--reasoning-effort", args.reasoning_effort,
         "--team", args.team, "--task", args.task, "--attempt", args.attempt,
         "--role", args.role, "--workspace", args.workspace,
         "--prompt", args.prompt, "--dry-run",
@@ -1588,13 +1928,19 @@ def test_codex_dry_run_retains_pre_backend_shape(tmp_path: Path, monkeypatch, ca
     details = json.loads(capsys.readouterr().out)
     assert set(details) == {
         "phase",
+        "draft_format",
+        "draft_format_pinned",
+        "draft_format_path",
+        "execution_spec",
+        "execution_spec_path",
         "command",
         "profile_file",
         "role_policy",
         "role_policy_version",
         "role_policy_digest",
         "role_policy_source",
-        "default_profile",
+        "agent_spec",
+        "effective_policy_digest",
         "sandbox_mode",
         "mcp_allowed_servers",
         "mcp_effective_servers",
@@ -1641,12 +1987,13 @@ def test_opencode_resolves_local_profiles_without_codex_profile(tmp_path: Path, 
         model=muse.model,
         role_name="Developer",
         role_instructions="Implement the task.",
+        display_name="Muse Glimmer 30B",
     )
     assert muse_config["model"] == muse_config["small_model"] == "ollama/muse-glimmer:30b"
     assert muse_config["provider"]["ollama"]["models"] == {
         "muse-glimmer:30b": {"name": "Muse Glimmer 30B"}
     }
-    with pytest.raises(ValueError, match="profile must be one of"):
+    with pytest.raises(ValueError, match="unsupported execution profile"):
         spawn.prepare_request(
             request_args(tmp_path, monkeypatch, backend="opencode", profile="unknown")
         )
@@ -1883,18 +2230,14 @@ def test_opencode_resume_exact_session_and_mismatches_rejected(tmp_path: Path, m
     assert command[command.index("--session") + 1] == THREAD_ID
     assert "--continue" not in command
     assert "--fork" not in command
-    with pytest.raises(ValueError, match="backend mismatch"):
-        spawn.prepare_request(
-            request_args(tmp_path, monkeypatch, phase="feedback", prompt="wrong backend")
-        )
-    mismatched_profile = spawn.prepare_request(
-        request_args(
-            tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
-            phase="feedback", prompt="wrong profile",
-        )
-    )
-    with pytest.raises(ValueError, match="session scope mismatch"):
-        spawn.prepare_turn(mismatched_profile)
+    with pytest.raises(ValueError, match="load backend, profile, and reasoning"):
+        args = request_args(tmp_path, monkeypatch, phase="feedback", prompt="wrong backend")
+        args.backend = "codex"
+        spawn.prepare_request(args)
+    args = request_args(tmp_path, monkeypatch, phase="feedback", prompt="wrong profile")
+    args.profile = "qwen36-27b"
+    with pytest.raises(ValueError, match="load backend, profile, and reasoning"):
+        spawn.prepare_request(args)
 
 
 def test_opencode_mismatched_resume_preserves_changes_under_stored_session(
@@ -2076,7 +2419,6 @@ def test_opencode_worker_cannot_repin_mutated_workspace_baseline(
 @pytest.mark.parametrize(
     ("flag", "value"),
     [
-        ("reasoning_effort", "medium"),
         ("trust_parent_sandbox", True),
         ("run_guard", True),
     ],
@@ -2114,11 +2456,12 @@ def test_opencode_qwen_config_selects_only_tuned_qwen_model():
         model="ollama/qwen3.6-27b:latest",
         role_name="reviewer",
         role_instructions="Review the handoff.",
+        display_name="Qwen 3.6 27B",
     )
     assert config["model"] == "ollama/qwen3.6-27b:latest"
     assert config["small_model"] == "ollama/qwen3.6-27b:latest"
     assert config["provider"]["ollama"]["models"] == {
-        "qwen3.6-27b:latest": {"name": "Qwen3.6 27B"}
+        "qwen3.6-27b:latest": {"name": "Qwen 3.6 27B"}
     }
     assert config["agent"]["codexteam"]["model"] == "ollama/qwen3.6-27b:latest"
     assert config["agent"]["codexteam-final"]["model"] == "ollama/qwen3.6-27b:latest"
@@ -2195,25 +2538,31 @@ def test_fake_opencode_draft_feedback_final_persists_session_and_result(
         "count = int(count_file.read_text()) if count_file.exists() else 0\n"
         "if count and args[args.index('--session') + 1] != session: raise SystemExit(8)\n"
         "count += 1; count_file.write_text(str(count))\n"
-        "message = json.dumps(result) if args[args.index('--agent') + 1] == 'codexteam-final' else f'DRAFT T002/att-001 turn {count}'\n"
+        "draft = {'schema_version':'1.0','outcome':f'turn {count}','evidence':[],'findings':[],'limitations':[],'proposed_disposition':'ready_for_review'}\n"
+        "message = json.dumps(result) if args[args.index('--agent') + 1] == 'codexteam-final' else json.dumps(draft)\n"
         "print(json.dumps({'type':'step_start','sessionID':session,'part':{}}))\n"
         "print(json.dumps({'type':'text','sessionID':session,'part':{'text':message}}))\n"
         "print(json.dumps({'type':'step_finish','sessionID':session,'part':{'reason':'stop','tokens':{'input':2,'output':1,'reasoning':0,'cache':{'read':0,'write':0}}}}))\n"
     )
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
-    values = {"backend": "opencode", "profile": profile}
+    values = {
+        "backend": "opencode",
+        "profile": profile,
+        "draft_format": "compact-json",
+    }
     draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, phase="draft", **values))
     (draft.workspace / "src").mkdir()
     (draft.workspace / "src/main.py").write_text("VALUE = 1\n")
     draft.result_dir.mkdir()
     (draft.result_dir / "evidence.txt").write_text("passed\n")
     draft_outcome, draft_code = spawn.run_spawn(draft, executable=str(fake))
+    continuation_values = {"backend": "opencode", "profile": profile}
     feedback = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="feedback", prompt="revise", **values)
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="revise", **continuation_values)
     )
     feedback_outcome, feedback_code = spawn.run_spawn(feedback, executable=str(fake))
     final = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
+        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **continuation_values)
     )
     final_outcome, final_code = spawn.run_spawn(final, executable=str(fake))
     session = json.loads(final.session_path.read_text())
@@ -2221,18 +2570,20 @@ def test_fake_opencode_draft_feedback_final_persists_session_and_result(
     assert (draft_code, feedback_code, final_code) == (0, 0, 0)
     assert draft_outcome["thread_id"] == feedback_outcome["thread_id"] == THREAD_ID
     assert final_outcome["status"] == "completed"
-    assert session["execution_backend"] == "opencode"
+    assert final.execution_spec["execution_profile"]["backend"]["id"] == "opencode"
     assert session["opencode_session_id"] == THREAD_ID
     assert state["opencode_session_id"] == THREAD_ID
     assert session["backend_version"] == "1.18.14"
     assert session["backend_config_digest"]
     assert session["accepted_checkpoint"]["message_sha256"]
+    assert final.draft_format == "compact-json"
     assert (final.session_dir / "opencode-runtime/home/count").read_text() == "3"
     observed_config = json.loads(
         (final.session_dir / "opencode-runtime/home/observed-config.json").read_text()
     )
     assert observed_config["model"] == model
     validate_result(json.loads(final.result_path.read_text()), expected_attempt="att-001")
+    assert "draft_format" not in json.loads(final.result_path.read_text())
 
 
 def test_opencode_final_rejects_workspace_changed_after_accepted_checkpoint(
@@ -2570,9 +2921,11 @@ def test_opencode_continuation_uses_pinned_project_instructions_and_version(
 def test_opencode_dry_run_has_no_reasoning_effort(tmp_path: Path, monkeypatch, capsys):
     code = spawn.main([
         "--backend", "opencode", "--phase", "draft", "--profile", "ornith35b",
+        "--reasoning-effort", "provider_default",
         "--team", "team-1", "--task", "T002", "--attempt", "att-001",
         "--role", "developer", "--workspace", request_args(tmp_path, monkeypatch).workspace,
         "--prompt", "work", "--dry-run",
     ])
     assert code == 0
-    assert json.loads(capsys.readouterr().out)["reasoning_effort"] is None
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["execution_spec"]["execution_profile"]["reasoning"]["support_status"] == "provider_default"

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .files import atomic_write_json
+from .execution_spec import ExecutionSpecError, load_execution_spec
 from .paths import ensure_existing_workspace
 
 
@@ -57,6 +58,14 @@ def summarize_turn(
     generated_at: str | None = None,
     backend: str = "codex",
     context_bytes: dict[str, int] | None = None,
+    requested_reasoning: str | None = None,
+    effective_reasoning: str | None = None,
+    exit_code: int | None = None,
+    timed_out: bool = False,
+    guard_triggered: bool = False,
+    prompt_bytes: int | None = None,
+    events_sha256: str | None = None,
+    stderr_sha256: str | None = None,
 ) -> dict[str, Any]:
     if backend not in {"codex", "opencode"}:
         raise ValueError(f"unsupported execution backend: {backend}")
@@ -85,6 +94,7 @@ def summarize_turn(
     opencode_last_step_input: int | None = None
     opencode_max_step_input: int | None = None
     opencode_tool_output_bytes: Counter[str] = Counter()
+    terminal_reason: str | None = None
     for raw_line in event_text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -119,6 +129,7 @@ def summarize_turn(
                     opencode_tool_output_bytes[tool] += measured_output
             elif event_type == "step_finish" and isinstance(part, dict):
                 reason = part.get("reason")
+                terminal_reason = reason[:64] if isinstance(reason, str) else "unknown"
                 completed = completed or (
                     reason == "stop"
                 )
@@ -176,6 +187,7 @@ def summarize_turn(
                     usage = total
             elif payload_type == "task_complete":
                 completed = True
+                terminal_reason = "completed"
             elif payload_type == "mcp_tool_call_end":
                 observation = _mcp_observation_from_event(payload)
                 if observation is None:
@@ -196,6 +208,7 @@ def summarize_turn(
                     failed_tool_calls += 1
         elif event_type == "turn.completed":
             completed = True
+            terminal_reason = "completed"
             if isinstance(event.get("usage"), dict):
                 usage = event["usage"]
         elif event_type in {"turn.failed", "error"}:
@@ -228,6 +241,14 @@ def summarize_turn(
         cumulative = _usage_values(usage)
         previous = _previous_usage(previous_summary)
         delta, delta_mode = _usage_delta(cumulative, previous)
+    if terminal_reason is None:
+        terminal_reason = (
+            "timeout" if timed_out else
+            "guard_interrupted" if guard_triggered else
+            "failed" if last_error else
+            "process_exit" if isinstance(exit_code, int) and exit_code != 0 else
+            "unknown"
+        )
     repeated = _repeated_commands(commands)
     largest = sorted(
         commands,
@@ -254,7 +275,25 @@ def summarize_turn(
             "phase": phase,
             "completed": completed,
             "duration_seconds": _duration(duration_seconds),
+            "terminal_reason": terminal_reason,
         },
+        "reasoning": {
+            "requested": requested_reasoning,
+            "effective": effective_reasoning,
+        },
+        "process": {
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "guard_triggered": guard_triggered,
+            "classification": (
+                "timeout" if timed_out else
+                "guard_interrupted" if guard_triggered else
+                "success" if exit_code == 0 else
+                "process_exit" if isinstance(exit_code, int) else
+                "unknown"
+            ),
+        },
+        "prompt_bytes": prompt_bytes,
         "usage": {
             "cumulative": cumulative,
             "delta": delta,
@@ -292,6 +331,10 @@ def summarize_turn(
         "events": {
             "parse_error_count": parse_error_count,
             "last_error": last_error,
+            "diagnostics": {
+                "events_sha256": events_sha256,
+                "stderr_sha256": stderr_sha256,
+            },
         },
         **(_opencode_fields(
             model_steps=opencode_model_steps,
@@ -410,6 +453,11 @@ def backfill_project(
             for item in session_turns
             if isinstance(item, dict) and isinstance(item.get("number"), int)
         }
+        execution_spec = _backfill_execution_spec(session_path.parent)
+        profile_ref = execution_spec.get("execution_profile", {})
+        backend_ref = profile_ref.get("backend", {}) if isinstance(profile_ref, dict) else {}
+        named_profile = profile_ref.get("profile", {}) if isinstance(profile_ref, dict) else {}
+        reasoning_ref = profile_ref.get("reasoning", {}) if isinstance(profile_ref, dict) else {}
         prior: dict[str, Any] | None = None
         event_paths = sorted(
             path
@@ -433,13 +481,15 @@ def backfill_project(
                 task_id=str(session.get("task_id") or event_path.parents[2].name),
                 attempt_id=str(session.get("attempt_id") or event_path.parent.parent.name),
                 role=str(session.get("agent_role") or "unknown"),
-                profile=str(session.get("model_profile") or "unknown"),
+                profile=str(named_profile.get("id") or session.get("model_profile") or "unknown"),
                 turn_number=number,
                 phase=phase,
                 duration_seconds=item.get("duration_seconds"),
                 source_event_file=event_path.name,
                 previous_summary=prior,
-                backend=str(session.get("execution_backend") or "codex"),
+                backend=str(backend_ref.get("id") or session.get("execution_backend") or "codex"),
+                requested_reasoning=reasoning_ref.get("requested"),
+                effective_reasoning=reasoning_ref.get("effective"),
             )
             action = "would_overwrite" if target_existed else "would_create"
             if write:
@@ -448,6 +498,17 @@ def backfill_project(
             records.append(_backfill_record(project_root, target, action))
             prior = summary
     return records
+
+
+def _backfill_execution_spec(session_dir: Path) -> dict[str, Any]:
+    path = session_dir / "execution-spec.json"
+    if path.is_symlink() or not path.is_file():
+        return {}
+    try:
+        value = load_execution_spec(path)
+    except (OSError, ExecutionSpecError):
+        return {}
+    return value
 
 
 def _usage_values(usage: dict[str, Any] | None) -> dict[str, int | None]:
@@ -575,7 +636,7 @@ def _opencode_event_error(event: dict[str, Any]) -> str:
     message = data.get("message") if isinstance(data, dict) else None
     safe_name = name.strip()[:100] if isinstance(name, str) and name.strip() else "OpenCode error"
     if isinstance(message, str) and message.strip():
-        return f"{safe_name}: {message.strip()[:390]}"[:500]
+        return f"{safe_name}:sha256:{hashlib.sha256(message.encode('utf-8')).hexdigest()}"
     return safe_name
 
 
@@ -716,6 +777,7 @@ def _mcp_observation(
         "source_bytes": _nonnegative_int(stats.get("source_bytes")),
         "response_bytes": _serialized_bytes(result),
         "cache_hit": stats.get("cache_hit") is True,
+        "source_digests": _source_digests(structured),
     }
 
 
@@ -740,6 +802,7 @@ def _mcp_summary(
                 "source_bytes": 0,
                 "response_bytes": 0,
                 "cache_hits": 0,
+                "source_digests": set(),
             },
         )
         aggregate["calls"] += 1
@@ -750,11 +813,13 @@ def _mcp_summary(
         aggregate["source_bytes"] += item["source_bytes"] or 0
         aggregate["response_bytes"] += item["response_bytes"]
         aggregate["cache_hits"] += int(item["cache_hit"])
+        aggregate["source_digests"].update(item["source_digests"])
 
     by_tool = sorted(grouped.values(), key=lambda item: (item["server"], item["tool"]))
     for item in by_tool:
         item["server_duration_ms"] = round(item["server_duration_ms"], 3)
         item["client_duration_ms"] = round(item["client_duration_ms"], 3)
+        item["source_digests"] = sorted(item["source_digests"])
     return {
         "calls": len(observations),
         "failed_calls": sum(int(item["failed"]) for item in observations),
@@ -770,6 +835,9 @@ def _mcp_summary(
         "source_bytes": sum(item["source_bytes"] or 0 for item in observations),
         "response_bytes": sum(item["response_bytes"] for item in observations),
         "cache_hits": sum(int(item["cache_hit"]) for item in observations),
+        "source_digests": sorted(
+            {digest for item in observations for digest in item["source_digests"]}
+        ),
         "max_returned_bytes": max(
             (item["returned_bytes"] or 0 for item in observations),
             default=0,
@@ -792,6 +860,28 @@ def _mcp_summary(
         ],
         "by_tool": by_tool,
     }
+
+
+def _source_digests(value: Any) -> list[str]:
+    found: set[str] = set()
+
+    def visit(item: Any) -> None:
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if (
+                    key in {"sha256", "source_sha256", "index_sha256"}
+                    and isinstance(child, str)
+                    and re.fullmatch(r"[a-f0-9]{64}", child)
+                ):
+                    found.add(child)
+                else:
+                    visit(child)
+        elif isinstance(item, list):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return sorted(found)
 
 
 def _event_duration_ms(value: Any) -> float | None:
@@ -851,7 +941,8 @@ def _event_error(event: dict[str, Any]) -> str:
     value = event.get("message") or event.get("error") or event.get("type") or "unknown error"
     if isinstance(value, dict):
         value = value.get("message") or json.dumps(value, sort_keys=True)
-    return str(value)[:500]
+    encoded = str(value).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 def _nonnegative_int(value: Any) -> int | None:

@@ -1,9 +1,0 @@
-schema_version = "2.0"
-kind = "agent_spec"
-definition_version = "1"
-agent_spec_id = "ct2.verification.test-engineer"
-responsibility = { definition_id = "verifier", kind = "responsibility", definition_version = "1" }
-capabilities = [{ definition_id = "integration_verification", kind = "capability", definition_version = "1" }]
-permission_policy = { definition_id = "test_writer", kind = "permission_policy", definition_version = "1" }
-guidance_bundle = { definition_id = "verification", kind = "guidance_bundle", definition_version = "1" }
-model_profile = { definition_id = "muse-glimmer-opencode", kind = "model_profile", definition_version = "1" }

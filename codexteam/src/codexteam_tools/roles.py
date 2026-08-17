@@ -11,12 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import AGENT_ROLES, EVIDENCE_TYPES
-from .paths import PathValidationError, validate_profile
+from .paths import PathValidationError
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROLES_ROOT = CODEXTEAM_ROOT / "roles"
 ROLE_POLICY_SCHEMA_VERSION = "1.0"
-REASONING_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 SANDBOX_MODES = {"read-only", "workspace-write"}
 ROLE_NAME_PATTERN = re.compile(r"codexteam_[a-z][a-z0-9_]{1,63}")
 MCP_SERVER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
@@ -52,8 +51,6 @@ REQUIRED_POLICY_FIELDS = {
     "name",
     "description",
     "developer_instructions",
-    "default_profile",
-    "default_reasoning_effort",
     "sandbox_mode",
     "skill_files",
     "allowed_change_patterns",
@@ -75,8 +72,6 @@ class RolePolicy:
     name: str
     description: str
     developer_instructions: str
-    default_profile: str
-    default_reasoning_effort: str
     sandbox_mode: str
     skill_files: tuple[str, ...]
     allowed_change_patterns: tuple[str, ...]
@@ -105,8 +100,6 @@ class RolePolicy:
             "name": self.name,
             "description": self.description,
             "developer_instructions": self.developer_instructions,
-            "default_profile": self.default_profile,
-            "default_reasoning_effort": self.default_reasoning_effort,
             "sandbox_mode": self.sandbox_mode,
             "skill_files": list(self.skill_files),
             "allowed_change_patterns": list(self.allowed_change_patterns),
@@ -173,6 +166,31 @@ def load_role_policy_snapshot(path: str | Path, *, expected_role: str) -> RolePo
     return replace(policy, digest=stored_digest)
 
 
+def validate_role_policy_contract(
+    data: Any,
+    *,
+    expected_role: str | None = None,
+    source_path: Path | None = None,
+) -> RolePolicy:
+    if not isinstance(data, dict):
+        raise RolePolicyError("role policy contract must be an object")
+    value = dict(data)
+    digest_declared = "digest" in value
+    stored_digest = value.pop("digest", None)
+    policy = role_policy_from_mapping(
+        value,
+        source_path=source_path or Path("<role-policy>"),
+        expected_role=expected_role,
+    )
+    if digest_declared:
+        if stored_digest != policy.digest:
+            raise RolePolicyError(
+                f"role policy snapshot digest mismatch: expected {policy.digest}, found {stored_digest}"
+            )
+        return replace(policy, digest=stored_digest)
+    return policy
+
+
 def role_policy_from_mapping(
     data: dict[str, Any],
     *,
@@ -205,21 +223,6 @@ def role_policy_from_mapping(
         8_000,
         errors,
     )
-    default_profile = data.get("default_profile")
-    if not isinstance(default_profile, str):
-        errors.append("default_profile must be a string")
-        default_profile = ""
-    else:
-        try:
-            validate_profile(default_profile)
-        except PathValidationError as exc:
-            errors.append(str(exc))
-    default_reasoning_effort = data.get("default_reasoning_effort")
-    if default_reasoning_effort not in REASONING_EFFORTS:
-        errors.append(
-            "default_reasoning_effort must be one of "
-            + ", ".join(sorted(REASONING_EFFORTS))
-        )
     sandbox_mode = data.get("sandbox_mode")
     if sandbox_mode not in SANDBOX_MODES:
         errors.append("sandbox_mode must be read-only or workspace-write")
@@ -299,8 +302,6 @@ def role_policy_from_mapping(
         "name": name,
         "description": description,
         "developer_instructions": developer_instructions,
-        "default_profile": default_profile,
-        "default_reasoning_effort": default_reasoning_effort,
         "sandbox_mode": sandbox_mode,
         "skill_files": list(skill_files),
         "allowed_change_patterns": list(allowed_patterns),
@@ -323,8 +324,6 @@ def role_policy_from_mapping(
         name=name,
         description=description,
         developer_instructions=developer_instructions,
-        default_profile=default_profile,
-        default_reasoning_effort=default_reasoning_effort,
         sandbox_mode=sandbox_mode,
         skill_files=skill_files,
         allowed_change_patterns=allowed_patterns,
@@ -378,8 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     for policy in policies:
         print(
-            f"{policy.role}: {policy.name}; profile={policy.default_profile}; "
-            f"reasoning={policy.default_reasoning_effort}; policy={policy.digest[:12]}"
+            f"{policy.role}: {policy.name}; policy={policy.digest[:12]}"
         )
     return 0
 

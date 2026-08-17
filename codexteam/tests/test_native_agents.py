@@ -20,7 +20,7 @@ def test_native_agent_projection_is_valid_and_namespaced():
         parsed = tomllib.loads(content)
         assert parsed["name"] == name.removesuffix(".toml")
         assert parsed["developer_instructions"]
-        assert parsed["model_reasoning_effort"] in {"low", "medium", "high"}
+        assert "model_reasoning_effort" not in parsed
 
 
 def test_native_agent_sync_previews_applies_and_becomes_current(tmp_path: Path):

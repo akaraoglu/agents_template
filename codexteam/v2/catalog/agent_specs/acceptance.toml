@@ -1,9 +1,0 @@
-schema_version = "2.0"
-kind = "agent_spec"
-definition_version = "1"
-agent_spec_id = "ct2.review.acceptance"
-responsibility = { definition_id = "reviewer", kind = "responsibility", definition_version = "1" }
-capabilities = [{ definition_id = "acceptance_review", kind = "capability", definition_version = "1" }]
-permission_policy = { definition_id = "review_readonly", kind = "permission_policy", definition_version = "1" }
-guidance_bundle = { definition_id = "review", kind = "guidance_bundle", definition_version = "1" }
-model_profile = { definition_id = "muse-glimmer-opencode", kind = "model_profile", definition_version = "1" }

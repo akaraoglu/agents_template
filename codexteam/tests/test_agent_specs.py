@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+import pytest
+
+from codexteam_tools.agent_specs import (
+    AgentSpecError,
+    agent_spec_from_mapping,
+    effective_role_policy,
+    load_agent_spec,
+    resolve_agent_spec,
+)
+from codexteam_tools.roles import load_role_policy
+
+
+def test_agent_spec_is_optional_for_every_protocol_role():
+    for role in (
+        "architect", "developer", "tester", "reviewer", "documenter",
+        "feature_planner", "ux_designer", "git_steward", "leader",
+    ):
+        assert resolve_agent_spec(role, None) is None
+
+
+@pytest.mark.parametrize(
+    "spec_id",
+    (
+        "python-developer", "go-developer", "frontend-developer",
+        "cpp-developer", "cpp-embedded-developer", "security-reviewer",
+        "accessibility-reviewer",
+    ),
+)
+def test_pilot_agent_specs_are_valid_and_model_free(spec_id: str):
+    spec = load_agent_spec(spec_id)
+    raw = spec.source_path.read_text()
+    for forbidden in ("model =", "backend =", "reasoning", "task_id", "stage"):
+        assert forbidden not in raw
+    assert spec.reference()["digest"] == spec.digest
+
+
+def test_role_mismatch_is_rejected():
+    with pytest.raises(AgentSpecError, match="base role mismatch"):
+        load_agent_spec("security-reviewer", expected_role="developer")
+
+
+def test_agent_spec_cannot_broaden_role_permissions(tmp_path: Path):
+    base = load_role_policy("reviewer")
+    source = tmp_path / "broad.toml"
+    mapping = {
+        "schema_version": "1.0", "agent_spec_id": "broad-developer",
+        "version": "1.0", "base_role": "reviewer", "description": "bad",
+        "capabilities": [], "guidance_files": [],
+        "permission_overlay": {
+            "allowed_change_patterns": ["**"], "denied_change_patterns": [],
+            "mcp_servers": [], "mcp_tools": {},
+            "allowed_evidence_types": [],
+        },
+    }
+    spec = agent_spec_from_mapping(mapping, source_path=source)
+    with pytest.raises(AgentSpecError, match="broadens role policy"):
+        effective_role_policy(base, spec)
+
+
+def test_effective_policy_intersects_paths_mcp_and_evidence(tmp_path: Path):
+    base = load_role_policy("developer")
+    mapping = {
+        "schema_version": "1.0", "agent_spec_id": "narrow-developer",
+        "version": "1.0", "base_role": "developer", "description": "narrow",
+        "capabilities": [], "guidance_files": [],
+        "permission_overlay": {
+            "allowed_change_patterns": ["src/**"],
+            "denied_change_patterns": ["src/generated/**"],
+            "mcp_servers": ["local-docs"],
+            "mcp_tools": {"local-docs": ["search_docs"]},
+            "allowed_evidence_types": ["test_output", "artifact"],
+        },
+    }
+    spec = agent_spec_from_mapping(mapping, source_path=tmp_path / "narrow.toml")
+    effective = effective_role_policy(base, spec)
+    assert effective.allows_change("src/main.py")
+    assert not effective.allows_change("tests/unit/test_main.py")
+    assert not effective.allows_change("src/generated/code.py")
+    assert effective.mcp_servers == ("local-docs",)
+    assert effective.tools_for_server("local-docs") == ("search_docs",)
+    assert effective.allowed_evidence_types == ("test_output", "artifact")
+
+
+def test_agent_spec_digest_changes_with_definition(tmp_path: Path):
+    source = load_agent_spec("python-developer").source_path
+    first = load_agent_spec("python-developer")
+    root = tmp_path / "specs"
+    shutil.copytree(source.parent, root)
+    path = root / "python-developer.toml"
+    path.write_text(path.read_text().replace("Python implementation", "Python service"))
+    second = load_agent_spec("python-developer", root=root)
+    assert first.digest != second.digest
+
+
+def test_narrowing_one_mcp_server_preserves_other_base_tool_restrictions(tmp_path: Path):
+    base = load_role_policy("developer")
+    mapping = {
+        "schema_version": "1.0", "agent_spec_id": "docs-developer",
+        "version": "1.0", "base_role": "developer", "description": "docs",
+        "capabilities": [], "guidance_files": [],
+        "permission_overlay": {
+            "allowed_change_patterns": [], "denied_change_patterns": [],
+            "mcp_servers": ["codexteam-context", "local-docs"],
+            "mcp_tools": {"local-docs": ["search_docs"]},
+            "allowed_evidence_types": [],
+        },
+    }
+    spec = agent_spec_from_mapping(mapping, source_path=tmp_path / "docs.toml")
+    effective = effective_role_policy(base, spec)
+    assert effective.tools_for_server("codexteam-context") == base.tools_for_server(
+        "codexteam-context"
+    )
+    assert effective.tools_for_server("local-docs") == ("search_docs",)
+
+
+def test_literal_path_can_narrow_wildcard_role_path(tmp_path: Path):
+    base = load_role_policy("documenter")
+    mapping = {
+        "schema_version": "1.0", "agent_spec_id": "readme-documenter",
+        "version": "1.0", "base_role": "documenter", "description": "readme",
+        "capabilities": [], "guidance_files": [],
+        "permission_overlay": {
+            "allowed_change_patterns": ["README.md"], "denied_change_patterns": [],
+            "mcp_servers": [], "mcp_tools": {}, "allowed_evidence_types": [],
+        },
+    }
+    spec = agent_spec_from_mapping(mapping, source_path=tmp_path / "readme.toml")
+    assert effective_role_policy(base, spec).allowed_change_patterns == ("README.md",)

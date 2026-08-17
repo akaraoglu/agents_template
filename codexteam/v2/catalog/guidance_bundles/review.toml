@@ -1,5 +1,0 @@
-schema_version = "2.0"
-kind = "guidance_bundle"
-definition_version = "1"
-bundle_id = "review"
-modules = [{ definition_id = "review", kind = "guidance_module", definition_version = "1" }]

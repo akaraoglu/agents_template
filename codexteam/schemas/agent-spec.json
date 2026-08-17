@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.agent-spec",
+  "title": "CodexTeam AgentSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "agent_spec_id", "version", "base_role", "description", "capabilities", "guidance_files", "permission_overlay"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "agent_spec_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$"},
+    "version": {"const": "1.0"},
+    "base_role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "feature_planner", "git_steward", "leader", "ux_designer"]},
+    "description": {"type": "string", "minLength": 1, "maxLength": 500},
+    "capabilities": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$"}, "uniqueItems": true},
+    "guidance_files": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "permission_overlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_change_patterns", "denied_change_patterns", "mcp_servers", "mcp_tools", "allowed_evidence_types"],
+      "properties": {
+        "allowed_change_patterns": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "denied_change_patterns": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "mcp_servers": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "mcp_tools": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$"},
+            "uniqueItems": true
+          }
+        },
+        "allowed_evidence_types": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    }
+  }
+}

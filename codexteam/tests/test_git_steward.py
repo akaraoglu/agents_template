@@ -336,6 +336,15 @@ def test_commit_plan_rejects_runtime_and_secret_paths(tmp_path: Path):
         validate_commit_plan(plan, project)
 
 
+def test_commit_plan_rejects_directory_selector(tmp_path: Path):
+    project = repository(tmp_path)
+    plan = json.loads(write_plan(project).read_text())
+    plan["paths"] = ["src"]
+
+    with pytest.raises(GitStewardError, match="cannot select a directory"):
+        validate_commit_plan(plan, project)
+
+
 def test_authorization_requires_every_change_to_be_classified(tmp_path: Path):
     project = repository(tmp_path)
     (project / "README.md").write_text("unrelated\n")
@@ -404,3 +413,40 @@ def test_active_hook_blocks_commit_before_candidate_objects(tmp_path: Path):
     with pytest.raises(GitStewardError, match="active Git hooks"):
         commit_authorized_plan(project, plan_path, authorization_path, apply=True)
     assert git(project, "count-objects", "-v") == objects_before
+
+
+def test_candidate_gate_failure_preserves_head_and_index(tmp_path: Path):
+    project = repository(tmp_path)
+    config = project / "management" / "TEST_GATES.toml"
+    branch_check = [
+        "git",
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+    ]
+    config.write_text(
+        config.read_text().replace(
+            "commands = [[",
+            f"commands = [{json.dumps(branch_check)}, [",
+        )
+    )
+    run_gate(project, "integration")
+    plan_path = write_plan(project)
+    plan = json.loads(plan_path.read_text())
+    plan["paths"].append("management/TEST_GATES.toml")
+    plan_path.write_text(json.dumps(plan))
+    before_head = git(project, "rev-parse", "HEAD")
+    before_branch = git(project, "branch", "--show-current")
+    before_source = (project / "src" / "main.py").read_bytes()
+    before_config = config.read_bytes()
+    _, authorization_path = authorize_plan(project, plan_path, apply=True)
+
+    with pytest.raises(GitStewardError, match="candidate commit tree"):
+        commit_authorized_plan(project, plan_path, authorization_path, apply=True)
+
+    assert git(project, "rev-parse", "HEAD") == before_head
+    assert git(project, "branch", "--show-current") == before_branch
+    assert git(project, "diff", "--cached", "--name-only") == ""
+    assert (project / "src" / "main.py").read_bytes() == before_source
+    assert config.read_bytes() == before_config

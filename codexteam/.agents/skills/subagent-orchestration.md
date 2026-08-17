@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Delegate one bounded task to a responsible AI, continue ordinary corrections in the same Codex session and logical attempt, persist one accepted `result-v1`, and close state only after independent verification.
+Delegate one bounded task to a responsible AI, continue ordinary corrections in the same Codex session and logical attempt, persist one accepted `result`, and close state only after independent verification.
 
 ## When To Use
 
@@ -59,12 +59,16 @@ parallel Developer ownership.
 | Local Git Steward (`git_steward`) | `qwen36-27b` | Git inspection and commit planning; deterministic executor mutates Git |
 | Leader | `qwen36-27b` | project lead and orchestration |
 
-The responsible role owns the task. A model profile is a capability choice; changing it intentionally creates a new attempt and requires a concise handoff.
-`gemma4-26b` remains available for a bounded secondary perspective, but the live E2E evidence does not support it as the default owner for tool-using audit or document-editing tasks.
+The responsible role owns the task. Backend-scoped profile and reasoning are
+explicit Lead selections; changing them requires a new attempt. Only curated
+profiles reported by `inspect-execution-catalog.py` are supported.
 
-The optional OpenCode canary uses `--backend opencode` with `--profile muse-glimmer` (`ollama/muse-glimmer:30b`), `--profile ornith35b` (`ollama/ornith:35b`), or `--profile qwen36-27b` (tuned `ollama/qwen3.6-27b:latest`). Keep backend and profile stable across draft, feedback, and final. These aliases do not change Codex profile routing. OpenCode runs from attempt-private state with MCP, LSP, plugins, external skills, and nested agents disabled. OpenCode permissions are not OS sandbox parity; retain exact path auditing and external result validation. A matched implementation canary favored Muse for bounded Developer cost/latency while a separate deterministic Reviewer canary favored Qwen; no role manifest or default routing changed.
+OpenCode drafts explicitly select a curated profile and
+`--reasoning-effort provider_default`. Feedback/final omit execution selectors
+and reuse the pinned ExecutionSpec. OpenCode runs from attempt-private state;
+its permissions are not OS sandbox parity.
 
-`gpt54-mini` is an installed, E2E-verified cloud canary profile. The 2026-07-16 controlled Fibonacci fast-lane run completed all five roles without ownership transfer. Qwen remains the default for the established execution roles; the Feature Planner deliberately defaults to `gpt54-mini` for detailed decomposition and may be launched with `--profile qwen36-27b` when local-only processing is required.
+Role and AgentSpec selection never selects backend, profile, model, or reasoning.
 
 Inject the smallest role-specific guidance bundle that covers the task. Large generic bundles increase local-model context cost and can obscure the active contract. Use one consolidated feedback message per review round.
 
@@ -76,9 +80,10 @@ Planned Lane attempts.
 
 ## Instruction Layers and Role Policies
 
-Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` and injects its role-specific Architect, Feature Planner (`feature_planner`), UX Designer (`ux_designer`), Developer, Test Engineer (`tester` protocol role), Reviewer, Documenter, Local Git Steward (`git_steward`), or Leader instructions. That policy also chooses the default profile, reasoning effort, sandbox mode, guidance bundle, mechanical change patterns, permitted evidence types, and optional MCP server allowlist.
+Every worker reads the project's common `AGENTS.md`, but workers do not share one role prompt. The launcher selects exactly one strict manifest from `roles/` for responsibility, sandbox, guidance, change boundaries, evidence, and MCP ceilings. RolePolicy contains no execution defaults.
 
-Precedence is: explicit Project Lead CLI override, pinned role-policy default, then profile configuration for settings not fixed above. `--profile` is optional for a new draft because the role supplies a default. Keep explicit overrides stable across an attempt.
+Draft backend, backend-scoped profile, and reasoning are mandatory Lead
+selections from the curated execution registry.
 
 The first draft stores `role-policy.json`, each selected skill, and `guidance-manifest.json` beside the private session. Feedback and final turns load this complete pinned bundle, not newly edited defaults. Policy and guidance digests must agree across handoff, session, turn state, and result processing. Existing attempts therefore do not acquire a newly allowed MCP server or tool mid-session.
 
@@ -121,7 +126,8 @@ Do not add a new task type, agent, result schema, launcher phase, or planning do
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase draft --profile qwen36-27b --team <team-id> \
+  --phase draft --backend codex --profile qwen36-27b --reasoning-effort medium \
+  --team <team-id> \
   --task T003 --attempt att-001 --role developer \
   --workspace <project-root> --prompt-file <handoff> --dry-run
 ```
@@ -161,6 +167,11 @@ Uncertainties or conflicts:
 Proposed disposition:
 ```
 
+Conversational draft remains the default. For an explicitly approved compact-draft
+attempt, add `--draft-format compact-json` only to the initial draft command.
+Keep feedback and final commands free of that option; the launcher reuses the
+pinned format and rejects malformed compact output in the same resumable session.
+
 For implementation work, require the configured Development Gate before accepting the Developer draft. Then start the Test Engineer against that draft before Developer finalization. The Test Engineer may add or modify handoff-scoped integration/regression tests and controlled expectations but never production source or Developer-owned unit/smoke tests. Return classified product defects to the same Developer session, rerun the Development Gate after correction, then resume the same Test Engineer session for affected checks and the final Integration Gate. Do not finalize either role from evidence produced before the last source revision.
 
 5. Return one consolidated review decision. For revision:
@@ -179,7 +190,7 @@ Resume the exact session:
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase feedback --profile qwen36-27b --team <team-id> \
+  --phase feedback --team <team-id> \
   --task T003 --attempt att-001 --role developer \
   --workspace <project-root> --prompt-file <feedback-file>
 ```
@@ -195,14 +206,14 @@ Read only those named diagnostics. Do not search global Codex sessions, inspect 
 ```text
 FEEDBACK: ACCEPT
 
-Finalize result-v1 using this attempt's actual work and evidence.
+Finalize the result using this attempt's actual work and evidence.
 ```
 
 Run the same command with `--phase final`. This is the only normal phase that writes `results/T003-att-001.json`.
 
 Before finalization, remind the responsible AI that:
 
-- OpenAI-backed profiles receive `schemas/result-v1.json` as the final-turn output schema, while local providers receive the compact required-field contract without an unsupported schema claim;
+- OpenAI-backed profiles receive `schemas/result.json` as the final-turn output schema, while local providers receive the compact required-field contract without an unsupported schema claim;
 - `team_id`, `task_id`, `attempt_id`, and `agent_role` exactly match the handoff and launcher arguments;
 - the summary, status, limitations, file changes, and evidence describe observed work rather than intent;
 - every declared created or modified path and every evidence `artifact_ref` names an actual project-relative artifact; and
@@ -285,7 +296,7 @@ Evidence reuse does not permit evidence inflation. If an artifact contains only 
 - Embedding Markdown backticks in an inline shell prompt instead of using `--prompt-file`
 - Letting a worker create one-off scripts, patch files, or scratch files to work around an ordinary edit or review correction
 - Advancing canonical state while the brief, milestone, or implementation-plan narrative remains stale
-- Emitting local-offset timestamps or commands as evidence artifact paths in result-v1
+- Emitting local-offset timestamps or commands as evidence artifact paths in the result
 - Reconstructing a similar-looking feedback filename instead of reusing the stable prompt path
 - Printing complete result output tails after the validator already returned a concise success
 - Running a `lead_host` gate inside a worker, or citing the rolling gate file as immutable acceptance evidence
@@ -307,5 +318,5 @@ Evidence reuse does not permit evidence inflation. If an artifact contains only 
 - `.agents/skills/integration-testing.md`
 - `scripts/verify-result.py`
 - `scripts/close-loop.sh`
-- `schemas/handoff-v1.json`
-- `schemas/result-v1.json`
+- `schemas/handoff.json`
+- `schemas/result.json`

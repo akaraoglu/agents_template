@@ -24,11 +24,11 @@ The standard workflow uses:
 
 ## Handoff
 
-A handoff binds a team, task, attempt, role, model profile, workspace, constraints, task context, completion criteria, role-policy digest, and complete instruction-bundle digest. Its machine-readable shape is `schemas/handoff-v1.json`.
+A handoff binds a team, task, attempt, role, model profile, workspace, constraints, task context, completion criteria, role-policy digest, and complete instruction-bundle digest. Its machine-readable shape is `schemas/handoff.json`.
 
 ## Result
 
-A result is an untrusted report from one attempt. Result v1 requires stable identity, scope fields, status, summary, process output, file changes, evidence, follow-ups, errors, warnings, limitations, and a UTC timestamp.
+A result is an untrusted report from one attempt. Result current requires stable identity, scope fields, status, summary, process output, file changes, evidence, follow-ups, errors, warnings, limitations, and a UTC timestamp.
 
 Result statuses are:
 

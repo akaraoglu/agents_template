@@ -237,3 +237,49 @@ def test_close_loop_records_pending_metrics_and_activates_next_task(
     assert execute_close_loop(plan, result, tasks_text, timeout_seconds=10)
     assert parse_task_document((project / "TASKS.md").read_text()).row("T002").status == "In Progress"
     assert transitions == [(project, "T001", "T002")]
+
+
+def test_close_loop_runs_integration_gate_and_snapshots_accepted_record(
+    tmp_path: Path, result_factory
+):
+    project = project_with_result(tmp_path, result_factory)
+    gate_command = [
+        sys.executable,
+        "-c",
+        "from pathlib import Path; assert Path('src/main.py').read_text() == 'VALUE = 1\\n'",
+    ]
+    (project / "management" / "TEST_GATES.toml").write_text(
+        'schema_version = "1.0"\nverification_paths = ["src/**"]\n\n'
+        '[development]\nconfigured = true\nexpected_max_seconds = 30\n'
+        f"commands = [{json.dumps(gate_command)}]\n\n"
+        '[integration]\nconfigured = true\nexpected_max_seconds = 60\n'
+        'includes = ["development"]\n'
+        f"commands = [{json.dumps(gate_command)}]\n"
+    )
+    gate_runner = Path(__file__).resolve().parents[1] / "scripts" / "run-test-gate.py"
+    command = [
+        sys.executable,
+        str(gate_runner),
+        ".",
+        "--gate",
+        "integration",
+        "--execution-surface",
+        "worker",
+        "--snapshot-task",
+        "T001",
+        "--snapshot-attempt",
+        "att-001",
+    ]
+
+    plan, result, tasks_text = prepare_close_loop(project, "T001", command)
+    assert execute_close_loop(plan, result, tasks_text, timeout_seconds=30)
+
+    snapshots = list((project / "results" / "gates" / "accepted").glob(
+        "T001-att-001-integration-*.json"
+    ))
+    assert len(snapshots) == 1
+    snapshot = json.loads(snapshots[0].read_text())
+    assert snapshot["task_id"] == "T001"
+    assert snapshot["attempt_id"] == "att-001"
+    assert snapshot["record"]["status"] == "passed"
+    assert parse_task_document((project / "TASKS.md").read_text()).row("T001").status == "Completed"

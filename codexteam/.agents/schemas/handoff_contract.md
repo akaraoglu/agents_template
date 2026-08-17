@@ -1,6 +1,6 @@
-# Handoff Contract V1
+# Handoff Contract
 
-The enforced machine-readable contract is `codexteam/schemas/handoff-v1.json`. The spawn adapter constructs and validates this handoff before embedding it in the worker prompt.
+The enforced machine-readable contract is `codexteam/schemas/handoff.json`. The spawn adapter constructs and validates this handoff before embedding it in the worker prompt.
 
 Required fields:
 

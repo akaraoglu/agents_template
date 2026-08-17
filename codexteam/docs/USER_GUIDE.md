@@ -33,14 +33,17 @@ After that approval, “handle it yourself” or “end to end” means the Proj
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase draft --profile qwen36-27b --team example --task T002 --attempt att-001 \
+  --phase draft --backend codex --profile qwen36-27b --reasoning-effort high \
+  --team example --task T002 --attempt att-001 \
   --role architect --workspace <project-root> \
   --prompt-file <project-root>/management/tasks/T002.md
 ```
 
 Use `--dry-run` to inspect the exact command, profile, guidance, session path, and final result path without starting Codex. The draft is conversational output and does not create a result.
 
-To run a local OpenCode canary instead, add `--backend opencode` with `--profile muse-glimmer`, `--profile ornith35b`, or `--profile qwen36-27b`. Keep that backend and profile on every turn. Muse selects `ollama/muse-glimmer:30b`; Qwen selects tuned `ollama/qwen3.6-27b:latest`. OpenCode aliases do not change Codex profiles of the same names. OpenCode uses an attempt-private configuration and exact stored session ID. Do not add `--reasoning-effort`, `--trust-parent-sandbox`, or `--run-guard`; MCP and LSP are not enabled for this backend yet.
+To run OpenCode, explicitly select a curated profile on draft and use
+`--reasoning-effort provider_default`. Feedback/final omit backend, profile, and
+reasoning and reuse the pinned ExecutionSpec.
 
 Use the opt-in `--run-guard` for turns where an unchanged command-failure loop or
 unbounded discovery is a material risk. It streams private diagnostics and interrupts
@@ -49,7 +52,9 @@ discovery after a successful context MCP call. The full event remains in JSONL a
 preserves a captured thread for scoped same-attempt feedback. The guard is not a
 token, time, tool-count, or general retry limit.
 
-The role manifest selects the default profile and guidance bundle when `--profile` and `--skill-file` are omitted. Lead overrides are explicit. Draft snapshots the policy and skill contents; policy and instruction-bundle digests are embedded in the handoff, session, turn state, and final launcher outcome. Continuations reject a changed pinned file.
+The role manifest selects responsibility guidance and permission ceilings only.
+The Lead explicitly selects backend, profile, and reasoning from the curated
+registry. Draft snapshots the resolved configuration and guidance.
 
 T002 uses `--role architect` to produce `ARCHITECTURE.md` and material ADRs without implementation or self-approval. After Project Lead acceptance, T003 uses `--role developer`; the Developer owns algorithm/unit tests, smoke tests, and the Development Gate. After its draft passes, T004 starts an independent Test Engineer with `--role tester`; that protocol name is retained for result compatibility. The Test Engineer may change only handoff-scoped integration/regression tests and controlled expectations, never production source or Developer-owned tests. Return classified product defects to the same Developer session before finalization, then resume the Test Engineer and rerun affected checks plus Integration Gate against the final revision. T005 uses `--role reviewer` for acceptance and architecture conformance.
 
@@ -66,7 +71,10 @@ Prefer `--prompt-file` for handoffs and feedback. Markdown backticks, dollar sig
 
 ## 4. Review and Continue the Same Session
 
-The Project Lead inspects the draft and sends one consolidated decision. Use `--phase feedback` for corrections and `--phase final` only after acceptance. Keep the same team, task, attempt, role, profile, and workspace arguments. The launcher resumes the exact stored thread ID and never relies on the most recent global session.
+The Project Lead inspects the draft and sends one consolidated decision. Use
+`--phase feedback` for corrections and `--phase final` only after acceptance.
+Keep team, task, attempt, role, and workspace; omit execution selectors. The
+launcher resumes the exact stored thread ID.
 
 Ordinary corrections do not create new attempts. Start a new attempt only after irrecoverable session loss, intentional reassignment, material scope change, or explicit abandonment.
 
@@ -113,7 +121,7 @@ After each closure, the Project Lead must also synchronize `BRIEF.md`, milestone
 
 Do this only after Reviewer acceptance and current Integration Gate evidence, or after accepted architecture-review evidence for an architecture-only boundary.
 
-The read-only Git Steward returns one exact `commit-plan-v1` JSON draft. After review, the Project Lead persists that unchanged JSON at `<project-root>/.codexteam/runtime/git-steward/<boundary>/plan.json`; the commands below validate and pin its digest.
+The read-only Git Steward returns one exact `commit-plan` JSON draft. After review, the Project Lead persists that unchanged JSON at `<project-root>/.codexteam/runtime/git-steward/<boundary>/plan.json`; the commands below validate and pin its digest.
 
 ```bash
 ./scripts/git-steward.py inspect <project-root> \

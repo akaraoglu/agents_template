@@ -1,8 +1,0 @@
-schema_version = "2.0"
-kind = "capability"
-definition_version = "1"
-capability_id = "acceptance_review"
-name = "Acceptance review"
-description = "Review acceptance claims and issue review evidence."
-required_operations = ["read", "write", "send"]
-required_resources = ["project_path", "evidence", "mailbox"]

@@ -1,6 +1,6 @@
-# Result Contract V1
+# Result Contract
 
-The enforced machine-readable contract is `codexteam/schemas/result-v1.json`. Validation is implemented in `codexteam_tools.contracts` and exposed through `scripts/verify-result.py`.
+The enforced machine-readable contract is `codexteam/schemas/result.json`. Validation is implemented in `codexteam_tools.contracts` and exposed through `scripts/verify-result.py`.
 
 Required fields:
 

@@ -1,7 +1,0 @@
-schema_version = "2.0"
-kind = "model_profile"
-definition_version = "1"
-profile_id = "qwen36-codex"
-model = "qwen3.6-27b"
-reasoning_effort = "medium"
-backend = { definition_id = "codex", kind = "backend_definition", definition_version = "1" }

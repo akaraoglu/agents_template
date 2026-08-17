@@ -8,7 +8,7 @@ from .contracts import RESULT_STATUSES, ResultValidationError, validate_result
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Validate a CodexTeam result against contract v1.")
+    parser = argparse.ArgumentParser(description="Validate a CodexTeam result contract.")
     parser.add_argument("result", type=Path, help="Result JSON path")
     parser.add_argument("--task", help="Expected task ID")
     parser.add_argument("--team", help="Expected team ID")

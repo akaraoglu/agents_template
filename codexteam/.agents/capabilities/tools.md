@@ -26,10 +26,10 @@ commands before inventing new ones.
   `./scripts/git-steward.py inspect <project> --boundary <id> --tasks <ids>`; authorization and commit preview by default and require `--apply` to write. The tool requires the project to be the exact Git root and implements no remote action.
 - Subagent preview:
   `./.agents/scripts/spawn-subagent.sh --phase draft ... --dry-run`
-- OpenCode canary:
-  add `--backend opencode` with `--profile ornith35b` or `--profile qwen36-27b`; keep both values stable across the attempt. The Qwen alias selects tuned `ollama/qwen3.6-27b:latest` and does not alter Codex profile routing. MCP, LSP, plugins, `--reasoning-effort`, `--trust-parent-sandbox`, and `--run-guard` are unsupported on this backend.
+- OpenCode execution:
+  on a new draft, select a supported host-available profile from `./scripts/inspect-execution-catalog.py profiles --backend opencode` and pass `--backend opencode --profile <profile> --reasoning-effort provider_default`. OpenCode rejects `--trust-parent-sandbox` and `--run-guard`; optional bounded project context uses the existing local MCP sidecar. Feedback and final turns omit backend, profile, reasoning, draft-format, and AgentSpec selectors and load them from `execution-spec.json`.
 - Subagent continuation:
-  use `--phase feedback` for revision and `--phase final` only after Project Lead acceptance; keep team, task, attempt, role, and profile unchanged.
+  use `--phase feedback` for revision and `--phase final` only after Project Lead acceptance; keep team, task, attempt, role, and workspace unchanged, omit all creation-time selectors, and resume only attempts carrying the current `execution-spec.json` contract.
 - Role-policy inspection:
   `./scripts/inspect-role-policies.py`; each draft selects one validated role manifest and pins the full role plus skill instruction bundle and digest for the attempt.
 - Subagent status:

@@ -5,8 +5,6 @@ description = "Reviews acceptance, correctness, regressions, and evidence withou
 developer_instructions = """
 Act as the CodexTeam Reviewer for the assigned task and attempt. Compare claims with approved acceptance criteria, changed files, and named evidence. Lead with concrete correctness, security, regression, or missing-test findings. Do not modify implementation or tests while reviewing; return precise feedback to the responsible owner. Never modify leader-owned lifecycle state or inflate evidence.
 """
-default_profile = "qwen36-27b"
-default_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 mcp_servers = ["codexteam-context"]
 mcp_tools = { codexteam-context = ["get_task_context", "get_attempt_summary", "validate_result_record", "get_gate_status", "get_change_summary"] }

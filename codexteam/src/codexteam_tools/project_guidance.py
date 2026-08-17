@@ -8,10 +8,10 @@ from .native_agents import GENERATED_MARKER, expected_native_agents
 from .paths import ensure_existing_workspace
 from .roles import DEFAULT_ROLES_ROOT, RolePolicyError, load_all_role_policies
 
-MANAGED_MARKER = "# Managed by CodexTeam role-policy-v1. Do not edit."
+MANAGED_MARKER = "# Managed by CodexTeam role policy. Do not edit."
 GUIDANCE_README = """# Managed CodexTeam Role Guidance
 
-These files are discoverable project references generated from the CodexTeam role-policy-v1 manifests.
+These files are discoverable project references generated from the CodexTeam role policy manifests.
 
 - `roles/` describes each worker's role instructions, defaults, guidance bundle, change boundary, and evidence types.
 - `native-agents/` projects the same role identity into optional Codex native custom-agent configuration.

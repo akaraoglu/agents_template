@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.execution-spec",
+  "title": "CodexTeam Execution Specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "execution_spec_id", "identity", "handoff", "role_policy", "agent_spec", "guidance", "execution_profile", "permissions", "gate_routing", "execution_spec_digest"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "execution_spec_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["team_id", "task_id", "attempt_id", "role", "workspace_root"],
+      "properties": {
+        "team_id": {"type": "string", "minLength": 1},
+        "task_id": {"type": "string", "pattern": "^T[0-9]{3,6}$"},
+        "attempt_id": {"type": "string", "minLength": 1},
+        "role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "feature_planner", "git_steward", "leader", "ux_designer"]},
+        "workspace_root": {"type": "string", "pattern": "^/"}
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_path", "content_digest"],
+      "properties": {
+        "source_path": {"type": ["string", "null"]},
+        "content_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "role_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "digest"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"const": "1.0"},
+        "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "agent_spec": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"const": "1.0"},
+        "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "guidance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "bundle_digest"],
+      "properties": {
+        "files": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "bundle_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "execution_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry_digest", "backend", "model", "profile", "reasoning", "backend_material_digest", "verbosity_supported", "qualification_references"],
+      "properties": {
+        "registry_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "backend": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "definition_digest", "runtime_version"],
+          "properties": {
+            "id": {"enum": ["codex", "opencode"]},
+            "definition_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "runtime_version": {"type": ["string", "null"]}
+          }
+        },
+        "model": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "definition_digest", "provider", "provider_locator"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "definition_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "provider": {"type": "string", "minLength": 1},
+            "provider_locator": {"type": "string", "minLength": 1}
+          }
+        },
+        "profile": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "definition_digest"],
+          "properties": {
+            "id": {"type": "string", "pattern": "^(codex|opencode)/[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
+            "definition_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          }
+        },
+        "reasoning": {
+          "type": "object", "additionalProperties": false,
+          "required": ["requested", "effective", "support_status", "runtime_options"],
+          "properties": {
+            "requested": {"enum": ["provider_default", "low", "medium", "high", "xhigh"]},
+            "effective": {"type": ["string", "null"]},
+            "support_status": {"enum": ["applied", "provider_default"]},
+            "runtime_options": {"type": "object"}
+          }
+        },
+        "backend_material_digest": {"type": "string", "minLength": 1},
+        "verbosity_supported": {"type": "boolean"},
+        "qualification_references": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effective_policy_digest", "sandbox_mode", "trust_parent_sandbox", "additional_write_roots", "mcp_allowed_servers", "mcp_effective_servers", "mcp_missing_servers", "mcp_allowed_tools", "mcp_effective_tools", "bound_mcp_project", "task_write_scope"],
+      "properties": {
+        "effective_policy_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "sandbox_mode": {"enum": ["read-only", "workspace-write"]},
+        "trust_parent_sandbox": {"type": "boolean"},
+        "additional_write_roots": {"type": "array", "items": {"type": "string"}},
+        "mcp_allowed_servers": {"type": "array", "items": {"type": "string"}},
+        "mcp_effective_servers": {"type": "array", "items": {"type": "string"}},
+        "mcp_missing_servers": {"type": "array", "items": {"type": "string"}},
+        "mcp_allowed_tools": {"type": "object"},
+        "mcp_effective_tools": {"type": "object"},
+        "bound_mcp_project": {"type": ["string", "null"]},
+        "task_write_scope": {"type": ["array", "null"], "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "gate_routing": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["gate", "execution_surface"],
+      "properties": {
+        "gate": {"enum": ["development", "integration"]},
+        "execution_surface": {"enum": ["worker", "lead_host"]}
+      }
+    },
+    "execution_spec_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

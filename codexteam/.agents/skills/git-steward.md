@@ -29,7 +29,7 @@ Use only after the Project Lead marks a verified task group or milestone commit-
 4. Identify unrelated, generated, runtime, temporary, backup, secret-like, or oversized files.
 5. Propose one explicit coherent staging group and, when local ignored files must remain on disk but leave Git control, one exact `untrack_paths` list; never use implicit selectors.
 6. Prepare a meaningful commit subject/body and a human-readable branch or PR summary.
-7. Return one exact `commit-plan-v1` JSON draft for Project Lead approval without changing files, the index, refs, or HEAD.
+7. Return one exact `commit-plan` JSON draft for Project Lead approval without changing files, the index, refs, or HEAD.
 8. The Project Lead persists the accepted JSON under ignored `.codexteam/runtime/git-steward/<boundary>/plan.json`, validates it, and explicitly authorizes its digest.
 9. On final authorization, request the deterministic executor to apply exactly the approved plan.
 10. Report the resulting local commit SHA and any paths intentionally left uncommitted.
@@ -45,11 +45,11 @@ Use only the repository-owned Git Steward inspection and plan commands. The dete
 
 ## Expected Output
 
-- One exact `commit-plan-v1` JSON draft, including explicit `untrack_paths` when index-only removal is authorized, persisted under ignored runtime only after Project Lead acceptance
+- One exact `commit-plan` JSON draft, including explicit `untrack_paths` when index-only removal is authorized, persisted under ignored runtime only after Project Lead acceptance
 - One approved local commit or a precise blocked disposition
 - When required, one narrow follow-up commit containing only post-boundary lifecycle
   and delivery evidence
-- One `commit-record-v1` and PR summary in ignored runtime storage
+- One `commit-record` and PR summary in ignored runtime storage
 - No product file modifications by the Steward
 
 ## Validation

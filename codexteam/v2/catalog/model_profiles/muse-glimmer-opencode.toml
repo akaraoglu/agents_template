@@ -1,6 +1,0 @@
-schema_version = "2.0"
-kind = "model_profile"
-definition_version = "1"
-profile_id = "muse-glimmer-opencode"
-model = "ollama/muse-glimmer:30b"
-backend = { definition_id = "opencode", kind = "backend_definition", definition_version = "1" }

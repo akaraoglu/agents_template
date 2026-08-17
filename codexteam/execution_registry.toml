@@ -1,0 +1,161 @@
+schema_version = "1.0"
+
+[[backends]]
+backend_id = "codex"
+adapter_version = "1.0"
+executable = "codex"
+session_capabilities = ["persistent-session", "draft-feedback-final"]
+tool_capabilities = ["native-tools", "mcp"]
+structured_output_support = "final-only"
+sandbox_characteristics = "Codex workspace sandbox or explicitly trusted parent sandbox."
+
+[[backends]]
+backend_id = "opencode"
+adapter_version = "1.0"
+executable = "opencode"
+session_capabilities = ["persistent-session", "draft-feedback-final"]
+tool_capabilities = ["opencode-tools"]
+structured_output_support = "external-validation"
+sandbox_characteristics = "Private configuration plus auditing; no OS sandbox parity."
+
+[[models]]
+model_id = "qwen36-27b"
+display_name = "Qwen 3.6 27B"
+family = "qwen"
+provider_locator = "qwen3.6-27b"
+context_limit = 262144
+output_limit = 32768
+modalities = ["text"]
+known_capabilities = ["tool-use", "reasoning"]
+
+[[models]]
+model_id = "muse-glimmer"
+display_name = "Muse Glimmer 30B"
+family = "muse"
+provider_locator = "ollama/muse-glimmer:30b"
+context_limit = 131072
+output_limit = 32768
+modalities = ["text"]
+known_capabilities = ["tool-use"]
+
+[[models]]
+model_id = "ornith35b"
+display_name = "Ornith 35B"
+family = "ornith"
+provider_locator = "ollama/ornith:35b"
+context_limit = 131072
+output_limit = 32768
+modalities = ["text"]
+known_capabilities = ["tool-use"]
+
+[[models]]
+model_id = "gpt54-mini"
+display_name = "GPT 5.4 Mini"
+family = "gpt"
+provider_locator = "gpt-5.4-mini"
+context_limit = 400000
+output_limit = 32768
+modalities = ["text"]
+known_capabilities = ["tool-use", "reasoning"]
+
+[[qualifications]]
+qualification_id = "codex-qwen36"
+profile = "codex/qwen36-27b"
+status = "qualified"
+evidence_ref = "tests/test_spawn.py"
+
+[[qualifications]]
+qualification_id = "codex-gpt54-mini"
+profile = "codex/gpt54-mini"
+status = "qualified"
+evidence_ref = "docs/E2E_ACCEPTANCE_PLAN.md"
+
+[[qualifications]]
+qualification_id = "opencode-qwen36"
+profile = "opencode/qwen36-27b"
+status = "qualified"
+evidence_ref = "tests/test_spawn.py"
+
+[[qualifications]]
+qualification_id = "opencode-muse"
+profile = "opencode/muse-glimmer"
+status = "qualified"
+evidence_ref = "docs/MUSE_GLIMMER_QUALIFICATION.md"
+
+[[qualifications]]
+qualification_id = "opencode-ornith"
+profile = "opencode/ornith35b"
+status = "qualified"
+evidence_ref = "tests/test_spawn.py"
+
+[[profiles]]
+profile_id = "qwen36-27b"
+backend_id = "codex"
+model_id = "qwen36-27b"
+provider = "ollama_local"
+provider_locator = "qwen"
+runtime_options = {}
+supported_reasoning_requests = ["low", "medium", "high"]
+reasoning_mappings = { low = "low", medium = "medium", high = "high" }
+verbosity_support = true
+tool_support = true
+mcp_support = true
+qualification_references = ["codex-qwen36"]
+source_profile = "qwen36-27b"
+
+[[profiles]]
+profile_id = "gpt54-mini"
+backend_id = "codex"
+model_id = "gpt54-mini"
+provider = "openai"
+provider_locator = "gpt-5.4-mini"
+runtime_options = {}
+supported_reasoning_requests = ["low", "medium", "high", "xhigh"]
+reasoning_mappings = { low = "low", medium = "medium", high = "high", xhigh = "xhigh" }
+verbosity_support = true
+tool_support = true
+mcp_support = true
+qualification_references = ["codex-gpt54-mini"]
+source_profile = "gpt54-mini"
+
+[[profiles]]
+profile_id = "qwen36-27b"
+backend_id = "opencode"
+model_id = "qwen36-27b"
+provider = "ollama"
+provider_locator = "ollama/qwen3.6-27b:latest"
+runtime_options = {}
+supported_reasoning_requests = ["provider_default"]
+reasoning_mappings = { provider_default = "provider_default" }
+verbosity_support = false
+tool_support = true
+mcp_support = false
+qualification_references = ["opencode-qwen36"]
+
+[[profiles]]
+profile_id = "muse-glimmer"
+backend_id = "opencode"
+model_id = "muse-glimmer"
+provider = "ollama"
+provider_locator = "ollama/muse-glimmer:30b"
+runtime_options = {}
+supported_reasoning_requests = ["provider_default"]
+reasoning_mappings = { provider_default = "provider_default" }
+verbosity_support = false
+tool_support = true
+mcp_support = false
+qualification_references = ["opencode-muse"]
+
+[[profiles]]
+profile_id = "ornith35b"
+backend_id = "opencode"
+model_id = "ornith35b"
+provider = "ollama"
+provider_locator = "ollama/ornith:35b"
+runtime_options = {}
+supported_reasoning_requests = ["provider_default"]
+reasoning_mappings = { provider_default = "provider_default" }
+verbosity_support = false
+tool_support = true
+mcp_support = false
+qualification_references = ["opencode-ornith"]

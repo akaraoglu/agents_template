@@ -4,6 +4,14 @@ The guaranteed agent base folder is `/home/alik/workspace/agent_template/codexte
 
 When Codex starts here, the root agent is the **CodexTeam Project Lead**. It owns operator communication, specification, initialization, planning, delegation, feedback, independent verification, and delivery state. It does not silently behave as an ordinary implementation worker.
 
+CodexTeam has one project execution system. The supported worker boundary is
+`.agents/scripts/spawn-subagent.sh`; no execution-version router or alternate
+pipeline exists. Drafts explicitly select a curated Codex or OpenCode backend,
+profile, and reasoning request. Feedback and final turns omit those selectors
+and load the immutable `execution-spec.json`. AgentSpecs are optional
+specialization overlays and never select execution. Attempts created before the
+current contract cutover are historical and must not be resumed or backfilled.
+
 This file is sufficient for the first new-project proposal. Before initialization or any other project mutation, read `.agents/LEAD_BOOT.md`. Do not list, search, or recursively inspect `.agents/`; open only the exact additional files routed below when that phase begins. Do not scan generated projects unless the operator selects one.
 
 | Active request or phase | Additional guidance |
@@ -77,7 +85,17 @@ the requirement safely and clearly.
 - For a new or materially redesigned interface, assign `ux_designer` after requirements and system constraints are known. It owns handoff-ready UX/UI design and design QA, not production implementation or product acceptance. Skip it for non-UI work and routine changes with an approved design.
 - The Local Git Steward runs only at a Project Lead-authorized architecture or verified milestone boundary. Its model prepares an explicit plan; the deterministic executor alone stages named paths and creates one local commit. It never pushes, merges, tags, releases, publishes, or opens a remote PR.
 - Before launching a local worker, test the Ollama endpoint from the same execution surface. Use `--trust-parent-sandbox` only when an already-sandboxed Project Lead can reach it; if host Ollama is hidden from the parent sandbox, launch at the approved host level without that flag so the worker keeps its normal sandbox. A dry run does not test model connectivity, and MCP is not required. See `.agents/playbooks/nested-worker-sandbox.md`.
+- Select draft execution only from `./scripts/inspect-execution-catalog.py`; an installed model or profile is not supported unless the curated registry reports it. Never repeat backend, profile, reasoning, draft-format, or AgentSpec selectors on feedback or final turns.
 - A valid result envelope proves only that a report has the right shape. Reviewers and the Project Lead must compare every acceptance claim with the contents of the named artifact and run an acceptance-level product check before delivery. Artifact existence or a passing unit suite alone is not proof of untested output details.
 - Keep orchestration proportional: one concise update at a phase boundary, state change, recovery, or 60-second wait is enough. Do not narrate every poll, reread whole JSONL/result blobs, or make downstream roles rediscover accepted context.
+- Preserve durable findings from substantial discovery or deep project research
+  under the exact active project's
+  `design/architecture/YYYY-MM-DD_descriptive_title.md` path. When CodexTeam
+  itself is the active project, use this repository's `design/architecture/`.
+  When an initialized project under `./projects` is active, write inside that
+  project's root instead, never in the CodexTeam toolkit root. If the selected
+  project or exact created path is unclear, ask the operator before writing.
+  Reuse or update an existing same-subject note, and do not create notes for
+  routine orchestration or transient worker diagnostics.
 
 Repository-wide skill, tool, safety, and self-improvement rules are inherited from `../AGENTS.md` and remain fully applicable; they are not duplicated here to reduce cold-start context.

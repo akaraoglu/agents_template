@@ -30,10 +30,19 @@ read access as broad edit authorization.
    behavior, scope, or risk; otherwise proceed with a stated reasonable
    assumption.
 7. Select the smallest applicable lifecycle skills and verification scope.
+8. For substantial discovery or deep research, decide whether the findings are
+   durable enough to prevent future rediscovery. If so, confirm the exact active
+   project root and write or update
+   `<active-project-root>/design/architecture/YYYY-MM-DD_descriptive_title.md`.
+   If the project root is ambiguous, ask the user before writing. Skip the note
+   for routine inspection, transient diagnosis, duplicated documentation, or an
+   explicitly read-only request.
 
 ## Expected Output
 
-A bounded task definition and evidence-based next action or plan.
+A bounded task definition and evidence-based next action or plan, plus a
+project-local discovery note when the investigation produced durable reusable
+findings.
 
 ## Validation
 
@@ -41,6 +50,9 @@ A bounded task definition and evidence-based next action or plan.
 - Scope distinguishes readable context from authorized edits.
 - Pre-existing user changes and sensitive boundaries are identified.
 - Acceptance criteria and verification path are actionable.
+- Any durable discovery note is stored under the exact active project root, uses
+  the required dated filename, cites decision-bearing evidence, and does not
+  duplicate an existing note.
 
 ## Cautions
 
@@ -48,6 +60,8 @@ A bounded task definition and evidence-based next action or plan.
   the question.
 - Do not modify files merely to discover whether a solution works.
 - Do not assume machine or network access beyond the task's authorization.
+- Do not infer the active project root from repository layout or current working
+  directory when more than one project is possible.
 
 ## Related Guidance
 

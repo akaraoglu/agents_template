@@ -1,0 +1,8 @@
+schema_version = "1.0"
+agent_spec_id = "python-developer"
+version = "1.0"
+base_role = "developer"
+description = "Python implementation specialization."
+capabilities = ["python", "packaging", "pytest"]
+guidance_files = ["python-specialization.md"]
+permission_overlay = { allowed_change_patterns = [], denied_change_patterns = [], mcp_servers = [], mcp_tools = {}, allowed_evidence_types = [] }

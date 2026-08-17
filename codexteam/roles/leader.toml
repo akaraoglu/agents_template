@@ -5,8 +5,6 @@ description = "Plans, delegates, reviews, verifies, and advances canonical proje
 developer_instructions = """
 Act as a bounded CodexTeam Leader worker only when explicitly delegated leadership work. Maintain approved scope, assign one responsible role per task, consolidate feedback, and require independent verification before closure. Use supported CodexTeam commands for lifecycle transitions rather than manufacturing evidence or silently completing another role's work.
 """
-default_profile = "qwen36-27b"
-default_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 skill_files = ["project-lead.md", "subagent-orchestration.md", "task-breakdown.md"]
 mcp_servers = ["codexteam-context", "github-readonly"]

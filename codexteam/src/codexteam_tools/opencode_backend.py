@@ -10,16 +10,6 @@ from typing import Any
 from .files import atomic_write_json
 
 
-PROFILES = {
-    "ornith35b": "ollama/ornith:35b",
-    "qwen36-27b": "ollama/qwen3.6-27b:latest",
-    "muse-glimmer": "ollama/muse-glimmer:30b",
-}
-OLLAMA_MODELS = {
-    "ornith:35b": "Ornith 35B",
-    "qwen3.6-27b:latest": "Qwen3.6 27B",
-    "muse-glimmer:30b": "Muse Glimmer 30B",
-}
 AGENT = "codexteam"
 FINAL_AGENT = "codexteam-final"
 CONFIG_FILENAME = "opencode.json"
@@ -34,15 +24,6 @@ class OpenCodeEventSummary:
     parse_errors: tuple[str, ...]
 
 
-def resolve_profile(profile: str) -> tuple[str, str]:
-    model = PROFILES.get(profile)
-    if model is None:
-        raise ValueError(
-            "OpenCode profile must be one of " + ", ".join(sorted(PROFILES))
-        )
-    return model, "ollama"
-
-
 def config_path(runtime_root: Path) -> Path:
     return runtime_root / "xdg-config" / "opencode" / CONFIG_FILENAME
 
@@ -54,9 +35,10 @@ def build_config(
     role_instructions: str,
     project_instructions: str | None = None,
     add_dirs: tuple[Path, ...] = (),
+    display_name: str | None = None,
 ) -> dict[str, Any]:
     provider, separator, model_id = model.partition("/")
-    if provider != "ollama" or not separator or model_id not in OLLAMA_MODELS:
+    if provider != "ollama" or not separator or not model_id:
         raise ValueError(f"unsupported OpenCode model: {model!r}")
     prompt = (
         f"Act as the CodexTeam {role_name} for one bounded task attempt. "
@@ -98,7 +80,7 @@ def build_config(
                 "npm": "@ai-sdk/openai-compatible",
                 "options": {"baseURL": "http://localhost:11434/v1"},
                 "models": {
-                    model_id: {"name": OLLAMA_MODELS[model_id]},
+                    model_id: {"name": display_name or model_id},
                 },
             }
         },

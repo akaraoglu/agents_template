@@ -2,6 +2,12 @@
 
 CodexTeam is a local workflow toolkit for coordinating bounded AI subagents around a specification-driven software project. It provides project guidance, task handoffs, strict result contracts, local-model spawning, independent verification, and deterministic project-state closure. Codex remains the default execution backend; an explicit OpenCode canary backend is also available.
 
+CodexTeam has one project execution system. It preserves the Project Lead and
+the draft, feedback, final, gate, review, close-loop, and Git Steward lifecycle.
+Codex and OpenCode are supported backends. Profiles and models come from the
+curated execution registry, and AgentSpecs provide optional specialization.
+No alternate execution system exists.
+
 It is not an application server, controller service, board, HTTP API, or MCP implementation. Historical archives are not source inputs for this system.
 
 ## Subagent Instructions
@@ -29,7 +35,7 @@ The Test Engineer may add or modify handoff-scoped integration/regression tests,
 2. Approve the project specification and Architect-owned design; when needed, accept one Feature Planner advisory decomposition before creating multiple implementation tasks.
 3. Assign each task attempt or evidence stage to one responsible AI and start a persistent draft session.
 4. Review the draft and return consolidated feedback in the same session and attempt.
-5. Accept the draft and persist one final result using result contract v1.
+5. Accept the draft and persist one final result using the result contract.
 6. Run the Development Gate, independent Integration Gate, and Reviewer audit as applicable.
 7. Close canonical task state only after verification passes.
 8. At a named milestone, explicitly authorize the Local Git Steward to create one verified local commit; remote actions remain human-only.
@@ -54,15 +60,15 @@ After initialization, the lead carries the exact `Created:` path forward instead
 
 For a cloud-enabled cold start, `gpt54-mini` at medium reasoning is the recommended Project Lead. Before it starts a local subprocess worker, it checks whether the same execution surface can reach host Ollama. A reachable nested route may use `--trust-parent-sandbox`; an isolated route launches at the approved host level without that flag and retains the worker's normal sandbox. MCP is not required for either route.
 
-## Model Profiles
+## Execution Profiles
 
-- `qwen36-27b`: default for implementation, testing, review, and documentation
-- `gemma4-26b`: optional bounded secondary perspective when its task-specific capability has been confirmed
-- `gpt54-mini`: controlled cloud profile and Feature Planner default; E2E runner examples explicitly override it to medium reasoning
-
-Codex profiles must exist under `$CODEX_HOME` or `~/.codex` before a Codex-backed subagent is started. OpenCode supports the local aliases `ornith35b` for `ollama/ornith:35b`, `qwen36-27b` for tuned `ollama/qwen3.6-27b:latest`, and `muse-glimmer` for `ollama/muse-glimmer:30b`. These aliases do not alter Codex profiles with the same names.
+Profiles are curated per backend and identified as `backend/profile`. Use
+`./scripts/inspect-execution-catalog.py profiles --backend <backend>` to inspect
+supported and host-available options. Installation alone does not imply support.
 
 ## Commands
+
+`./.agents/scripts/spawn-subagent.sh` is the supported worker entry point.
 
 Initialize a project without writing:
 
@@ -75,26 +81,49 @@ Start a developer draft:
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase draft --profile qwen36-27b --team example --task T003 --attempt att-001 \
+  --phase draft --backend codex --profile qwen36-27b --reasoning-effort medium \
+  --team example --task T003 --attempt att-001 \
   --role developer --workspace ./projects/example \
   --prompt-file ./projects/example/management/tasks/T003.md
 ```
+
+Conversational drafts remain the default. For a new attempt only, opt into the
+bounded compact JSON draft contract with `--draft-format compact-json`. The
+launcher pins the format at attempt creation; feedback and final cannot override
+it, and finalization still writes `result`.
+
+Every new attempt also receives an immutable `execution-spec.json` under its
+existing session directory. It records resolved role, handoff digest,
+backend/model/reasoning, guidance, permissions, and gate routing without storing
+raw prompts or secrets. Session and result paths and lifecycle semantics remain
+stable.
+
+Select one technical specialization on a new attempt with `--agent-spec`, for
+example `--agent-spec cpp-embedded-developer`. Omission means no specialization.
+Role, AgentSpec, and execution profile remain
+separate; feedback/final reuse the pin and reject selection overrides. See
+`docs/AGENT_SPECS.md`.
 
 Start the same role through the opt-in OpenCode backend:
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
   --backend opencode --profile muse-glimmer \
-  --phase draft --team example --task T003 --attempt att-001 \
+  --reasoning-effort provider_default --phase draft --team example --task T003 --attempt att-001 \
   --role developer --workspace ./projects/example \
   --prompt-file ./projects/example/management/tasks/T003.md
 ```
 
-OpenCode uses an attempt-private configuration and exact session ID. MCP, LSP, plugins, external skills, `--reasoning-effort`, `--trust-parent-sandbox`, and `--run-guard` are intentionally unsupported on this first backend. It is a compatibility canary, not the default and not an OS-sandbox equivalent.
+OpenCode uses an attempt-private configuration and exact session ID. MCP, LSP,
+plugins, external skills, `--trust-parent-sandbox`, and `--run-guard` are
+unsupported; its explicit reasoning request is `provider_default`.
 
 Use `muse-glimmer` for bounded implementation canaries, or `qwen36-27b` for tuned local Qwen. A matched three-run implementation comparison gave both models 26/26 hidden correctness in every run, while Muse used 58% fewer median input tokens and completed 35% faster. A separate matched Reviewer comparison favored Qwen over Ornith, so Qwen remains the preferred OpenCode Reviewer candidate. These findings do not change global role or backend defaults.
 
-Review the draft, then continue the exact session with `--phase feedback`. After acceptance, use `--phase final` with the same team, task, attempt, role, profile, and workspace. Draft and feedback may edit handoff-scoped project files, but they never write the deterministic result; finalization writes that one result after acceptance.
+Review the draft, then continue the exact session with `--phase feedback` while
+omitting backend, profile, reasoning, and AgentSpec selectors. Final does the
+same and loads the pinned ExecutionSpec. Draft and feedback may edit
+handoff-scoped project files, but they never write the deterministic result.
 
 Add `--run-guard` when live protection from an unchanged failure loop or unbounded
 discovery is warranted. It interrupts an exact three-failure repeat, a command result
@@ -198,12 +227,5 @@ Preview the controlled end-to-end team canary with:
 ```
 
 See `scripts/TOOLS-README.md` for live-run budgeting, reports, product-only verification, and same-session failure recovery. The cold-start-through-team acceptance definition, including product-audit and proportional-performance gates, is in `docs/E2E_ACCEPTANCE_PLAN.md`.
-
-Foundation v2 remains experimental and is not the default. Its active live
-profile requires OpenCode `1.18.16`, Ollama `0.32.9` or newer, and
-`ollama/muse-glimmer:30b`; `0.32.9` fixes the Muse function-call boundary parser
-failure observed under `0.32.8`. Post-upgrade qualification passed, but the next
-adaptive canary failed closed on malformed Architecture candidate JSON, so v2
-is not yet live-model accepted. See `docs/v2/README.md`.
 
 Start with `docs/USER_GUIDE.md`, `.agents/skills/project-lead.md`, and `.agents/skills/subagent-orchestration.md`.

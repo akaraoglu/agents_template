@@ -55,18 +55,22 @@ Exit `1` means invalid JSON/contract. Exit `2` means the result is valid but doe
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase draft --profile qwen36-27b --team example --task T003 --attempt att-001 \
+  --phase draft --backend codex --profile qwen36-27b --reasoning-effort medium \
+  --team example --task T003 --attempt att-001 \
   --role developer --workspace <project> --prompt-file <handoff> --dry-run
 ```
 
 Remove `--dry-run` only after inspecting the command, session location, and final result location. Continue with `--phase feedback` for revisions and `--phase final` after acceptance, keeping the same scope identity.
 
-`--profile` is an explicit override. When omitted, the selected role policy supplies its default profile. The precedence is lead CLI override, pinned role-policy default, then profile configuration for values the policy does not set. The first draft snapshots the full policy and selected skill contents under the attempt runtime directory; resumes use that exact instruction bundle. Role policies may narrow an allowed MCP server with `mcp_tools`; the launcher passes that pinned subset as `enabled_tools` and records allowed and effective subsets in dry-run, session, and turn state. For new non-Leader attempts, it also derives `mcp_context_project` from the exact workspace and configured `codexteam-context --projects-root`; the bound worker tools omit the `project` argument. Existing attempts without a pinned binding continue unbound.
+Draft backend, backend-scoped profile, and reasoning are explicit and resolve
+through `execution_registry.toml`. Feedback/final omit them and use the pinned
+ExecutionSpec. RolePolicy contains no execution defaults. Role policies may
+narrow MCP access; immutable allowed/effective subsets live in the ExecutionSpec.
 
 Finalization passes a session-pinned, role-specific projection of
-`schemas/result-v1-openai.json` to OpenAI-backed profiles with `--output-schema`.
+`schemas/result-openai.json` to OpenAI-backed profiles with `--output-schema`.
 Its digest is retained in session state so later toolkit changes cannot alter an active
-attempt. Persisted records remain validated against the backward-compatible result-v1
+attempt. Persisted records remain validated against the backward-compatible result
 contract. Local providers receive the same compact required-field instructions.
 
 ## Run Test Gates

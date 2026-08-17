@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.session",
+  "title": "CodexTeam Session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "team_id", "task_id", "attempt_id", "agent_role", "result_schema_sha256", "workspace_root", "thread_id", "turn_count", "last_phase", "last_status", "last_turn_path", "created_at", "updated_at", "turns", "execution_spec"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "team_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "pattern": "^T[0-9]{3,6}$"},
+    "attempt_id": {"type": "string", "minLength": 1},
+    "agent_role": {"enum": ["architect", "developer", "tester", "reviewer", "documenter", "feature_planner", "git_steward", "leader", "ux_designer"]},
+    "result_schema_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "execution_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "path", "digest"],
+      "properties": {
+        "contract": {"const": "execution-spec"},
+        "path": {"const": "execution-spec.json"},
+        "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "workspace_root": {"type": "string", "pattern": "^/"},
+    "thread_id": {"type": "string", "minLength": 1},
+    "turn_count": {"type": "integer", "minimum": 1},
+    "last_phase": {"enum": ["draft", "feedback", "final"]},
+    "last_status": {"type": "string", "minLength": 1},
+    "last_turn_path": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "turns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "phase", "status", "duration_seconds"],
+        "properties": {
+          "number": {"type": "integer", "minimum": 1},
+          "phase": {"enum": ["draft", "feedback", "final"]},
+          "status": {"type": "string", "minLength": 1},
+          "duration_seconds": {"type": "number", "minimum": 0}
+        }
+      }
+    },
+    "final_result_path": {"type": "string", "minLength": 1},
+    "backend_version": {"type": ["string", "null"]},
+    "backend_config_digest": {"type": ["string", "null"]},
+    "opencode_session_id": {"type": "string", "minLength": 1},
+    "workspace_baseline_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "worker_change_manifest": {"type": "object"},
+    "accepted_checkpoint": {"type": "object"}
+  }
+}

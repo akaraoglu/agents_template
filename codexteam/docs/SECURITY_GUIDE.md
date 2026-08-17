@@ -32,8 +32,8 @@
 
 ## Models
 
-- Require an installed, explicitly named profile.
-- Use `qwen36-27b` as the default for established implementation, testing, review, and documentation roles. Feature Planner deliberately defaults to authenticated `gpt54-mini`; use the explicit `qwen36-27b` override when planning must remain local. Treat `gemma4-26b` as an optional bounded secondary perspective, not a default owner for evidence-producing or editing work.
+- Require an explicitly selected curated backend/profile/reasoning combination.
+- Reject installed profiles and models that are not registered and qualified.
 - Model output is untrusted until result validation and independent verification pass.
 - Test Engineer expectation changes are also untrusted: each changed assertion, fixture expectation, or golden value must cite approved project truth or a confirmed test defect, and the Reviewer audits the test diff.
 - Treat canonical role manifests and selected skill files as validated input and pin their normalized SHA-256 snapshots per logical attempt.

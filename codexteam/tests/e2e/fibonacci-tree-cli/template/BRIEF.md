@@ -35,7 +35,7 @@ This brief is orientation. Report any conflict to the Project Lead.
 
 - Each task has one responsible AI, one session, and one logical attempt.
 - The worker drafts first; deterministic Project Lead checks gate finalization.
-- Finalization emits exactly one `result-v1` file.
+- Finalization emits exactly one `result` file.
 - Independent verification precedes every state transition.
 - No automatic retry, model transfer, or hidden repair is allowed.
 - A failed run preserves the project and session for explicit same-session recovery.

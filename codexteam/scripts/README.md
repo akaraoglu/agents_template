@@ -4,8 +4,9 @@ Operator commands are thin wrappers around `src/codexteam_tools/`.
 
 - `init-project.py`: preview or create a complete project workspace.
 - `update-tasks.py`: update one validated task row atomically.
-- `verify-result.py`: validate result contract v1 and expected scope.
+- `verify-result.py`: validate the result contract and expected scope.
 - `inspect-role-policies.py`: validate and display canonical role identity, defaults, and digests.
+- `inspect-execution-catalog.py`: query curated supported and host-available execution options.
 - `manage-native-agents.py`: preview, check, generate, or safely install namespaced native Codex agent projections.
 - `subagent-status.py`: report running, stale, interrupted, draft-ready, and finalized project-local attempts.
 - `sync-project-guidance.py`: preview, check, or refresh managed role references in an initialized project.

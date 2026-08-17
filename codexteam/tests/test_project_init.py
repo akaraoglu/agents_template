@@ -7,6 +7,79 @@ from codexteam_tools.project_init import DEFAULT_TEMPLATE_ROOT, initialize_proje
 from codexteam_tools.tasks import parse_task_document
 
 
+DEFAULT_PROJECT_MANIFEST = tuple(
+    """.codexteam/README.md
+.codexteam/native-agents/codexteam_architect.toml
+.codexteam/native-agents/codexteam_developer.toml
+.codexteam/native-agents/codexteam_documenter.toml
+.codexteam/native-agents/codexteam_feature_planner.toml
+.codexteam/native-agents/codexteam_git_steward.toml
+.codexteam/native-agents/codexteam_leader.toml
+.codexteam/native-agents/codexteam_reviewer.toml
+.codexteam/native-agents/codexteam_tester.toml
+.codexteam/native-agents/codexteam_ux_designer.toml
+.codexteam/roles/architect.toml
+.codexteam/roles/developer.toml
+.codexteam/roles/documenter.toml
+.codexteam/roles/feature_planner.toml
+.codexteam/roles/git_steward.toml
+.codexteam/roles/leader.toml
+.codexteam/roles/reviewer.toml
+.codexteam/roles/tester.toml
+.codexteam/roles/ux_designer.toml
+.codexteam/skills/architecture-design.md
+.codexteam/skills/codexteam-self-improvement.md
+.codexteam/skills/debugging.md
+.codexteam/skills/delivery.md
+.codexteam/skills/development-testing.md
+.codexteam/skills/document-editing.md
+.codexteam/skills/feature-planning.md
+.codexteam/skills/git-steward.md
+.codexteam/skills/implementation.md
+.codexteam/skills/integration-testing.md
+.codexteam/skills/project-doc-map.md
+.codexteam/skills/project-lead.md
+.codexteam/skills/sdd-workflow.md
+.codexteam/skills/subagent-orchestration.md
+.codexteam/skills/task-breakdown.md
+.codexteam/skills/team-context-mcp.md
+.codexteam/skills/testing.md
+.codexteam/skills/ux-ui-design.md
+.codexteam/skills/verification.md
+.gitignore
+AGENTS.md
+ARCHITECTURE.md
+BLOCKED_REPORT.md
+BRIEF.md
+CURRENT_TASK.md
+DECISIONS.md
+DONE_REPORT.md
+IMPLEMENTATION_PLAN.md
+OPEN_QUESTIONS.md
+PROJECT.md
+PROJECT_STATE.md
+RESULT.md
+TASKS.md
+docs/architecture/.gitkeep
+docs/decisions/README.md
+management/BACKLOG.md
+management/GIT_POLICY.md
+management/PLAN.md
+management/TEST_GATES.md
+management/TEST_GATES.toml
+management/tasks/T001.md
+management/tasks/T002.md
+management/tasks/T003.md
+management/tasks/T004.md
+management/tasks/T005.md
+results/.gitkeep
+src/.gitkeep
+tests/integration/.gitkeep
+tests/smoke/.gitkeep
+tests/unit/.gitkeep""".splitlines()
+)
+
+
 def test_project_dry_run_is_complete_and_does_not_write(tmp_path: Path):
     plan = initialize_project(
         "Example Project",
@@ -16,6 +89,7 @@ def test_project_dry_run_is_complete_and_does_not_write(tmp_path: Path):
         dry_run=True,
     )
     assert plan.tasks == ("T001", "T002", "T003", "T004", "T005")
+    assert plan.files == DEFAULT_PROJECT_MANIFEST
     assert "PROJECT.md" in plan.files
     assert "management/tasks/T004.md" in plan.files
     assert "management/tasks/T005.md" in plan.files
@@ -82,12 +156,25 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
         assert "- Type:" in handoff
         assert "- Summary:" in handoff
         assert "- Outcome:" in handoff
+        assert "- AgentSpec:" in handoff
+        assert "- Backend:" in handoff
+        assert "- Profile:" in handoff
+        assert "- Reasoning:" in handoff
     gates = (plan.project_dir / "management" / "TEST_GATES.md").read_text()
     assert "Owner: Developer" in gates
     assert "Owner: Test Engineer (`tester` protocol role)" in gates
     assert "runs the Development Gate first" in gates
     assert "TEST_GATES.toml" in gates
     assert (plan.project_dir / ".git").is_dir()
+    initialized_files = tuple(
+        sorted(
+            path.relative_to(plan.project_dir).as_posix()
+            for path in plan.project_dir.rglob("*")
+            if path.is_file() and ".git" not in path.relative_to(plan.project_dir).parts
+        )
+    )
+    assert initialized_files == tuple(sorted(plan.files))
+    assert not any(path.name == "FORMAT.json" for path in plan.project_dir.rglob("FORMAT.json"))
     assert (
         __import__("subprocess").run(
             ["git", "-C", str(plan.project_dir), "rev-parse", "--show-toplevel"],
@@ -131,6 +218,8 @@ def test_t006_is_opt_in_and_has_a_stable_documenter_owner(tmp_path: Path):
     assert "- Type: Documentation" in handoff
     assert "- Summary:" in handoff
     assert "- Outcome:" in handoff
+    assert "- AgentSpec: none" in handoff
+    assert "- Profile: `qwen36-27b`" in handoff
 
 
 def test_custom_template_t006_handoff_is_not_overwritten(tmp_path: Path):
@@ -140,7 +229,9 @@ def test_custom_template_t006_handoff_is_not_overwritten(tmp_path: Path):
     custom_handoff.write_text(
         "# Task T006: Document the Fibonacci CLI\n\n"
         "## Responsible AI\n\n"
-        "`fibonacci-documenter-01` — project-specific documenter.\n"
+        "`fibonacci-documenter-01` — project-specific documenter.\n\n"
+        "## Task Write Scope\n\n"
+        "- `docs/**`\n"
     )
 
     plan = initialize_project(
@@ -156,6 +247,21 @@ def test_custom_template_t006_handoff_is_not_overwritten(tmp_path: Path):
     assert rendered == custom_handoff.read_text()
     assert "fibonacci-documenter-01" in rendered
     assert "Reconcile documentation with verified delivery evidence" not in rendered
+
+
+def test_custom_canonical_handoff_requires_task_write_scope(tmp_path: Path):
+    template_root = tmp_path / "custom-template"
+    shutil.copytree(DEFAULT_TEMPLATE_ROOT, template_root)
+    (template_root / "management/tasks/T001.md").write_text("# Task T001\n")
+
+    with pytest.raises(ValueError, match="Task Write Scope"):
+        initialize_project(
+            "Scoped project",
+            "Exercise canonical scope validation.",
+            root=tmp_path,
+            project_id="scoped-project",
+            template_root=template_root,
+        )
 
 
 def test_project_initialization_can_explicitly_skip_git(tmp_path: Path):

@@ -1,6 +1,0 @@
-schema_version = "2.0"
-kind = "guidance_module"
-definition_version = "1"
-module_id = "discovery"
-path = "guidance/discovery.md"
-digest = "fb2c7a31898196bb67c2de6cce2a164735cce8859304a1219a5bb82e4b4d54ba"

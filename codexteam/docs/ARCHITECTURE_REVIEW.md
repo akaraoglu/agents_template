@@ -7,7 +7,7 @@ The current architecture is a small workflow-tool package plus repository-local 
 ## Components
 
 - `.agents/`: reusable leader, worker, verification, and delivery guidance.
-- `roles/`: strict role-policy-v1 manifests for nine accountable identities, including the optional Feature Planner and UX Designer.
+- `roles/`: strict role-policy manifests for nine accountable identities, including the optional Feature Planner and UX Designer.
 - `generated/native-agents/`: deterministic optional projections for native Codex custom agents.
 - `src/codexteam_tools/`: deterministic path, contract, task, spawn, gate, Git boundary, artifact-reader, and closure logic.
 - `projects/codexteam-project-management-web-ui/`: standalone Flask/Jinja operator UI consuming the shared artifact readers.
@@ -30,7 +30,9 @@ The current architecture is a small workflow-tool package plus repository-local 
 
 ## Role Policy Precedence
 
-Lead CLI overrides are highest. A pinned role manifest then supplies role identity, instructions, default profile, reasoning effort, sandbox, guidance bundle, change patterns, and evidence types. The selected skill contents are pinned with their own manifest and aggregate digest. Profile configuration supplies model/provider settings and values not fixed by the lead or role. Project `AGENTS.md` remains shared guidance and does not erase the selected role.
+The Lead explicitly selects Role, optional AgentSpec, backend-scoped profile,
+and reasoning. RolePolicy supplies responsibility and permission ceilings only;
+the curated execution registry resolves runtime material and ExecutionSpec pins it.
 
 The external persistent-session launcher is the authoritative execution mechanism. Native-agent files are generated from the same manifest for optional Codex multi-agent use; they are namespaced and installed only by an explicit operator command.
 
@@ -47,6 +49,6 @@ New projects are standalone Git repositories. The Project Lead names important-t
 - Python 3.12+
 - Bash for thin compatibility wrappers
 - Codex CLI for live subagent execution
-- Local Ollama-backed profiles `qwen36-27b` and `gemma4-26b`
+- Curated backend/model material listed by `inspect-execution-catalog.py`
 
 No live model is required for deterministic tests.

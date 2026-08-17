@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import subprocess
+import shutil
 import sys
 from pathlib import Path
 
@@ -601,6 +602,8 @@ def test_attempt_result_and_cost_insights_avoid_raw_transcripts(
 def test_repository_search_is_ranked_bounded_and_contained(
     context_fixture: tuple[Path, Path, Path],
 ) -> None:
+    if shutil.which("rg") is None:
+        pytest.skip("rg is required for repository search")
     projects, _, memory = context_fixture
     server = ContextMcpServer(TeamContextReader(projects, team_memory_root=memory))
 

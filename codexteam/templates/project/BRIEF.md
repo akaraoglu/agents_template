@@ -37,7 +37,7 @@ This brief is orientation. If it conflicts with an authoritative source, report 
 ## Working Agreement
 
 - One responsible AI and one persistent session own each active task attempt.
-- The worker returns a draft; a draft is not a `result-v1` record and does not close state.
+- The worker returns a draft; a draft is not a `result` record and does not close state.
 - The Project Lead returns one consolidated feedback message per review round.
 - Ordinary corrections resume the same session and attempt.
 - Test Engineer product defects return through the Project Lead to the same Developer session before finalization; after correction, both gates rerun against the final revision.

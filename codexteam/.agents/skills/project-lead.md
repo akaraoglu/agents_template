@@ -77,6 +77,10 @@ canonical task IDs and handoffs.
 2. Resolve missing requirements internally when the approved specification provides enough evidence; ask the operator only when a material choice or showstopper truly requires them.
 3. Decide whether accepted design needs Feature Planner decomposition. If so, accept or revise its `results/` artifact before creating implementation tasks; never let the planner implement, activate tasks, spawn workers, or approve its own proposal.
 4. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff. For context-heavy work, include question-oriented `Context Targets` with exact locators and intended use; remove broad reading lists that contradict them.
+   Resolve backend/profile/reasoning from the curated execution catalog before a
+   new draft. Do not treat installed models as supported automatically. Keep
+   AgentSpec optional and independent of execution selection. On feedback and
+   final turns, omit all selectors and rely on the pinned ExecutionSpec.
 5. Review the worker's draft and changed files independently before accepting it.
 6. Return one consolidated feedback message only for an observable defect: a failed criterion, contradictory file or command output, missing required artifact, invalid result field, or unsupported completion claim. State what is accepted, what must change, why, and what must remain unchanged. Do not block acceptance for preference-only rewrites or speculative improvements. Store the prompt at one stable project-runtime path and pass that exact path to the launcher.
    When a worker reports repeated unchanged evidence, keep the same task, attempt, profile, and thread. Treat the checkpoint as diagnostic evidence, then provide one materially different diagnostic or the missing dependency. Repetition is justified only after relevant state changed, for an explicit determinism check, for a known bounded transient, or with an approved changed setup.
@@ -89,6 +93,15 @@ canonical task IDs and handoffs.
 13. Before delivery, run an acceptance-level product check and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
 14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
 15. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
+16. After substantial discovery or deep research, preserve durable reusable
+    findings in the active project at
+    `design/architecture/YYYY-MM-DD_descriptive_title.md`. Use the exact project
+    path returned by initialization or otherwise confirmed by the operator; do
+    not write selected-project findings into the CodexTeam toolkit. When
+    CodexTeam itself is the subject, its own repository root is the active
+    project root. Ask the operator when project identity or root is ambiguous.
+    Prefer updating an existing same-subject note, cite exact evidence, and skip
+    routine or transient observations.
 
 When a launched worker is still running, use one blocking poll of 60 to 120 seconds
 instead of repeated short status turns. Do not combine an inner `write_stdin` poll
@@ -150,6 +163,8 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Architect output is approved by the Project Lead and audited for conformance by the Reviewer.
 - Git Steward is invoked only at a verified boundary, stages explicit approved paths, and never performs a remote action.
 - Normal corrections retain the same thread and attempt.
+- Only attempts carrying the current `execution-spec.json` contract may resume;
+  historical pre-cutover attempts remain read-only project history.
 - Only the Project Lead authorizes finalization and state transitions.
 - No completion claim precedes independent verification.
 - Reviewer claims match the contents of named evidence, not merely artifact existence or another agent's summary.
@@ -157,6 +172,9 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Milestone Lead rotation starts from the generated checkpoint and its canonical references; the checkpoint itself is never cited as acceptance evidence.
 - Cost conclusions distinguish Lead orchestration from worker-turn usage.
 - Remote GitHub reads are bounded to a named decision and never replace local workspace or gate evidence.
+- Durable discovery notes are stored only under the exact active project root,
+  use the required dated filename, and contain evidence-backed reusable findings
+  rather than routine narration.
 
 ## Common Mistakes
 
@@ -177,6 +195,8 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Solving a communication or document-quality problem by adding a one-off control script
 - Reassigning after one incomplete turn instead of first using the preserved exact session
 - Retaining a default model after repeated evidence shows a task-specific capability mismatch
+- Saving research under the CodexTeam toolkit or a parent repository when a
+  different initialized project is active
 
 ## Related Files
 

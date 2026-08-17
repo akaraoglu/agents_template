@@ -1,9 +1,0 @@
-schema_version = "2.0"
-kind = "backend_definition"
-definition_version = "1"
-backend_id = "opencode"
-provider = "opencode"
-command = ["opencode", "run"]
-supported_operations = ["read", "write", "execute", "send"]
-supported_resources = ["project_path", "mailbox", "evidence", "process"]
-limitations = ["no_os_sandbox", "no_mcp"]
