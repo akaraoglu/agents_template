@@ -20,6 +20,7 @@ class OpenCodeEventSummary:
     thread_ids: tuple[str, ...]
     last_agent_message: str
     completed: bool
+    terminal_reason: str | None
     failures: tuple[str, ...]
     parse_errors: tuple[str, ...]
 
@@ -36,10 +37,14 @@ def build_config(
     project_instructions: str | None = None,
     add_dirs: tuple[Path, ...] = (),
     display_name: str | None = None,
+    context_limit: int,
+    output_limit: int,
 ) -> dict[str, Any]:
     provider, separator, model_id = model.partition("/")
     if provider != "ollama" or not separator or not model_id:
         raise ValueError(f"unsupported OpenCode model: {model!r}")
+    if context_limit < 1 or output_limit < 1 or output_limit >= context_limit:
+        raise ValueError("OpenCode model limits must be positive with output below context")
     prompt = (
         f"Act as the CodexTeam {role_name} for one bounded task attempt. "
         "Follow the handoff, pinned guidance paths, role boundaries, and evidence rules. "
@@ -80,7 +85,10 @@ def build_config(
                 "npm": "@ai-sdk/openai-compatible",
                 "options": {"baseURL": "http://localhost:11434/v1"},
                 "models": {
-                    model_id: {"name": display_name or model_id},
+                    model_id: {
+                        "name": display_name or model_id,
+                        "limit": {"context": context_limit, "output": output_limit},
+                    },
                 },
             }
         },
@@ -217,10 +225,11 @@ def version(executable: str) -> str:
 
 def parse_events(text: str) -> OpenCodeEventSummary:
     session_ids: list[str] = []
-    messages: list[str] = []
+    messages: list[tuple[str | None, str]] = []
     failures: list[str] = []
     parse_errors: list[str] = []
-    terminal_steps = 0
+    terminal_reason: str | None = None
+    terminal_message_id: str | None = None
     for line_number, raw_line in enumerate(text.splitlines(), start=1):
         line = raw_line.strip()
         if not line:
@@ -243,11 +252,14 @@ def parse_events(text: str) -> OpenCodeEventSummary:
         if event_type == "text" and isinstance(part, dict):
             message = part.get("text")
             if isinstance(message, str) and message.strip():
-                messages.append(message)
+                message_id = part.get("messageID")
+                messages.append((message_id if isinstance(message_id, str) else None, message))
         elif event_type == "step_finish" and isinstance(part, dict):
             reason = part.get("reason")
-            if reason == "stop":
-                terminal_steps += 1
+            if isinstance(reason, str):
+                terminal_reason = reason
+                message_id = part.get("messageID")
+                terminal_message_id = message_id if isinstance(message_id, str) else None
         elif event_type == "error":
             failures.append(_error_text(event))
         elif event_type not in {"step_start", "text", "tool_use", "step_finish", "reasoning"}:
@@ -255,10 +267,16 @@ def parse_events(text: str) -> OpenCodeEventSummary:
     unique_ids = tuple(dict.fromkeys(session_ids))
     if len(unique_ids) > 1:
         parse_errors.append("OpenCode event stream reported inconsistent sessionID values")
+    matching_messages = [
+        message
+        for message_id, message in messages
+        if message_id == terminal_message_id
+    ]
     return OpenCodeEventSummary(
         thread_ids=unique_ids,
-        last_agent_message=messages[-1] if messages else "",
-        completed=terminal_steps > 0 and bool(messages) and not failures,
+        last_agent_message=matching_messages[-1] if matching_messages else "",
+        completed=terminal_reason == "stop" and not failures,
+        terminal_reason=terminal_reason,
         failures=tuple(failures),
         parse_errors=tuple(parse_errors),
     )

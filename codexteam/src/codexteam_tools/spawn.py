@@ -27,6 +27,13 @@ from .contracts import (
     validate_result,
     validate_session,
 )
+from .delegation import (
+    DELEGATION_FILENAME,
+    build_delegation,
+    delegation_digest,
+    load_delegation,
+    write_delegation,
+)
 from .context_pack import CONTEXT_PACK_FILENAME, build_context_pack, write_context_pack
 from .backend_adapter import BackendEventSummary, adapter_for
 from .contract_registry import (
@@ -155,6 +162,7 @@ class SpawnRequest:
     execution_spec: dict[str, Any] | None
     execution_profile: ResolvedExecutionProfile
     task_write_scope: tuple[str, ...] | None
+    delegation: dict[str, Any] | None
 
     @property
     def backend_mcp_args(self) -> tuple[str, ...]:
@@ -196,6 +204,8 @@ class ProcessResult:
 
 
 def prepare_request(args: argparse.Namespace) -> SpawnRequest:
+    if os.environ.get("CODEXTEAM_LAUNCHED_WORKER") == "1":
+        raise ValueError("nested CodexTeam worker launches are not enabled")
     phase = args.phase
     if phase not in PHASES:
         raise ValueError(f"unsupported conversation phase: {phase}")
@@ -374,6 +384,8 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
                 project_instructions=project_instructions,
                 add_dirs=add_dirs,
                 display_name=execution_profile.model["display_name"],
+                context_limit=execution_profile.model["context_limit"],
+                output_limit=execution_profile.model["output_limit"],
             )
             backend_config_digest = opencode_backend.config_digest(backend_config)
         else:
@@ -381,16 +393,33 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             backend_config_digest = existing_session.get("backend_config_digest")
             if not isinstance(backend_config_digest, str) or not backend_config_digest:
                 raise ValueError("OpenCode session backend_config_digest must be a non-empty string")
-        sidecar_tools = tuple(
-            tool
-            for tool in effective_policy.tools_for_server("codexteam-context")
-            if tool == "get_task_context"
-        )
-        sidecar_enabled = bool(
-            prompt_source_path
-            and re.fullmatch(r"management/tasks/T[0-9]{3,6}\.md", prompt_source_path)
-            and sidecar_tools
-        )
+        if phase == "draft":
+            sidecar_tools = tuple(
+                tool
+                for tool in effective_policy.tools_for_server("codexteam-context")
+                if tool == "get_task_context"
+            )
+            sidecar_enabled = bool(
+                prompt_source_path
+                and re.fullmatch(r"management/tasks/T[0-9]{3,6}\.md", prompt_source_path)
+                and sidecar_tools
+            )
+            effective_mcp_servers = (("codexteam-context",) if sidecar_enabled else ())
+            missing_mcp_servers = ()
+            effective_mcp_tools = (
+                (("codexteam-context", sidecar_tools),) if sidecar_enabled else ()
+            )
+            mcp_context_project = workspace.name if sidecar_enabled else None
+        else:
+            assert spec is not None
+            permissions = spec["permissions"]
+            effective_mcp_servers = tuple(permissions["mcp_effective_servers"])
+            missing_mcp_servers = tuple(permissions["mcp_missing_servers"])
+            effective_mcp_tools = tuple(
+                (server, tuple(tools))
+                for server, tools in permissions["mcp_effective_tools"].items()
+            )
+            mcp_context_project = permissions["bound_mcp_project"]
         request = SpawnRequest(
             backend=backend,
             phase=phase,
@@ -419,13 +448,11 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             draft_format_path=draft_format_path,
             codex_home=session_dir / "codex-home",
             source_codex_home=source_codex_home,
-            configured_mcp_servers=(("codexteam-context",) if sidecar_enabled else ()),
-            effective_mcp_servers=(("codexteam-context",) if sidecar_enabled else ()),
-            missing_mcp_servers=(),
-            effective_mcp_tools=(
-                (("codexteam-context", sidecar_tools),) if sidecar_enabled else ()
-            ),
-            mcp_context_project=(workspace.name if sidecar_enabled else None),
+            configured_mcp_servers=effective_mcp_servers,
+            effective_mcp_servers=effective_mcp_servers,
+            missing_mcp_servers=missing_mcp_servers,
+            effective_mcp_tools=effective_mcp_tools,
+            mcp_context_project=mcp_context_project,
             add_dirs=add_dirs,
             trust_parent_sandbox=False,
             run_guard=False,
@@ -450,6 +477,12 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             execution_spec=None,
             execution_profile=execution_profile,
             task_write_scope=task_write_scope,
+            delegation=(
+                build_delegation(
+                    team_id=team_id, task_id=task_id, attempt_id=attempt_id,
+                    role=args.role, workspace=workspace,
+                ) if phase == "draft" else None
+            ),
         )
         return _with_execution_spec(request, existing_session)
     codex_config_path = (
@@ -563,6 +596,12 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         execution_spec=None,
         execution_profile=execution_profile,
         task_write_scope=task_write_scope,
+        delegation=(
+            build_delegation(
+                team_id=team_id, task_id=task_id, attempt_id=attempt_id,
+                role=args.role, workspace=workspace,
+            ) if phase == "draft" else None
+        ),
     )
     return _with_execution_spec(request, existing_session)
 
@@ -782,6 +821,12 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
             )
     turn = prepare_turn(request)
     _prepare_session_storage(request, initial=turn.is_initial, session=turn.session)
+    delegation_path = request.session_dir / DELEGATION_FILENAME
+    delegation_before = (
+        hashlib.sha256(delegation_path.read_bytes()).hexdigest()
+        if delegation_path.is_file() and not delegation_path.is_symlink()
+        else None
+    )
     trusted_baseline: dict[str, str] | None = None
     trusted_baseline_digest: str | None = None
     if request.backend == "opencode":
@@ -828,6 +873,12 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
         stderr_path=turn.stderr_path,
         run_guard=request.run_guard,
     )
+    if delegation_before is not None:
+        if delegation_path.is_symlink() or not delegation_path.is_file():
+            raise ValueError("delegation attribution changed during worker execution")
+        delegation_after = hashlib.sha256(delegation_path.read_bytes()).hexdigest()
+        if delegation_after != delegation_before:
+            raise ValueError("delegation attribution changed during worker execution")
     _verify_execution_spec_immutable(request)
     atomic_write_text(turn.events_path, process.stdout)
     atomic_write_text(turn.stderr_path, process.stderr)
@@ -2238,43 +2289,64 @@ def _prepare_session_storage(
     if initial:
         request.session_dir.mkdir(parents=True, exist_ok=False)
         request.session_dir.chmod(0o700)
-        _write_draft_format_pin(request.draft_format_path, request.draft_format)
-        if request.backend == "opencode":
-            _write_workspace_baseline(request)
-        atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
-        request.role_policy_path.chmod(0o600)
-        if request.agent_spec is not None:
-            atomic_write_json(request.agent_spec_path, request.agent_spec.snapshot())
-            request.agent_spec_path.chmod(0o600)
-        _write_result_schema(request)
-        _snapshot_skill_files(request)
-        if request.execution_spec is None:
-            raise ValueError("new attempts require an execution specification")
-        write_execution_spec(request.execution_spec_path, request.execution_spec)
-        if request.backend == "opencode":
-            assert request.backend_config_path is not None
-            config = opencode_backend.build_config(
-                model=request.model,
-                role_name=request.role,
-                role_instructions=request.effective_role_policy.developer_instructions,
-                project_instructions=request.opencode_project_instructions,
-                add_dirs=request.add_dirs,
-                display_name=request.execution_profile.model["display_name"],
-            )
-            opencode_backend.write_config(request.backend_config_path, config)
+        try:
+            if request.delegation is None:
+                raise ValueError("new attempts require delegation attribution")
+            write_delegation(request.session_dir / DELEGATION_FILENAME, request.delegation)
+            _write_draft_format_pin(request.draft_format_path, request.draft_format)
+            if request.backend == "opencode":
+                _write_workspace_baseline(request)
+            atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
+            request.role_policy_path.chmod(0o600)
+            if request.agent_spec is not None:
+                atomic_write_json(request.agent_spec_path, request.agent_spec.snapshot())
+                request.agent_spec_path.chmod(0o600)
+            _write_result_schema(request)
+            _snapshot_skill_files(request)
+            if request.execution_spec is None:
+                raise ValueError("new attempts require an execution specification")
+            write_execution_spec(request.execution_spec_path, request.execution_spec)
+            if request.backend == "opencode":
+                assert request.backend_config_path is not None
+                config = opencode_backend.build_config(
+                    model=request.model,
+                    role_name=request.role,
+                    role_instructions=request.effective_role_policy.developer_instructions,
+                    project_instructions=request.opencode_project_instructions,
+                    add_dirs=request.add_dirs,
+                    display_name=request.execution_profile.model["display_name"],
+                    context_limit=request.execution_profile.model["context_limit"],
+                    output_limit=request.execution_profile.model["output_limit"],
+                )
+                opencode_backend.write_config(request.backend_config_path, config)
+                return
+            request.codex_home.mkdir()
+            request.codex_home.chmod(0o700)
+            source = request.profile_file.parent
+            base_config = source / "config.toml"
+            if base_config.is_file():
+                shutil.copy2(base_config, request.codex_home / base_config.name)
+            for profile in source.glob("*.config.toml"):
+                shutil.copy2(profile, request.codex_home / profile.name)
+            catalogs = source / "model_catalogs"
+            if catalogs.is_dir():
+                shutil.copytree(catalogs, request.codex_home / "model_catalogs")
             return
-        request.codex_home.mkdir()
-        request.codex_home.chmod(0o700)
-        source = request.profile_file.parent
-        base_config = source / "config.toml"
-        if base_config.is_file():
-            shutil.copy2(base_config, request.codex_home / base_config.name)
-        for profile in source.glob("*.config.toml"):
-            shutil.copy2(profile, request.codex_home / profile.name)
-        catalogs = source / "model_catalogs"
-        if catalogs.is_dir():
-            shutil.copytree(catalogs, request.codex_home / "model_catalogs")
-        return
+        except Exception:
+            shutil.rmtree(request.session_dir, ignore_errors=True)
+            raise
+    delegation_path = request.session_dir / DELEGATION_FILENAME
+    if delegation_path.exists() or delegation_path.is_symlink():
+        load_delegation(
+            delegation_path,
+            expected_child={
+                "team_id": request.team_id,
+                "task_id": request.task_id,
+                "attempt_id": request.attempt_id,
+                "agent_role": request.role,
+                "workspace_root": str(request.workspace),
+            },
+        )
     if request.backend == "opencode":
         assert request.backend_config_path is not None
         assert request.backend_config_digest is not None
@@ -2877,7 +2949,11 @@ def _turn_failure(
             return "turn_failed", 1, list(events.failures)
         if backend == "codex":
             return "turn_failed", 1, ["Codex event stream did not contain turn.completed"]
-        return "turn_failed", 1, ["OpenCode event stream did not contain a successful stop step"]
+        if events.terminal_reason:
+            return "turn_failed", 1, [
+                f"OpenCode turn ended with terminal reason {events.terminal_reason!r}"
+            ]
+        return "turn_failed", 1, ["OpenCode event stream did not contain step_finish"]
     return None, 0, []
 
 

@@ -777,6 +777,76 @@ def test_worker_environment_disables_project_bytecode_caches(tmp_path: Path, mon
     assert observed["environment"]["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
+def test_worker_environment_removes_parent_lead_identity(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("CODEX_THREAD_ID", "lead-session")
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    environment = spawn.adapter_for(request.backend).environment(request)
+
+    assert "CODEX_THREAD_ID" not in environment
+    assert environment["CODEXTEAM_LAUNCHED_WORKER"] == "1"
+
+
+def test_nested_worker_launch_is_rejected_even_for_dry_run(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("CODEXTEAM_LAUNCHED_WORKER", "1")
+    with pytest.raises(ValueError, match="nested CodexTeam worker launches"):
+        spawn.prepare_request(request_args(tmp_path, monkeypatch, dry_run=True))
+
+
+def test_new_attempt_persists_orphan_delegation_without_lead_binding(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("DRAFT T002/att-001")
+    )
+    spawn.run_spawn(request)
+
+    delegation = json.loads((request.session_dir / "delegation.json").read_text())
+    assert delegation["attribution"] == "orphan"
+    assert delegation["orphan_reason"] == "thread_environment_missing"
+
+
+def test_new_attempt_persists_exact_bound_lead_delegation(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    marker_root = spawn.CODEXTEAM_ROOT / ".codexteam/runtime/lead-sessions"
+    marker_root.mkdir(parents=True, exist_ok=True)
+    session_id = "lead-test-session"
+    marker = marker_root / f"{session_id}.json"
+    marker.write_text(json.dumps({
+        "session_id": session_id,
+        "lead_root": str(spawn.CODEXTEAM_ROOT),
+        "project": args.workspace,
+        "task_id": "T001",
+    }))
+    monkeypatch.setenv("CODEX_THREAD_ID", session_id)
+    try:
+        request = spawn.prepare_request(args)
+        monkeypatch.setattr(
+            spawn, "run_process", lambda *args, **kwargs: successful_process("DRAFT T002/att-001")
+        )
+        spawn.run_spawn(request)
+        delegation = json.loads((request.session_dir / "delegation.json").read_text())
+        assert delegation["attribution"] == "bound_lead"
+        assert delegation["parent"] == {
+            "session_id": session_id, "task_id_at_launch": "T001",
+        }
+    finally:
+        marker.unlink(missing_ok=True)
+
+
+def test_legacy_continuation_without_delegation_record_remains_supported(tmp_path: Path, monkeypatch):
+    draft, _ = run_draft(tmp_path, monkeypatch)
+    (draft.session_dir / "delegation.json").unlink()
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("DRAFT T002/att-001 continued")
+    )
+    feedback = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
+    )
+    outcome, code = spawn.run_spawn(feedback)
+    assert code == 0
+    assert outcome["status"] == "draft_ready"
+
+
 def test_parent_sandbox_mode_skips_redundant_worker_namespace_and_persists(
     tmp_path: Path, monkeypatch
 ):
@@ -1978,20 +2048,20 @@ def test_opencode_resolves_local_profiles_without_codex_profile(tmp_path: Path, 
     )
     assert qwen.model == "ollama/qwen3.6-27b:latest"
     assert qwen.model_provider == "ollama"
-    muse = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, backend="opencode", profile="muse-glimmer")
-    )
-    assert muse.model == "ollama/muse-glimmer:30b"
-    assert muse.model_provider == "ollama"
     muse_config = opencode_backend.build_config(
-        model=muse.model,
+        model="ollama/muse-glimmer:30b-131k",
         role_name="Developer",
         role_instructions="Implement the task.",
         display_name="Muse Glimmer 30B",
+        context_limit=131072,
+        output_limit=32768,
     )
-    assert muse_config["model"] == muse_config["small_model"] == "ollama/muse-glimmer:30b"
+    assert muse_config["model"] == muse_config["small_model"] == "ollama/muse-glimmer:30b-131k"
     assert muse_config["provider"]["ollama"]["models"] == {
-        "muse-glimmer:30b": {"name": "Muse Glimmer 30B"}
+        "muse-glimmer:30b-131k": {
+            "name": "Muse Glimmer 30B",
+            "limit": {"context": 131072, "output": 32768},
+        }
     }
     with pytest.raises(ValueError, match="unsupported execution profile"):
         spawn.prepare_request(
@@ -2038,7 +2108,12 @@ def test_opencode_command_environment_and_prompt_are_private(tmp_path: Path, mon
     assert config["provider"]["ollama"] == {
         "npm": "@ai-sdk/openai-compatible",
         "options": {"baseURL": "http://localhost:11434/v1"},
-        "models": {"ornith:35b": {"name": "Ornith 35B"}},
+        "models": {
+            "ornith:35b": {
+                "name": "Ornith 35B",
+                "limit": {"context": 131072, "output": 32768},
+            }
+        },
     }
     assert "PINNED PROJECT RULE" in config["agent"]["codexteam"]["prompt"]
     assert config["agent"]["codexteam"]["permission"]["webfetch"] == "deny"
@@ -2435,7 +2510,8 @@ def test_opencode_rejects_unsupported_flags(tmp_path: Path, monkeypatch, flag, v
 def test_opencode_config_disables_integrations_and_final_agent_is_read_only():
     config = opencode_backend.build_config(
         model="ollama/ornith:35b",
-        role_name="developer", role_instructions="Implement only the handoff."
+        role_name="developer", role_instructions="Implement only the handoff.",
+        context_limit=131072, output_limit=32768,
     )
     assert config["plugin"] == []
     assert config["mcp"] == {}
@@ -2457,11 +2533,16 @@ def test_opencode_qwen_config_selects_only_tuned_qwen_model():
         role_name="reviewer",
         role_instructions="Review the handoff.",
         display_name="Qwen 3.6 27B",
+        context_limit=262144,
+        output_limit=32768,
     )
     assert config["model"] == "ollama/qwen3.6-27b:latest"
     assert config["small_model"] == "ollama/qwen3.6-27b:latest"
     assert config["provider"]["ollama"]["models"] == {
-        "qwen3.6-27b:latest": {"name": "Qwen 3.6 27B"}
+        "qwen3.6-27b:latest": {
+            "name": "Qwen 3.6 27B",
+            "limit": {"context": 262144, "output": 32768},
+        }
     }
     assert config["agent"]["codexteam"]["model"] == "ollama/qwen3.6-27b:latest"
     assert config["agent"]["codexteam-final"]["model"] == "ollama/qwen3.6-27b:latest"
@@ -2505,6 +2586,81 @@ def test_opencode_event_parser_handles_tools_steps_and_bad_streams():
                           "part": {"reason": reason, "tokens": {}}}) + "\n"
         )
         assert non_terminal.completed is False
+        assert non_terminal.terminal_reason == reason
+
+
+def test_opencode_event_parser_uses_only_terminal_step_message():
+    progress_id = "msg-progress"
+    terminal_id = "msg-terminal"
+    text = "".join((
+        json.dumps({"type": "text", "sessionID": THREAD_ID, "part": {
+            "messageID": progress_id, "text": "Now let me apply the edit."
+        }}) + "\n",
+        json.dumps({"type": "step_finish", "sessionID": THREAD_ID, "part": {
+            "messageID": progress_id, "reason": "tool-calls", "tokens": {}
+        }}) + "\n",
+        json.dumps({"type": "text", "sessionID": THREAD_ID, "part": {
+            "messageID": terminal_id, "text": "DRAFT T002/att-001\n\nOutcome: done"
+        }}) + "\n",
+        json.dumps({"type": "step_finish", "sessionID": THREAD_ID, "part": {
+            "messageID": terminal_id, "reason": "stop", "tokens": {}
+        }}) + "\n",
+    ))
+
+    summary = opencode_backend.parse_events(text)
+
+    assert summary.completed is True
+    assert summary.terminal_reason == "stop"
+    assert summary.last_agent_message == "DRAFT T002/att-001\n\nOutcome: done"
+
+
+def test_opencode_event_parser_does_not_reuse_progress_for_blank_terminal_stop():
+    text = "".join((
+        json.dumps({"type": "text", "sessionID": THREAD_ID, "part": {
+            "messageID": "msg-progress", "text": "Now let me apply the edit."
+        }}) + "\n",
+        json.dumps({"type": "step_finish", "sessionID": THREAD_ID, "part": {
+            "messageID": "msg-progress", "reason": "tool-calls", "tokens": {}
+        }}) + "\n",
+        json.dumps({"type": "step_finish", "sessionID": THREAD_ID, "part": {
+            "messageID": "msg-terminal", "reason": "stop", "tokens": {}
+        }}) + "\n",
+    ))
+
+    summary = opencode_backend.parse_events(text)
+
+    assert summary.completed is True
+    assert summary.terminal_reason == "stop"
+    assert summary.last_agent_message == ""
+
+
+def test_opencode_stop_without_text_is_resumable_correction(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.18")
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b")
+    )
+    stream = "".join((
+        json.dumps({"type": "step_start", "sessionID": THREAD_ID, "part": {
+            "messageID": "msg-terminal"
+        }}) + "\n",
+        json.dumps({"type": "step_finish", "sessionID": THREAD_ID, "part": {
+            "messageID": "msg-terminal", "reason": "stop", "tokens": {}
+        }}) + "\n",
+    ))
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: spawn.ProcessResult(0, stream, "", 0.2),
+    )
+
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1
+    assert outcome["status"] == "correction_needed"
+    assert outcome["errors"] == ["OpenCode returned no final agent message for this turn"]
+    session = json.loads(request.session_path.read_text())
+    assert session["thread_id"] == THREAD_ID
+    assert session["last_status"] == "correction_needed"
 
 
 @pytest.mark.parametrize(
@@ -2584,6 +2740,45 @@ def test_fake_opencode_draft_feedback_final_persists_session_and_result(
     assert observed_config["model"] == model
     validate_result(json.loads(final.result_path.read_text()), expected_attempt="att-001")
     assert "draft_format" not in json.loads(final.result_path.read_text())
+
+
+def test_opencode_feedback_reuses_pinned_handoff_mcp_permissions(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_opencode_process(draft_message()),
+    )
+    values = {"backend": "opencode", "profile": "qwen36-27b"}
+    draft_args = request_args(tmp_path, monkeypatch, **values)
+    handoff = Path(draft_args.workspace) / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text("# T002\n\nImplement the task.\n")
+    draft_args.prompt = None
+    draft_args.prompt_file = str(handoff)
+    draft = spawn.prepare_request(draft_args)
+    spawn.run_spawn(draft)
+
+    feedback_prompt = draft.workspace / ".codexteam/lead-prompt-T002-att-001.md"
+    feedback_prompt.parent.mkdir(exist_ok=True)
+    feedback_prompt.write_text("PLAN ACCEPTED\n")
+    feedback = spawn.prepare_request(
+        request_args(
+            tmp_path,
+            monkeypatch,
+            phase="feedback",
+            prompt=None,
+            prompt_file=str(feedback_prompt),
+            **values,
+        )
+    )
+
+    assert feedback.effective_mcp_servers == draft.effective_mcp_servers
+    assert feedback.effective_mcp_tools == draft.effective_mcp_tools
+    assert feedback.mcp_context_project == draft.mcp_context_project
+    assert feedback.execution_spec["permissions"] == draft.execution_spec["permissions"]
 
 
 def test_opencode_final_rejects_workspace_changed_after_accepted_checkpoint(

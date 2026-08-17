@@ -32,7 +32,7 @@ known_capabilities = ["tool-use", "reasoning"]
 model_id = "muse-glimmer"
 display_name = "Muse Glimmer 30B"
 family = "muse"
-provider_locator = "ollama/muse-glimmer:30b"
+provider_locator = "ollama/muse-glimmer:30b-131k"
 context_limit = 131072
 output_limit = 32768
 modalities = ["text"]
@@ -74,13 +74,7 @@ evidence_ref = "docs/E2E_ACCEPTANCE_PLAN.md"
 qualification_id = "opencode-qwen36"
 profile = "opencode/qwen36-27b"
 status = "qualified"
-evidence_ref = "tests/test_spawn.py"
-
-[[qualifications]]
-qualification_id = "opencode-muse"
-profile = "opencode/muse-glimmer"
-status = "qualified"
-evidence_ref = "docs/MUSE_GLIMMER_QUALIFICATION.md"
+evidence_ref = "docs/OPENCODE_QWEN_QUALIFICATION.md"
 
 [[qualifications]]
 qualification_id = "opencode-ornith"
@@ -131,20 +125,6 @@ verbosity_support = false
 tool_support = true
 mcp_support = false
 qualification_references = ["opencode-qwen36"]
-
-[[profiles]]
-profile_id = "muse-glimmer"
-backend_id = "opencode"
-model_id = "muse-glimmer"
-provider = "ollama"
-provider_locator = "ollama/muse-glimmer:30b"
-runtime_options = {}
-supported_reasoning_requests = ["provider_default"]
-reasoning_mappings = { provider_default = "provider_default" }
-verbosity_support = false
-tool_support = true
-mcp_support = false
-qualification_references = ["opencode-muse"]
 
 [[profiles]]
 profile_id = "ornith35b"

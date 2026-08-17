@@ -15,6 +15,7 @@ class BackendEventSummary:
     thread_ids: tuple[str, ...]
     last_agent_message: str
     completed: bool
+    terminal_reason: str | None
     failures: tuple[str, ...]
     parse_errors: tuple[str, ...]
 
@@ -83,6 +84,8 @@ class CodexBackendAdapter:
 
     def environment(self, request: Any) -> dict[str, str]:
         environment = os.environ.copy()
+        environment.pop("CODEX_THREAD_ID", None)
+        environment["CODEXTEAM_LAUNCHED_WORKER"] = "1"
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         environment["CODEX_HOME"] = str(request.execution_codex_home)
         environment["CODEX_SQLITE_HOME"] = str(request.codex_home)
@@ -129,6 +132,7 @@ class CodexBackendAdapter:
             thread_ids=tuple(dict.fromkeys(thread_ids)),
             last_agent_message=messages[-1] if messages else "",
             completed=completed,
+            terminal_reason="completed" if completed else None,
             failures=tuple(failures),
             parse_errors=tuple(parse_errors),
         )
@@ -205,6 +209,8 @@ class OpenCodeBackendAdapter:
 
     def environment(self, request: Any) -> dict[str, str]:
         environment = os.environ.copy()
+        environment.pop("CODEX_THREAD_ID", None)
+        environment["CODEXTEAM_LAUNCHED_WORKER"] = "1"
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         for name in tuple(environment):
             if name.startswith("OPENCODE_"):
@@ -223,6 +229,7 @@ class OpenCodeBackendAdapter:
             thread_ids=value.thread_ids,
             last_agent_message=value.last_agent_message,
             completed=value.completed,
+            terminal_reason=value.terminal_reason,
             failures=value.failures,
             parse_errors=value.parse_errors,
         )

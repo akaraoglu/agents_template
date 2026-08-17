@@ -110,7 +110,7 @@ def test_execution_spec_accepts_agent_spec_reference_and_rejects_provider_defaul
     )
     assert validate_execution_spec(value)["agent_spec"]["id"] == "python-developer"
     profile = load_execution_registry().resolve(
-        "opencode", "muse-glimmer", "provider_default"
+        "opencode", "qwen36-27b", "provider_default"
     ).reference(runtime_version=None, backend_material_digest="b" * 64)
     profile["reasoning"]["effective"] = "medium"
     with pytest.raises(ExecutionSpecError, match="provider_default"):

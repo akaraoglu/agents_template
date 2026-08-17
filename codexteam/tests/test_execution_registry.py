@@ -21,7 +21,6 @@ def test_registry_contains_only_curated_backends_and_profiles():
         ("codex", "qwen36-27b"),
         ("codex", "gpt54-mini"),
         ("opencode", "qwen36-27b"),
-        ("opencode", "muse-glimmer"),
         ("opencode", "ornith35b"),
     }
 
@@ -40,17 +39,17 @@ def test_unknown_profile_and_unsupported_reasoning_fail():
     with pytest.raises(ExecutionRegistryError, match="unsupported execution profile"):
         registry.resolve("codex", "installed-but-unknown", "medium")
     with pytest.raises(ExecutionRegistryError, match="unsupported by"):
-        registry.resolve("opencode", "muse-glimmer", "high")
+        registry.resolve("opencode", "qwen36-27b", "high")
 
 
 def test_query_cli_is_read_only_and_reports_support(tmp_path: Path, capsys):
     before = Path("execution_registry.toml").read_bytes()
     assert main([
-        "resolve", "--backend", "opencode", "--profile", "muse-glimmer",
+        "resolve", "--backend", "opencode", "--profile", "qwen36-27b",
         "--role", "developer", "--reasoning", "provider_default", "--json",
     ]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["profile"]["id"] == "opencode/muse-glimmer"
+    assert payload["profile"]["id"] == "opencode/qwen36-27b"
     assert payload["reasoning"]["support_status"] == "provider_default"
     assert payload["supported"] is True
     assert Path("execution_registry.toml").read_bytes() == before

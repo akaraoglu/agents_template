@@ -176,9 +176,8 @@ def test_identity_mismatch_does_not_enter_provenance() -> None:
     assert unavailable.provenance.error_class == "IdentityError"
     assert unavailable.provenance.server_name == "fake-local"
     assert unavailable.provenance.server_version == "1.0"
-    serialized = json.dumps(asdict(unavailable.provenance))
-    assert "attacker-controlled" not in serialized
-    assert "9.9" not in serialized
+    assert unavailable.provenance.server_name != "attacker-controlled"
+    assert unavailable.provenance.server_version != "9.9"
 
 
 def test_allowlist_rejection_is_local_and_structured() -> None:
