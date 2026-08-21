@@ -18,7 +18,7 @@ Execution Spec      = immutable resolved combination for one attempt
 
 ## Completed Work
 
-- Added strict `agent-spec-current` schema and current-native loader.
+- Added strict `agent-spec` schema and loader.
 - AgentSpecs are optional; omission keeps `agent_spec: null`.
 - Added initial specialists:
   - `python-developer`
@@ -32,7 +32,7 @@ Execution Spec      = immutable resolved combination for one attempt
 - Added draft-only `--agent-spec`; omission uses the ordinary role.
 - Feedback and finalization reject AgentSpec overrides and reuse the pinned
   snapshot.
-- Pre-cutover active attempts follow the Phase 4 drain-or-abandon policy.
+- Historical pre-cutover attempts are not resumed or backfilled.
 - Pinned the complete AgentSpec snapshot, reference, specialist guidance, and
   effective-policy digest.
 - Kept canonical `roles/*.toml` as the responsibility and authority ceiling.
@@ -70,15 +70,13 @@ effective permission
 - AgentSpec and execution profile selection remain independent.
 - Capability transfer or another AgentSpec requires a new attempt.
 - No automatic specialist routing or arbitrary capability stacking is present.
-- current draft, feedback, final, result, gate, and close-loop behavior is unchanged.
+- Draft, feedback, final, result, gate, and close-loop authority is unchanged.
 
 ## Verification Summary
 
-The final current Phase 0-3 gate passed `270` tests with the unavailable-`rg` test
-deselected. The full repository run reached `604 passed, 46 skipped, 77 known
-failures`; remaining failures are experimental replacement inconsistencies plus the
-environmental `rg` dependency. Independent review found and verified fixes for
-MCP tool broadening and valid path-narrowing semantics.
+Current repository verification passes with the environment-dependent `rg` test
+skipped when unavailable. Independent review found and verified fixes for MCP
+tool broadening and valid path-narrowing semantics.
 
 ## Original Plan Summary
 
@@ -93,6 +91,7 @@ MCP tool broadening and valid path-narrowing semantics.
 
 - Automatic specialist selection.
 - Multiple AgentSpecs or arbitrary capability stacking.
-- Machine enforcement of full task-handoff path scope, planned for the later
-  context/change-scope phase.
-- Model/reasoning controls and backend adapter extraction.
+
+Task-handoff write-scope enforcement, model/reasoning controls, and backend
+adapter extraction were completed in subsequent phases and are no longer
+deferred.

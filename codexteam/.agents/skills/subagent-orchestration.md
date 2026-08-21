@@ -49,24 +49,35 @@ parallel Developer ownership.
 
 | Role | Default Profile | Guidance |
 |------|-----------------|----------|
-| Architect | `qwen36-27b` | architecture design |
-| Feature Planner (`feature_planner`) | `gpt54-mini` | post-architecture implementation decomposition; `qwen36-27b` is the explicit local override |
-| UX Designer (`ux_designer`) | `qwen36-27b` | UX/UI design and design QA |
-| Developer | `qwen36-27b` | implementation, development testing |
-| Test Engineer (`tester`) | `qwen36-27b` | integration testing, verification |
-| Reviewer | `qwen36-27b` | verification, coding standards |
-| Documenter | `qwen36-27b` | document editing |
-| Local Git Steward (`git_steward`) | `qwen36-27b` | Git inspection and commit planning; deterministic executor mutates Git |
-| Leader | `qwen36-27b` | project lead and orchestration |
+| Architect | `qwen38-27b` | architecture design |
+| Feature Planner (`feature_planner`) | `qwen38-27b` | post-architecture implementation decomposition |
+| UX Designer (`ux_designer`) | `qwen38-27b` | UX/UI design and design QA |
+| Developer | `qwen38-27b` | implementation, development testing |
+| Test Engineer (`tester`) | `qwen38-27b` | integration testing and verification |
+| Reviewer | `qwen38-27b` | verification and coding standards |
+| Documenter | `qwen38-27b` | document editing |
+| Local Git Steward (`git_steward`) | `qwen38-27b` | Git inspection and commit planning; deterministic executor mutates Git |
+| Leader | `qwen38-27b` | project lead and orchestration |
 
 The responsible role owns the task. Backend-scoped profile and reasoning are
 explicit Lead selections; changing them requires a new attempt. Only curated
 profiles reported by `inspect-execution-catalog.py` are supported.
 
-OpenCode drafts explicitly select a curated profile and
-`--reasoning-effort provider_default`. Feedback/final omit execution selectors
-and reuse the pinned ExecutionSpec. OpenCode runs from attempt-private state;
-its permissions are not OS sandbox parity.
+Codex is the only enabled execution backend. Drafts use a supported Codex
+profile and reasoning request from the execution catalog; feedback/final omit
+execution selectors and reuse the pinned ExecutionSpec. OpenCode implementation
+and historical records remain available for inspection, but execution is disabled.
+
+Handoffs classify execution as `small` or `complex`. Small work defaults to 600
+seconds; complex work defaults to 1200 seconds. An explicit `--timeout` overrides
+the default and the effective timeout is pinned for continuation turns.
+
+Complex Developers return `checkpoint: source_focused_tests` before running the
+Development Gate. After Lead acceptance, the same session returns
+`checkpoint: development_gate`. Complex Test Engineers return
+`checkpoint: integration_evidence` with browser/integration evidence and their
+completed report. Other complex roles return `checkpoint: final_report`. Do not
+start a new attempt for these stage boundaries.
 
 Role and AgentSpec selection never selects backend, profile, model, or reasoning.
 
@@ -136,6 +147,18 @@ Run again without `--dry-run`. The launcher stores the exact Codex thread under 
 
 During execution, inspect project-local state with `./scripts/subagent-status.py <project-root>`. A stale status means the persisted running observation exceeded its timeout and grace period; inspect its named diagnostics and session before deciding on recovery. The status command never retries or terminates work.
 
+OpenCode turns default to `--debug-stream activity`, a metadata-only ledger of
+tool names, statuses, safe targets or commands,
+duration, result size, truncation, model steps, and final process status. Activity
+never prints file contents, command output, write/edit text, or patch bodies.
+Use `--debug-stream assistant` to additionally show provider-emitted assistant
+text live, or `--debug-stream off` to disable streaming. Streaming writes to the
+launcher's stderr and may still
+disclose project names, paths, commands, queries, or assistant text. They do not
+expose private reasoning that the provider does not emit and do not replace the
+complete private JSONL turn record. The option is invocation-scoped; omit it
+to use the backend-aware default. Non-OpenCode backends default to off.
+
 After each process returns, the launcher writes one private `<turn>.metrics.json` beside the JSONL. Use the WebUI for per-turn token deltas, tool/failure counts, output volume, repeats, largest-command previews, and the ten most expensive completed drafts. For historical sessions, preview `./scripts/backfill-turn-metrics.py <project-root>` before adding `--write`; do not overwrite existing sidecars unless explicitly repairing the metrics schema.
 
 Use the opt-in `--run-guard` when a failure loop or unbounded discovery is a material
@@ -156,23 +179,39 @@ Use one stable ignored prompt path per attempt, for example `<project-root>/.cod
 
 Do not use shell redirection, `tee`, heredocs, or command substitution to create evidence. The launcher and close-loop commands persist execution evidence; use the file-editing tool for planned prompt or project files.
 
-4. Inspect the worker's draft and the changed files independently. A draft has this conversational shape:
+4. Inspect changed files and `results/reports/<TASK>-<attempt>.json`. The artifact
+contains `version: 1`, summary, evidence path strings, and limitations; unknown
+fields are ignored. Terminal output is diagnostic. Identity, status, changes,
+process output, and timestamps are launcher-owned.
 
-```text
-DRAFT T003/att-001
+For `Context Mode: direct`, the canonical handoff must additionally declare:
 
-Outcome:
-Evidence:
-Uncertainties or conflicts:
-Proposed disposition:
+```markdown
+## Result Report
+
+- `results/<task-report>/REPORT.md`
+
+## Direct Context
+
+- `relative/source.ext:10-80`
+
+## Verification Commands
+
+- `["tool", "arg"]`
 ```
 
-Conversational draft remains the default. For an explicitly approved compact-draft
-attempt, add `--draft-format compact-json` only to the initial draft command.
-Keep feedback and final commands free of that option; the launcher reuses the
-pinned format and rejects malformed compact output in the same resumable session.
+The launcher validates and injects at most five ranges and 64 KiB, denies worker
+read/search/bash tools, permits only literal role-allowed write paths, runs only
+configured gate commands in a networkless read-only bubblewrap boundary, and
+derives digest-pinned evidence from a report containing exactly one
+`Disposition: ready_for_review` line. The Lead names
+targets and checks but does not summarize source or parse command output.
 
-For implementation work, require the configured Development Gate before accepting the Developer draft. Then start the Test Engineer against that draft before Developer finalization. The Test Engineer may add or modify handoff-scoped integration/regression tests and controlled expectations but never production source or Developer-owned unit/smoke tests. Return classified product defects to the same Developer session, rerun the Development Gate after correction, then resume the same Test Engineer session for affected checks and the final Integration Gate. Do not finalize either role from evidence produced before the last source revision.
+Ordinary feedback is delta-only and does not replay MCP, handoff, guidance, or
+direct context. Use `--feedback-mode format-only` only to repair the artifact
+JSON; that mode has no tools and may modify only the derived report path.
+
+For implementation work, require the configured Development Gate before accepting the Developer draft. Then start the Test Engineer against that draft before Developer finalization. The Test Engineer may add or modify handoff-scoped integration/regression tests and controlled expectations but never production source or Developer-owned unit/smoke tests. Return classified product defects to the same Developer session, rerun the Development Gate after correction, then resume the same Test Engineer session for affected checks and the final Integration Gate. Do not finalize either role from evidence produced before the last source revision. Finalization fails unless the latest worker turn and complete change manifest are the accepted checkpoint.
 
 5. Return one consolidated review decision. For revision:
 
@@ -209,17 +248,13 @@ FEEDBACK: ACCEPT
 Finalize the result using this attempt's actual work and evidence.
 ```
 
-Run the same command with `--phase final`. This is the only normal phase that writes `results/T003-att-001.json`.
-
-Before finalization, remind the responsible AI that:
-
-- OpenAI-backed profiles receive `schemas/result.json` as the final-turn output schema, while local providers receive the compact required-field contract without an unsupported schema claim;
-- `team_id`, `task_id`, `attempt_id`, and `agent_role` exactly match the handoff and launcher arguments;
-- the summary, status, limitations, file changes, and evidence describe observed work rather than intent;
-- every declared created or modified path and every evidence `artifact_ref` names an actual project-relative artifact; and
-- commands belong in evidence metadata, never in `artifact_ref`.
-
-The launcher fills only its stable result ID, process output, an omitted empty follow-up list for completed work, and string-normalizes message-bearing error/warning/limitation objects. It validates the returned contract, scope identity, role policy, changed paths, and evidence paths before sealing the result. A schema or boundary failure remains `correction_needed` and resumable in the same thread. Do not repeat the complete schema or a generic example object in the final prompt; task-specific truth is the useful context.
+Run the same command with `--phase final`. For new semantic attempts this makes
+no provider call: the launcher seals the accepted payload and checkpoint into
+`results/T003-att-001.json`, assigning identity, `completed` status, file
+changes, process metadata, and timestamp deterministically. Use
+`--result-status blocked|failed|partial|needs_review` only for an intentional
+non-completed closure. Historical conversational and compact-JSON attempts keep
+their pinned provider final turn.
 
 7. Validate the final result, inspect declared artifacts, and close the task with independent verification:
 

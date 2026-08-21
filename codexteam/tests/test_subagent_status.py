@@ -76,6 +76,38 @@ def test_old_running_turn_is_reported_stale(tmp_path: Path):
     assert records[0]["profile"] == "unknown"
 
 
+def test_running_status_projects_quiet_live_progress(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    attempt = project / ".codexteam/runtime/sessions/team-1/T003/att-001"
+    write_json(attempt / "turn-state.json", {
+        "team_id": "team-1", "task_id": "T003", "attempt_id": "att-001",
+        "status": "running", "phase": "draft", "turn_number": 1,
+        "updated_at": "2026-07-22T11:59:00Z", "timeout_seconds": 600,
+    })
+    turn = attempt / "turns/001-draft.jsonl"
+    turn.parent.mkdir()
+    turn.write_text('{"type":"tool_use","part":{"tool":"read","state":{"status":"completed"}}}\n')
+    timestamp = datetime(2026, 7, 22, 11, 59, tzinfo=timezone.utc).timestamp()
+    import os
+    os.utime(turn, (timestamp, timestamp))
+
+    record = collect_subagent_status(
+        project, now=datetime(2026, 7, 22, 12, 0, tzinfo=timezone.utc)
+    )[0]
+
+    assert record["status"] == "running"
+    assert record["activity_state"] == "quiet"
+    assert record["idle_seconds"] == 60
+    assert record["event_count"] == 1
+    assert record["last_tool"] == "read"
+    stalled = collect_subagent_status(
+        project, now=datetime(2026, 7, 22, 12, 2, 1, tzinfo=timezone.utc)
+    )[0]
+    assert stalled["status"] == "running"
+    assert stalled["activity_state"] == "stalled"
+
+
 def test_project_without_sessions_returns_empty(tmp_path: Path):
     assert collect_subagent_status(tmp_path) == []
 
@@ -106,7 +138,7 @@ def test_status_exposes_attempt_draft_format_pin(tmp_path: Path):
     attempt = project / ".codexteam/runtime/sessions/team-1/T002/att-001"
     write_json(
         attempt / "draft-format.json",
-        {"schema_version": "1.0", "draft_format": "compact-json"},
+        {"schema_version": "1.0", "draft_format": "artifact-report-v1"},
     )
     write_json(
         attempt / "turn-state.json",
@@ -119,7 +151,7 @@ def test_status_exposes_attempt_draft_format_pin(tmp_path: Path):
     )
 
     record = collect_subagent_status(project)[0]
-    assert record["draft_format"] == "compact-json"
+    assert record["draft_format"] == "artifact-report-v1"
     assert record["draft_format_pinned"] is True
 
 
@@ -174,14 +206,14 @@ def test_status_reads_execution_spec_without_session(tmp_path: Path):
     assert record["execution_spec_pinned"] is True
 
 
-def test_legacy_status_defaults_to_unpinned_conversational(tmp_path: Path):
+def test_unpinned_status_defaults_to_current_artifact_contract(tmp_path: Path):
     project = tmp_path / "project"
     project.mkdir()
     attempt = project / ".codexteam/runtime/sessions/team-1/T002/att-001"
     write_json(attempt / "session.json", {"team_id": "team-1"})
 
     record = collect_subagent_status(project)[0]
-    assert record["draft_format"] == "conversational"
+    assert record["draft_format"] == "artifact-report-v1"
     assert record["draft_format_pinned"] is False
 
 
@@ -219,7 +251,11 @@ def test_codex_status_table_retains_old_columns(tmp_path: Path, capsys):
 
     assert main([str(project)]) == 0
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == "TEAM TASK ATTEMPT ROLE PROFILE POLICY PHASE TURN STATUS UPDATED"
+    assert lines[0] == (
+        "TEAM TASK ATTEMPT ROLE PROFILE POLICY PHASE TURN STATUS ACTIVITY_STATE "
+        "IDLE_SECONDS EVENT_COUNT OUTPUT_BYTES MODEL_STEP_COUNT LAST_EVENT_TYPE "
+        "LAST_TOOL LAST_EVENT_AT UPDATED"
+    )
     assert "BACKEND" not in lines[0]
 
 
@@ -241,5 +277,9 @@ def test_pre_cutover_mixed_status_table_has_no_backend_column(tmp_path: Path, ca
 
     assert main([str(project)]) == 0
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == "TEAM TASK ATTEMPT ROLE PROFILE POLICY PHASE TURN STATUS UPDATED"
+    assert lines[0] == (
+        "TEAM TASK ATTEMPT ROLE PROFILE POLICY PHASE TURN STATUS ACTIVITY_STATE "
+        "IDLE_SECONDS EVENT_COUNT OUTPUT_BYTES MODEL_STEP_COUNT LAST_EVENT_TYPE "
+        "LAST_TOOL LAST_EVENT_AT UPDATED"
+    )
     assert all(" opencode " not in line for line in lines[1:])

@@ -13,11 +13,28 @@ from typing import Any
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REGISTRY_PATH = CODEXTEAM_ROOT / "execution_registry.toml"
 BACKENDS = {"codex", "opencode"}
+DISABLED_EXECUTION_BACKENDS = frozenset({"opencode"})
 REASONING_REQUESTS = {"provider_default", "low", "medium", "high", "xhigh"}
 
 
 class ExecutionRegistryError(ValueError):
     pass
+
+
+def execution_backend_enabled(backend: str) -> bool:
+    return backend in BACKENDS and backend not in DISABLED_EXECUTION_BACKENDS
+
+
+def disabled_execution_reason(backend: str) -> str | None:
+    if backend in DISABLED_EXECUTION_BACKENDS:
+        return f"{backend} execution is disabled; use the codex backend"
+    return None
+
+
+def require_execution_backend_enabled(backend: str) -> None:
+    reason = disabled_execution_reason(backend)
+    if reason is not None:
+        raise ExecutionRegistryError(reason)
 
 
 def _digest(value: Any) -> str:
@@ -233,8 +250,47 @@ def host_availability(
         home = codex_home or Path.home() / ".codex"
         source_profile = resolved.profile.get("source_profile")
         path = home / f"{source_profile}.config.toml"
-        if not path.is_file():
+        if path.is_symlink() or not path.is_file():
             return {"host_available": False, "reason_unavailable": f"missing curated profile material: {path}"}
+        try:
+            material = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            return {"host_available": False, "reason_unavailable": f"invalid curated profile material: {exc}"}
+        if (
+            material.get("model") != resolved.provider_locator
+            or material.get("model_provider") != resolved.provider
+        ):
+            return {"host_available": False, "reason_unavailable": f"curated profile material mismatch: {path}"}
+        if resolved.provider == "openai":
+            auth = home / "auth.json"
+            if auth.is_symlink() or not auth.is_file():
+                return {"host_available": False, "reason_unavailable": f"missing OpenAI authentication: {auth}"}
+            return {"host_available": True, "reason_unavailable": None}
+        catalog_value = material.get("model_catalog_json")
+        if not isinstance(catalog_value, str):
+            return {"host_available": False, "reason_unavailable": f"missing local model catalog: {path}"}
+        catalog = Path(catalog_value).expanduser()
+        if catalog.is_symlink() or not catalog.is_file():
+            return {"host_available": False, "reason_unavailable": f"missing local model catalog: {catalog}"}
+        try:
+            catalog_data = json.loads(catalog.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"host_available": False, "reason_unavailable": f"invalid local model catalog: {exc}"}
+        slugs = {
+            item.get("slug") for item in catalog_data.get("models", [])
+            if isinstance(item, dict) and item.get("enabled") is True
+        }
+        if resolved.provider_locator not in slugs:
+            return {"host_available": False, "reason_unavailable": f"local model missing from catalog: {resolved.provider_locator}"}
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=1) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            return {"host_available": False, "reason_unavailable": f"Ollama unavailable: {exc}"}
+        names = {item.get("name") for item in payload.get("models", []) if isinstance(item, dict)}
+        expected_names = {resolved.provider_locator, f"{resolved.provider_locator}:latest"}
+        if names.isdisjoint(expected_names):
+            return {"host_available": False, "reason_unavailable": f"curated model not installed: {resolved.provider_locator}"}
         return {"host_available": True, "reason_unavailable": None}
     model_id = resolved.provider_locator.removeprefix("ollama/")
     try:

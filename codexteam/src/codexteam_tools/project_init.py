@@ -12,6 +12,7 @@ from pathlib import Path
 from .files import atomic_write_text
 from .paths import contained_path, normalize_task_id, projects_root, slugify_project_name, validate_identifier
 from .project_guidance import expected_project_guidance
+from .tasks import TaskDocumentError, parse_task_handoff_metadata
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TEMPLATE_ROOT = CODEXTEAM_ROOT / "templates" / "project"
@@ -65,7 +66,7 @@ Make project documentation agree with the implementation and independently verif
 - Role: `documenter`
 - AgentSpec: none
 - Backend: `codex`
-- Profile: `qwen36-27b`
+- Profile: `qwen38-27b`
 - Reasoning: `medium`
 
 ## Context
@@ -86,6 +87,14 @@ Project Markdown files, delivery documentation, and documentation-focused tests 
 - `docs/**`
 - `tests/docs/**`
 - `results/**`
+
+## Context Mode
+
+- `bounded-mcp`
+
+## Execution Class
+
+- `small`
 
 ## Required Outputs
 
@@ -120,25 +129,16 @@ class InitializationPlan:
 
 
 def _validate_task_write_scope(handoff: str, path: str) -> None:
-    lines = handoff.splitlines()
-    headings = [index for index, line in enumerate(lines) if line.strip() == "## Task Write Scope"]
-    if len(headings) != 1:
-        raise ValueError(f"canonical task handoff requires one Task Write Scope: {path}")
-    patterns: list[str] = []
-    for line in lines[headings[0] + 1:]:
-        if line.startswith("## "):
-            break
-        if not line.strip():
-            continue
-        match = re.fullmatch(r"\s*-\s+`([^`]+)`\s*", line)
-        if match is None:
-            raise ValueError(f"canonical task handoff has malformed Task Write Scope: {path}")
-        pattern = match.group(1)
-        if pattern.startswith("/") or "\\" in pattern or ".." in Path(pattern).parts:
-            raise ValueError(f"canonical task handoff has unsafe Task Write Scope: {path}")
-        patterns.append(pattern)
-    if not patterns:
+    try:
+        metadata = parse_task_handoff_metadata(handoff)
+    except TaskDocumentError as exc:
+        raise ValueError(f"invalid canonical task handoff metadata: {path}: {exc}") from exc
+    if not metadata.task_write_scope:
         raise ValueError(f"canonical task handoff requires non-empty Task Write Scope: {path}")
+    if metadata.context_mode is None:
+        raise ValueError(f"canonical task handoff requires one Context Mode: {path}")
+    if metadata.execution_class is None:
+        raise ValueError(f"canonical task handoff requires one Execution Class: {path}")
 
 
 def initialize_project(

@@ -12,6 +12,7 @@ from typing import Any
 from .execution_registry import ExecutionRegistryError, load_execution_registry
 from .delegation import DELEGATION_FILENAME, load_delegation
 from .execution_spec import EXECUTION_SPEC_FILENAME, ExecutionSpecError, load_execution_spec
+from .live_progress import collect_live_progress
 from .paths import PathValidationError, validate_identifier
 from .tasks import TaskDocumentError, parse_task_document
 from .turn_metrics import load_summary, metrics_path
@@ -362,6 +363,7 @@ def _attempt(
         (latest_metrics.get("generated_at") if latest_metrics else "") or ""
     )
     started_at = str(state.get("started_at") or session.get("created_at") or "")
+    live_progress = collect_live_progress(attempt_dir, state, now)
     return {
         "project_id": project.name,
         "project_name": _project_name(project),
@@ -416,6 +418,7 @@ def _attempt(
         "output_limit": output_limit,
         "context_percent": context_percent,
         "context_warning": context_percent is not None and context_percent >= 80,
+        **live_progress,
         "timeline": _timeline(project, task_id, attempt_id, turns),
         **_delegation(attempt_dir, identity, merged, project),
     }

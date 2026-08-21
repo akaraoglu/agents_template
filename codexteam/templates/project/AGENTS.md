@@ -29,7 +29,7 @@ proportional to the requested outcome and relevant regressions.
 - Architects define requirement-traceable system and repository structure without changing source or approving their own design.
 - Feature Planners may turn accepted architecture into advisory subtasks under `results/`; they do not implement, create canonical task IDs, change lifecycle state, spawn workers, or approve their own plans.
 - Local Git Steward model turns are read-only. Only the deterministic executor may stage explicit Project Lead-approved paths and create one local commit at a verified boundary; all remote Git actions are prohibited.
-- A worker draft is conversational output, not a `result` record or a state transition.
+- A worker writes the derived artifact report for Lead review; terminal text is diagnostic and no result/state transition occurs before acceptance.
 - Ordinary feedback resumes the same responsible AI session and attempt.
 - Only the Project Lead authorizes finalization and advances canonical management state.
 - Workers report routine uncertainty to the Project Lead; only a genuine showstopper reaches the operator.

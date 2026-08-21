@@ -36,7 +36,12 @@ Use after `PROJECT.md` has a concrete MVP scope and acceptance criteria, or when
    and inherited focused contract tests in Context and Verification even when
    those tests remain outside the task's editable paths. Preserve accepted
    upstream semantics at the shared layer; satisfy presentation-only changes at
-   the presentation seam.
+   the presentation seam. Route the current applicable `AC-*` references from
+   `PROJECT.md` into the task without copying the full criteria or Verification
+   Plan. Developer tasks identify criteria they implement, Test Engineer tasks
+   identify rows they independently validate, and Reviewer tasks audit criterion
+   evidence plus Delivery Criteria readiness. The Project Lead maintains the
+   canonical criteria and mappings as project truth evolves.
 11. Record dependencies explicitly.
 12. Update `TASKS.md`, `management/BACKLOG.md`, and `management/tasks/T*.md`.
 13. Treat each `management/tasks/T*.md` file as the contract passed to the team.
@@ -90,6 +95,8 @@ Each task file must include:
 - Allowed paths: where the worker may edit.
 - Required outputs: files or state that must exist when done.
 - Verification: exact checks or evidence expected.
+- Applicable acceptance criteria: current `AC-*` references from `PROJECT.md`
+  and the task's implementation, validation, or review responsibility.
 - Done criteria: observable completion rules.
 - Stop conditions: when to stop and ask instead of guessing.
 - Reporting: what evidence to write back.
@@ -140,6 +147,8 @@ Task capsules are not default Developer context. Load
 ## Validation
 
 - Every acceptance criterion is covered by at least one task.
+- Every current Verification Plan row is routed to its named verifier, and
+  delivery work identifies the responsible Delivery Criteria rows.
 - Every new task has a specific Type, Summary, and Outcome that a human can
   understand without opening implementation details.
 - No task requires hidden knowledge from chat only.

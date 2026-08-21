@@ -18,12 +18,14 @@ Your job is to turn the operator's goal into an approved, initialized, designed,
 
 - Use only `.agents/scripts/spawn-subagent.sh`; there is no version router or
   alternate project executor.
+- Codex is the only enabled execution backend. OpenCode history remains readable,
+  but new drafts and feedback turns are rejected.
 - Before assigning a draft, query
   `./scripts/inspect-execution-catalog.py profiles --backend <backend>` and use
   only a supported, host-available profile.
 - Draft requires explicit `--backend`, `--profile`, and `--reasoning-effort`.
   `--agent-spec` is optional and only narrows or specializes the selected role.
-- Feedback and final omit backend, profile, reasoning, draft-format, and
+- Feedback and final omit backend, profile, reasoning, and
   AgentSpec selectors. The launcher loads `execution-spec.json` and pinned
   attempt guidance.
 - Do not resume or convert attempts created before the current contract cutover.
@@ -75,15 +77,17 @@ Start a worker draft with the approved handoff:
 ./.agents/scripts/spawn-subagent.sh \
   --phase draft --backend codex --profile <profile> --reasoning-effort medium \
   --team <project-id> --task T002 --attempt att-001 --role architect \
-  --workspace ./projects/<project-id> --timeout 300 \
+  --workspace ./projects/<project-id> \
   --prompt-file ./projects/<project-id>/management/tasks/T002.md
 ```
 
-Use `--backend opencode --reasoning-effort provider_default` only for a curated
-OpenCode profile reported host-available by the execution catalog. OpenCode runs
-at the approved host level and does not accept `--trust-parent-sandbox`.
+Omit `--timeout` to use the handoff pin: 600 seconds for `small`, 1200 seconds
+for `complex`. Explicit overrides are pinned for continuation turns. For complex
+Developer work, accept `source_focused_tests` before requesting
+`development_gate` in the same session; complex Test Engineers return
+`integration_evidence` before finalization.
 
-Before launching, test `http://127.0.0.1:11434/api/version` from the same execution surface. For the default Codex backend, if it is reachable from this already-sandboxed lead, add `--trust-parent-sandbox` on every turn to skip redundant `bwrap`; otherwise launch at the approved host level without that flag and retain the normal Codex worker sandbox. For `--backend opencode`, run at the approved host level and never add `--trust-parent-sandbox`; OpenCode permissions and auditing are not a replacement OS sandbox. A dry run validates command construction but does not test model connectivity. MCP is not required. Follow `.agents/playbooks/nested-worker-sandbox.md` for Codex recovery rules.
+Before launching, test `http://127.0.0.1:11434/api/version` from the same execution surface. If it is reachable from this already-sandboxed lead, add `--trust-parent-sandbox` on every turn to skip redundant `bwrap`; otherwise launch at the approved host level without that flag and retain the normal Codex worker sandbox. A dry run validates command construction but does not test model connectivity. MCP is not required. Follow `.agents/playbooks/nested-worker-sandbox.md` for Codex recovery rules.
 
 - Accept Architect work before implementation, or record an explicit decision that the existing architecture remains sufficient. The Architect may write only the architecture surfaces named by its handoff and may not approve its own design.
 - When feature decomposition is warranted, accept the Feature Planner's advisory artifact before creating or revising the implementation tasks. The planner may write only its handoff-scoped `results/` artifact; it may not implement, assign canonical task IDs, change lifecycle state, spawn workers, or approve its own plan. A small explicit slice goes directly to one Developer.

@@ -6,7 +6,7 @@ from codexteam_tools.roles import load_role_policy
 
 
 def _profile(codex_home: Path, name: str, provider: str) -> None:
-    model = "gpt-5.4-mini" if provider == "openai" else "qwen"
+    model = "gpt-5.4-mini" if provider == "openai" else "qwen3.6-27b"
     (codex_home / f"{name}.config.toml").write_text(
         f'model = "{model}"\nmodel_provider = "{provider}"\n',
         encoding="utf-8",

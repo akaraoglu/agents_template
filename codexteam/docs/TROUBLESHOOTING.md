@@ -11,13 +11,11 @@ For OpenCode, select a curated profile and explicit `provider_default` reasoning
 
 Inspect `output.stdout_tail`, `output.stderr_tail`, and `errors` in the saved result. The worker may have returned malformed JSON, wrong scope fields, copied template content, or no evidence.
 
-## Compact Draft Is Correction Needed
+## Artifact Report Is Correction Needed
 
-An attempt pinned to `compact-json` must return exactly one JSON object with no
-prose or Markdown fence. Correct malformed output through feedback in the same
-session; do not switch it to conversational format. Stop selecting compact JSON
-to return new attempts to the conversational default. An active compact attempt
-still requires the format-aware launcher until finalized or explicitly abandoned.
+Inspect `results/reports/<TASK>-<attempt>.json`. Correct missing required fields,
+invalid JSON, unsafe evidence paths, or non-string list entries with
+`--feedback-mode format-only`; terminal prose is not part of the contract.
 
 ## Execution Specification Mismatch
 

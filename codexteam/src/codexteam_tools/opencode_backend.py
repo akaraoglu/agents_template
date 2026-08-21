@@ -7,12 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .files import atomic_write_json
+from .files import atomic_write_text
 
 
 AGENT = "codexteam"
-FINAL_AGENT = "codexteam-final"
+FORMAT_AGENT = "codexteam-format"
 CONFIG_FILENAME = "opencode.json"
+CONTEXT_PLUGIN_FILENAME = "codexteam-context-plugin.js"
+CONTEXT_ARCHIVE_DIRNAME = "tool-results"
+CONTEXT_PLUGIN_SOURCE = Path(__file__).with_name("opencode_context_plugin.js")
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,33 @@ def config_path(runtime_root: Path) -> Path:
     return runtime_root / "xdg-config" / "opencode" / CONFIG_FILENAME
 
 
+def context_plugin_path(runtime_root: Path) -> Path:
+    return runtime_root / "xdg-config" / "opencode" / CONTEXT_PLUGIN_FILENAME
+
+
+def context_archive_path(session_dir: Path) -> Path:
+    return session_dir / "private" / CONTEXT_ARCHIVE_DIRNAME
+
+
+def context_plugin_digest() -> str:
+    return hashlib.sha256(CONTEXT_PLUGIN_SOURCE.read_bytes()).hexdigest()
+
+
+def write_context_plugin(path: Path) -> None:
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"OpenCode context plugin already exists: {path}")
+    source = CONTEXT_PLUGIN_SOURCE.read_text(encoding="utf-8")
+    atomic_write_text(path, source)
+    path.chmod(0o600)
+
+
+def ensure_context_plugin(path: Path, expected_digest: str) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise FileNotFoundError(f"OpenCode context plugin is missing or unsafe: {path}")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != expected_digest:
+        raise ValueError(f"OpenCode context plugin digest mismatch: {path}")
+
+
 def build_config(
     *,
     model: str,
@@ -39,6 +69,10 @@ def build_config(
     display_name: str | None = None,
     context_limit: int,
     output_limit: int,
+    direct_mode: bool = False,
+    editable_paths: tuple[str, ...] = (),
+    artifact_report_path: str | None = None,
+    context_plugin: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     provider, separator, model_id = model.partition("/")
     if provider != "ollama" or not separator or not model_id:
@@ -64,16 +98,36 @@ def build_config(
         "webfetch": "deny",
         "websearch": "deny",
     }
-    final_permissions = {
-        "*": "deny",
-        "read": "allow",
-        "glob": "allow",
-        "grep": "allow",
-        "list": "allow",
-        "edit": "deny",
+    if direct_mode:
+        edit_permissions = {"*": "deny"}
+        edit_permissions.update({path: "allow" for path in editable_paths})
+        if artifact_report_path:
+            edit_permissions[artifact_report_path] = "allow"
+        common_permissions.update({
+            "read": "deny",
+            "glob": "deny",
+            "grep": "deny",
+            "list": "deny",
+            "bash": "deny",
+            "edit": edit_permissions,
+        })
+    format_permissions = {
+        "read": "deny",
+        "glob": "deny",
+        "grep": "deny",
+        "list": "deny",
         "bash": "deny",
+        "task": "deny",
+        "skill": "deny",
+        "lsp": "deny",
+        "question": "deny",
         "webfetch": "deny",
         "websearch": "deny",
+        "external_directory": "deny",
+        # OpenCode 1.18 hides edit/write when any wildcard edit deny is present,
+        # even with an exact allow. The launcher independently permits only the
+        # assigned report and restores rejected format-only mutations.
+        "edit": "allow" if artifact_report_path else "deny",
     }
     return {
         "$schema": "https://opencode.ai/config.json",
@@ -95,7 +149,17 @@ def build_config(
         "autoupdate": False,
         "share": "disabled",
         "snapshot": False,
-        "plugin": [],
+        "plugin": (
+            [[
+                Path(context_plugin["path"]).as_uri(),
+                {
+                    "archiveRoot": context_plugin["archive_root"],
+                    "sourceSha256": context_plugin["digest"],
+                    "reasoningEffort": context_plugin["reasoning_effort"],
+                },
+            ]]
+            if context_plugin is not None else []
+        ),
         "mcp": {},
         "lsp": False,
         "formatter": False,
@@ -111,12 +175,15 @@ def build_config(
                 "prompt": prompt,
                 "permission": common_permissions,
             },
-            FINAL_AGENT: {
-                "description": f"Read-only CodexTeam {role_name} finalizer",
+            FORMAT_AGENT: {
+                "description": f"Tool-free CodexTeam {role_name} report corrector",
                 "mode": "primary",
                 "model": model,
-                "prompt": prompt + " Finalization is read-only; report only accepted evidence.",
-                "permission": final_permissions,
+                "prompt": (
+                    "Correct only the assigned artifact report JSON. "
+                    "Use only the edit or write tool on that exact report path."
+                ),
+                "permission": format_permissions,
             },
         },
     }
@@ -132,7 +199,9 @@ def write_config(path: Path, config: dict[str, Any]) -> None:
         raise FileExistsError(f"OpenCode config already exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o700)
-    atomic_write_json(path, config)
+    # OpenCode permission rules are order-sensitive. Preserve the insertion order
+    # produced by build_config instead of alphabetically sorting wildcard rules.
+    atomic_write_text(path, json.dumps(config, indent=2) + "\n")
     path.chmod(0o600)
 
 
@@ -156,22 +225,27 @@ def build_command(
     workspace: Path,
     model: str,
     phase: str,
+    feedback_mode: str = "revision",
     session_id: str | None,
     title: str,
+    pure: bool = True,
 ) -> list[str]:
     command = [
         executable,
         "run",
-        "--pure",
+    ]
+    if pure:
+        command.append("--pure")
+    command.extend([
         "--format",
         "json",
         "--model",
         model,
         "--agent",
-        FINAL_AGENT if phase == "final" else AGENT,
+        FORMAT_AGENT if phase == "feedback" and feedback_mode == "format-only" else AGENT,
         "--dir",
         str(workspace),
-    ]
+    ])
     if session_id is None:
         command.extend(("--title", title))
     else:

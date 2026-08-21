@@ -5,10 +5,9 @@ from types import MappingProxyType
 from typing import Mapping
 
 
-CONVERSATIONAL_DRAFT = "conversational"
-COMPACT_JSON_DRAFT = "compact-json"
-DEFAULT_DRAFT_FORMAT = CONVERSATIONAL_DRAFT
-DRAFT_FORMATS = (CONVERSATIONAL_DRAFT, COMPACT_JSON_DRAFT)
+ARTIFACT_REPORT = "artifact-report-v1"
+DEFAULT_DRAFT_FORMAT = ARTIFACT_REPORT
+DRAFT_FORMATS = (ARTIFACT_REPORT,)
 
 
 @dataclass(frozen=True)
@@ -28,15 +27,10 @@ CONTRACT_REGISTRY: Mapping[str, ContractEntry] = MappingProxyType({
         "codexteam_tools.contracts.validate_handoff", "strict-root",
         "Launch-time task and role assignment envelope.",
     ),
-    CONVERSATIONAL_DRAFT: ContractEntry(
-        CONVERSATIONAL_DRAFT, "1.0", "text", None,
-        "codexteam_tools.contracts.validate_conversational_draft", "not-applicable",
-        "Human-review draft that does not close canonical state.",
-    ),
-    COMPACT_JSON_DRAFT: ContractEntry(
-        COMPACT_JSON_DRAFT, "1.0", "json", "schemas/draft.json",
-        "codexteam_tools.contracts.validate_draft", "strict",
-        "Bounded machine-validated draft for explicit opt-in attempts.",
+    ARTIFACT_REPORT: ContractEntry(
+        ARTIFACT_REPORT, "1", "json", None,
+        "codexteam_tools.contracts.validate_artifact_report", "permissive",
+        "Worker-owned artifact report sealed deterministically after acceptance.",
     ),
     "result": ContractEntry(
         "result", "1.0", "json", "schemas/result.json",

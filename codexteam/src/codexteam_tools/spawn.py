@@ -9,6 +9,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 import tomllib
@@ -21,8 +22,7 @@ from typing import Any
 from .contracts import (
     AGENT_ROLES,
     ResultValidationError,
-    validate_conversational_draft,
-    validate_draft,
+    validate_artifact_report,
     validate_handoff,
     validate_result,
     validate_session,
@@ -37,8 +37,7 @@ from .delegation import (
 from .context_pack import CONTEXT_PACK_FILENAME, build_context_pack, write_context_pack
 from .backend_adapter import BackendEventSummary, adapter_for
 from .contract_registry import (
-    COMPACT_JSON_DRAFT,
-    CONVERSATIONAL_DRAFT,
+    ARTIFACT_REPORT,
     DEFAULT_DRAFT_FORMAT,
     DRAFT_FORMATS,
 )
@@ -63,9 +62,10 @@ from .execution_registry import (
     ResolvedExecutionProfile,
     host_availability,
     load_execution_registry,
+    require_execution_backend_enabled,
 )
 from .local_mcp import LocalMcpClient, context_server_spec
-from .files import atomic_write_json, atomic_write_text
+from .files import atomic_write_json, atomic_write_text, create_json
 from .paths import (
     contained_path,
     ensure_existing_workspace,
@@ -88,11 +88,10 @@ from .turn_metrics import (
     summarize_turn,
     write_summary,
 )
-from .test_gates import GateConfigError, load_gate_config
+from .test_gates import GateConfigError, gate_record_path, load_gate_config, run_gate
+from .tasks import TaskDocumentError, parse_task_handoff_metadata
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
-RESULT_SCHEMA_PATH = CODEXTEAM_ROOT / "schemas" / "result-openai.json"
-RESULT_SCHEMA_FILENAME = "result-schema.json"
 PHASES = ("draft", "feedback", "final")
 REASONING_EFFORTS = ("provider_default", "low", "medium", "high", "xhigh")
 SESSION_SCHEMA_VERSION = "1.0"
@@ -101,11 +100,26 @@ GUIDANCE_MANIFEST_FILENAME = "guidance-manifest.json"
 TURN_STATE_FILENAME = "turn-state.json"
 WORKSPACE_BASELINE_FILENAME = "workspace-baseline.json"
 DRAFT_FORMAT_FILENAME = "draft-format.json"
+HANDOFF_CONTRACT_FILENAME = "handoff-contract.json"
 AGENT_SPEC_FILENAME = "agent-spec.json"
 WORKSPACE_SCAN_EXCLUDES = (".git", ".codexteam/runtime")
 ACCEPTANCE_PATH_EXCLUDES = (".git", ".codexteam")
+CHECK_RECORD_ROOT = "results/checks"
+DIRECT_VERIFICATION_EXECUTABLES = {"env", "go", "node", "python", "python3", "sh", "true"}
 CONTEXT_MCP_SERVER = "codexteam-context"
 CONTEXT_PROJECT_ENV = "CODEXTEAM_CONTEXT_PROJECT"
+PROGRESS_INTERVAL_SECONDS = 30.0
+SMALL_EXECUTION_ROLES = {"documenter", "git_steward"}
+DEBUG_STREAM_MODES = ("off", "assistant", "activity")
+DEBUG_PREVIEW_CHARS = 1_200
+SAFE_PROGRESS_EVENT_TYPES = {
+    "error", "item.completed", "item.started", "step_finish", "step_start",
+    "text", "thread.started", "tool_use", "turn.completed", "turn.started",
+}
+SAFE_PROGRESS_TOOLS = {
+    "apply_patch", "bash", "edit", "glob", "grep", "question", "read",
+    "skill", "task", "todowrite", "webfetch", "write",
+}
 
 
 @dataclass(frozen=True)
@@ -128,8 +142,10 @@ class SpawnRequest:
     prompt_source_path: str | None
     prompt_content_digest: str
     timeout_seconds: int
+    execution_class: str
     result_dir: Path
     result_path: Path
+    artifact_report_path: Path
     session_dir: Path
     session_path: Path
     draft_format: str
@@ -145,6 +161,7 @@ class SpawnRequest:
     add_dirs: tuple[Path, ...]
     trust_parent_sandbox: bool
     run_guard: bool
+    debug_stream: str
     skill_files: tuple[Path, ...]
     guidance_digest: str
     profile_file: Path
@@ -162,6 +179,12 @@ class SpawnRequest:
     execution_spec: dict[str, Any] | None
     execution_profile: ResolvedExecutionProfile
     task_write_scope: tuple[str, ...] | None
+    context_mode: str | None
+    result_report: str | None
+    direct_context: tuple[tuple[str, int, int], ...]
+    verification_commands: tuple[tuple[str, ...], ...]
+    result_status: str
+    feedback_mode: str
     delegation: dict[str, Any] | None
 
     @property
@@ -171,11 +194,6 @@ class SpawnRequest:
     @property
     def execution_codex_home(self) -> Path:
         return _execution_codex_home(self)
-
-    @property
-    def result_schema_path(self) -> Path:
-        return _result_schema_path(self)
-
 
 @dataclass(frozen=True)
 class TurnContext:
@@ -203,6 +221,46 @@ class ProcessResult:
     guard_reason: str | None = None
 
 
+def _default_execution_class(*, context_mode: str | None, role: str, prompt: str) -> str:
+    if re.search(r"(?m)^PLANNED LANE\s*$", prompt):
+        return "complex"
+    return "small"
+
+
+def _required_complex_checkpoint(request: SpawnRequest) -> str | None:
+    if request.execution_class != "complex":
+        return None
+    session = request.session_path
+    accepted: str | None = None
+    if session.is_file() and not session.is_symlink():
+        value = json.loads(session.read_text(encoding="utf-8"))
+        candidate = value.get("complex_checkpoint")
+        accepted = candidate if isinstance(candidate, str) else None
+    if request.role == "developer":
+        return (
+            "source_focused_tests"
+            if accepted is None
+            else "development_gate"
+            if accepted == "source_focused_tests"
+            else "development_gate"
+        )
+    if request.role == "tester":
+        return "integration_evidence"
+    return "final_report"
+
+
+def _complex_checkpoint_error(
+    request: SpawnRequest, report: dict[str, Any]
+) -> str | None:
+    expected = _required_complex_checkpoint(request)
+    if expected is None:
+        return None
+    actual = report.get("checkpoint")
+    if actual != expected:
+        return f"complex work requires checkpoint {expected!r}, got {actual!r}"
+    return None
+
+
 def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     if os.environ.get("CODEXTEAM_LAUNCHED_WORKER") == "1":
         raise ValueError("nested CodexTeam worker launches are not enabled")
@@ -214,7 +272,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     attempt_id = validate_identifier(args.attempt, label="attempt ID")
     if args.role not in AGENT_ROLES:
         raise ValueError(f"unsupported agent role: {args.role}")
-    if args.timeout < 1:
+    if args.timeout is not None and args.timeout < 1:
         raise ValueError("timeout must be a positive integer")
     registry = load_execution_registry()
     backend_value = getattr(args, "backend", None)
@@ -223,6 +281,11 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     execution_spec_path = session_dir = None
     trust_parent_sandbox = bool(getattr(args, "trust_parent_sandbox", False))
     run_guard = bool(getattr(args, "run_guard", False))
+    debug_stream_value = getattr(args, "debug_stream", None)
+    requested_result_status = getattr(args, "result_status", None)
+    result_status = requested_result_status or "completed"
+    if phase != "final" and requested_result_status is not None:
+        raise ValueError("--result-status is valid only for finalization")
     # Runtime selectors are explicit on draft and forbidden on continuation.
     if phase == "draft":
         if backend_value is None or profile_value is None or reasoning_effort_value is None:
@@ -255,6 +318,11 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         f"{args.result_dir}/{task_id}-{attempt_id}.json",
         label="result path",
     )
+    artifact_report_path = contained_path(
+        workspace,
+        f"results/reports/{task_id}-{attempt_id}.json",
+        label="artifact report path",
+    )
     session_dir = contained_path(
         workspace,
         f".codexteam/runtime/sessions/{team_id}/{task_id}/{attempt_id}",
@@ -279,10 +347,13 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         profile_leaf = profile_ref["profile"]["id"].split("/", 1)[1]
         reasoning = profile_ref["reasoning"]["requested"]
         execution_profile = registry.resolve(backend, profile_leaf, reasoning)
-        if execution_profile.reference(
+        current_profile_ref = execution_profile.reference(
             runtime_version=profile_ref["backend"]["runtime_version"],
             backend_material_digest=profile_ref["backend_material_digest"],
-        ) != profile_ref:
+        )
+        # Registry additions must not invalidate otherwise immutable attempts.
+        current_profile_ref["registry_digest"] = profile_ref["registry_digest"]
+        if current_profile_ref != profile_ref:
             raise ValueError("execution profile registry definition mismatch")
         permissions = spec["permissions"]
         if getattr(args, "add_dir", None) or trust_parent_sandbox:
@@ -290,14 +361,18 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
                 "feedback/final load additional write roots and parent sandbox trust from ExecutionSpec"
             )
         trust_parent_sandbox = permissions["trust_parent_sandbox"]
+    debug_stream = str(
+        debug_stream_value
+        if debug_stream_value is not None
+        else ("activity" if backend == "opencode" else "off")
+    )
+    if debug_stream != "off" and backend != "opencode":
+        raise ValueError("--debug-stream is supported only by the OpenCode backend")
     draft_format_path = session_dir / DRAFT_FORMAT_FILENAME
-    requested_draft_format = getattr(args, "draft_format", None)
     if phase == "draft":
-        draft_format = requested_draft_format or DEFAULT_DRAFT_FORMAT
+        draft_format = ARTIFACT_REPORT
         draft_format_pinned = True
     else:
-        if requested_draft_format is not None:
-            raise ValueError("--draft-format is valid only when creating a draft attempt")
         draft_format = _load_draft_format_pin(draft_format_path)
         draft_format_pinned = True
     assert execution_profile is not None
@@ -330,19 +405,57 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         else role_policy
     )
     profile = execution_profile.profile_id
+    feedback_mode = getattr(args, "feedback_mode", None) or "revision"
+    if phase != "feedback" and getattr(args, "feedback_mode", None) is not None:
+        raise ValueError("--feedback-mode is valid only for feedback")
+    if feedback_mode == "format-only" and backend != "opencode":
+        raise ValueError("format-only feedback currently requires the OpenCode backend")
 
     prompt, prompt_source_path, prompt_content_digest = _read_prompt(
         args.prompt_file, args.prompt, workspace
     )
-    task_write_scope = (
-        _task_write_scope(prompt, prompt_source_path, args.role)
-        if phase == "draft"
-        else (
+    contract: dict[str, Any] = {}
+    if phase == "draft":
+        task_metadata = _task_handoff_metadata(prompt, prompt_source_path, args.role)
+        task_write_scope = task_metadata.task_write_scope
+        context_mode = task_metadata.context_mode
+        result_report = task_metadata.result_report
+        direct_context = task_metadata.direct_context
+        verification_commands = task_metadata.verification_commands
+        execution_class = task_metadata.execution_class or _default_execution_class(
+            context_mode=context_mode, role=args.role, prompt=prompt
+        )
+        if context_mode == "direct" and backend != "opencode":
+            raise ValueError("Context Mode direct currently requires the OpenCode backend")
+    else:
+        task_write_scope = (
             tuple(spec["permissions"]["task_write_scope"])
             if spec is not None and spec["permissions"]["task_write_scope"] is not None
             else None
         )
-    )
+        contract = _load_handoff_contract(session_dir)
+        context_mode = contract.get("context_mode")
+        result_report = contract.get("result_report")
+        direct_context = tuple(
+            (item["path"], item["start"], item["end"])
+            for item in contract.get("direct_context", [])
+        )
+        verification_commands = tuple(
+            tuple(item) for item in contract.get("verification_commands", [])
+        )
+        execution_class = contract.get("execution_class") or _default_execution_class(
+            context_mode=context_mode, role=args.role, prompt=""
+        )
+    timeout_seconds = args.timeout
+    if phase != "draft":
+        pinned_timeout = contract.get("timeout_seconds")
+        if not isinstance(pinned_timeout, int) or isinstance(pinned_timeout, bool):
+            pinned_timeout = 600 if execution_class == "small" else 1200
+        if timeout_seconds is not None and timeout_seconds != pinned_timeout:
+            raise ValueError("continuation timeout must match the pinned draft timeout")
+        timeout_seconds = pinned_timeout
+    if timeout_seconds is None:
+        timeout_seconds = 600 if execution_class == "small" else 1200
     if phase == "draft":
         add_dir_values = args.add_dir
     else:
@@ -375,6 +488,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         model = execution_profile.provider_locator
         model_provider = execution_profile.provider
         backend_config_path = opencode_backend.config_path(session_dir / "opencode-runtime")
+        context_plugin = _opencode_context_plugin_config(session_dir, execution_profile)
         if existing_session is None:
             project_instructions = _workspace_agents_instructions(workspace)
             backend_config = opencode_backend.build_config(
@@ -386,6 +500,10 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
                 display_name=execution_profile.model["display_name"],
                 context_limit=execution_profile.model["context_limit"],
                 output_limit=execution_profile.model["output_limit"],
+                direct_mode=context_mode == "direct",
+                editable_paths=task_write_scope or (),
+                artifact_report_path=artifact_report_path.as_posix(),
+                context_plugin=context_plugin,
             )
             backend_config_digest = opencode_backend.config_digest(backend_config)
         else:
@@ -400,6 +518,8 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
                 if tool == "get_task_context"
             )
             sidecar_enabled = bool(
+                context_mode != "direct"
+                and
                 prompt_source_path
                 and re.fullmatch(r"management/tasks/T[0-9]{3,6}\.md", prompt_source_path)
                 and sidecar_tools
@@ -420,6 +540,10 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
                 for server, tools in permissions["mcp_effective_tools"].items()
             )
             mcp_context_project = permissions["bound_mcp_project"]
+            if phase == "feedback":
+                effective_mcp_servers = ()
+                effective_mcp_tools = ()
+                mcp_context_project = None
         request = SpawnRequest(
             backend=backend,
             phase=phase,
@@ -438,9 +562,11 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             prompt=prompt,
             prompt_source_path=prompt_source_path,
             prompt_content_digest=prompt_content_digest,
-            timeout_seconds=args.timeout,
+            timeout_seconds=timeout_seconds,
+            execution_class=execution_class,
             result_dir=result_dir,
             result_path=result_path,
+            artifact_report_path=artifact_report_path,
             session_dir=session_dir,
             session_path=session_path,
             draft_format=draft_format,
@@ -456,6 +582,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             add_dirs=add_dirs,
             trust_parent_sandbox=False,
             run_guard=False,
+            debug_stream=debug_stream,
             skill_files=skill_files,
             guidance_digest=guidance_digest,
             profile_file=backend_config_path,
@@ -477,6 +604,12 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             execution_spec=None,
             execution_profile=execution_profile,
             task_write_scope=task_write_scope,
+            context_mode=context_mode,
+            result_report=result_report,
+            direct_context=direct_context,
+            verification_commands=verification_commands,
+            result_status=result_status,
+            feedback_mode=feedback_mode,
             delegation=(
                 build_delegation(
                     team_id=team_id, task_id=task_id, attempt_id=attempt_id,
@@ -494,6 +627,10 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     effective_mcp_servers = tuple(
         server for server in effective_policy.mcp_servers if server in configured_mcp_servers
     )
+    if phase == "feedback":
+        effective_mcp_servers = ()
+    if phase == "draft" and context_mode == "direct":
+        effective_mcp_servers = ()
     missing_mcp_servers = tuple(
         server for server in effective_policy.mcp_servers if server not in configured_mcp_servers
     )
@@ -561,9 +698,11 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         prompt=prompt,
         prompt_source_path=prompt_source_path,
         prompt_content_digest=prompt_content_digest,
-        timeout_seconds=args.timeout,
+        timeout_seconds=timeout_seconds,
+        execution_class=execution_class,
         result_dir=result_dir,
         result_path=result_path,
+        artifact_report_path=artifact_report_path,
         session_dir=session_dir,
         session_path=session_path,
         draft_format=draft_format,
@@ -579,6 +718,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         add_dirs=add_dirs,
         trust_parent_sandbox=trust_parent_sandbox,
         run_guard=run_guard,
+        debug_stream=debug_stream,
         skill_files=skill_files,
         guidance_digest=guidance_digest,
         profile_file=profile_file,
@@ -596,6 +736,12 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         execution_spec=None,
         execution_profile=execution_profile,
         task_write_scope=task_write_scope,
+        context_mode=context_mode,
+        result_report=result_report,
+        direct_context=direct_context,
+        verification_commands=verification_commands,
+        result_status=result_status,
+        feedback_mode=feedback_mode,
         delegation=(
             build_delegation(
                 team_id=team_id, task_id=task_id, attempt_id=attempt_id,
@@ -700,19 +846,35 @@ def _validate_execution_spec_request(request: SpawnRequest, spec: dict[str, Any]
         runtime_version=request.backend_version,
         backend_material_digest=_backend_material_digest(request),
     )
+    expected_profile["registry_digest"] = spec["execution_profile"]["registry_digest"]
     if spec["execution_profile"] != expected_profile:
         raise ValueError("execution specification profile mismatch")
+    expected_effective_servers = (
+        spec["permissions"]["mcp_effective_servers"]
+        if request.phase == "feedback"
+        else list(request.effective_mcp_servers)
+    )
+    expected_effective_tools = (
+        spec["permissions"]["mcp_effective_tools"]
+        if request.phase == "feedback"
+        else {server: list(tools) for server, tools in request.effective_mcp_tools}
+    )
+    expected_bound_project = (
+        spec["permissions"]["bound_mcp_project"]
+        if request.phase == "feedback"
+        else request.mcp_context_project
+    )
     if spec["permissions"] != {
         "effective_policy_digest": effective_policy_digest(request.effective_role_policy),
         "sandbox_mode": request.effective_role_policy.sandbox_mode,
         "trust_parent_sandbox": request.trust_parent_sandbox,
         "additional_write_roots": [str(path) for path in request.add_dirs],
         "mcp_allowed_servers": list(request.effective_role_policy.mcp_servers),
-        "mcp_effective_servers": list(request.effective_mcp_servers),
+        "mcp_effective_servers": expected_effective_servers,
         "mcp_missing_servers": list(request.missing_mcp_servers),
         "mcp_allowed_tools": {server: list(tools) for server, tools in request.effective_role_policy.mcp_tools},
-        "mcp_effective_tools": {server: list(tools) for server, tools in request.effective_mcp_tools},
-        "bound_mcp_project": request.mcp_context_project,
+        "mcp_effective_tools": expected_effective_tools,
+        "bound_mcp_project": expected_bound_project,
         "task_write_scope": (
             list(request.task_write_scope)
             if request.task_write_scope is not None
@@ -737,6 +899,24 @@ def _backend_material_digest(request: SpawnRequest) -> str:
             raise ValueError("OpenCode execution profile requires backend config digest")
         return request.backend_config_digest
     return hashlib.sha256(request.profile_file.read_bytes()).hexdigest()
+
+
+def _opencode_context_plugin_config(
+    session_dir: Path,
+    profile: ResolvedExecutionProfile,
+) -> dict[str, str] | None:
+    if profile.backend_id != "opencode" or profile.profile_id != "qwen38-27b-context":
+        return None
+    effort = profile.effective_reasoning
+    if effort not in {"low", "medium", "high"}:
+        raise ValueError("OpenCode Qwen 3.8 requires explicit low, medium, or high reasoning")
+    runtime_root = session_dir / "opencode-runtime"
+    return {
+        "path": str(opencode_backend.context_plugin_path(runtime_root)),
+        "archive_root": str(opencode_backend.context_archive_path(session_dir)),
+        "digest": opencode_backend.context_plugin_digest(),
+        "reasoning_effort": effort,
+    }
 
 
 def _execution_reasoning(
@@ -805,7 +985,20 @@ def prepare_turn(request: SpawnRequest) -> TurnContext:
     )
 
 
-def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[dict[str, Any], int]:
+def run_spawn(
+    request: SpawnRequest,
+    *,
+    executable: str | None = None,
+    _lock_held: bool = False,
+) -> tuple[dict[str, Any], int]:
+    if request.phase == "feedback" and not _lock_held:
+        lock_path = _acquire_attempt_lock(request)
+        try:
+            return run_spawn(request, executable=executable, _lock_held=True)
+        finally:
+            lock_path.unlink(missing_ok=True)
+    if request.phase == "final":
+        return _seal_semantic_result(request)
     executable = executable or request.backend
     adapter = adapter_for(request.backend)
     backend_version = adapter.preflight(request, executable)
@@ -829,7 +1022,7 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
     )
     trusted_baseline: dict[str, str] | None = None
     trusted_baseline_digest: str | None = None
-    if request.backend == "opencode":
+    if request.backend == "opencode" or request.draft_format == ARTIFACT_REPORT:
         expected_baseline = (
             turn.session.get("workspace_baseline_sha256") if turn.session else None
         )
@@ -843,6 +1036,11 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
     if request.backend == "opencode" and request.phase == "final":
         _ensure_accepted_checkpoint(request, turn)
     before_workspace = snapshot_workspace(request.workspace)
+    prior_artifact_report_bytes = (
+        request.artifact_report_path.read_bytes()
+        if request.artifact_report_path.is_file() and not request.artifact_report_path.is_symlink()
+        else None
+    )
     before_additional = tuple(snapshot_workspace(path) for path in request.add_dirs)
     prior_turn_state_bytes = (
         turn.state_path.read_bytes() if turn.state_path.is_file() else None
@@ -852,7 +1050,11 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
     command = build_command(request, turn, executable=executable)
     worker_prompt = build_prompt(request, turn)
     sidecar_provenance: dict[str, Any] | None = None
-    if request.backend == "opencode" and "codexteam-context" in request.effective_mcp_servers:
+    if (
+        request.phase == "draft"
+        and request.backend == "opencode"
+        and "codexteam-context" in request.effective_mcp_servers
+    ):
         context, sidecar_provenance = _opencode_task_context(request)
         if context is not None:
             worker_prompt += (
@@ -872,6 +1074,7 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
         events_path=turn.events_path,
         stderr_path=turn.stderr_path,
         run_guard=request.run_guard,
+        debug_stream=request.debug_stream,
     )
     if delegation_before is not None:
         if delegation_path.is_symlink() or not delegation_path.is_file():
@@ -895,6 +1098,17 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
         changed_paths,
         task_write_scope=request.task_write_scope,
     )
+    report_relative = request.artifact_report_path.relative_to(request.workspace).as_posix()
+    boundary_errors = [
+        error for error in boundary_errors
+        if not error.endswith(f"changing {report_relative}")
+    ]
+    if request.feedback_mode == "format-only":
+        boundary_errors.extend(
+            f"format-only feedback does not allow changing {path}"
+            for path in changed_paths
+            if path != report_relative
+        )
     for root, before, after in zip(
         request.add_dirs, before_additional, after_additional, strict=True
     ):
@@ -1034,15 +1248,39 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
             errors=failure_errors + boundary_errors,
         ), failure_code
 
+    if (
+        request.context_mode == "direct"
+        and request.phase in {"draft", "feedback"}
+        and not boundary_errors
+    ):
+        _, direct_errors = _run_direct_verification(request)
+        if direct_errors:
+            boundary_errors.extend(direct_errors)
+        else:
+            try:
+                semantic = _direct_semantic_result(request)
+                message = json.dumps(semantic, sort_keys=True, separators=(",", ":"))
+                atomic_write_text(turn.message_path, message + "\n")
+                atomic_write_json(request.artifact_report_path, semantic)
+            except (OSError, ValueError) as exc:
+                boundary_errors.append(f"direct result report invalid: {exc}")
+
     if boundary_errors:
+        if request.feedback_mode == "format-only":
+            _restore_format_only_report(request, prior_artifact_report_bytes)
+            for relative in changed_paths:
+                if relative != report_relative and relative not in before_workspace:
+                    path = contained_path(request.workspace, relative, label="format-only cleanup")
+                    if path.is_file() or path.is_symlink():
+                        path.unlink()
         session = _session_record(
             request,
             turn,
             thread_id=thread_id,
             status="correction_needed",
             process=process,
-            change_actions=change_actions,
-            workspace_snapshot=after_workspace,
+            change_actions={},
+            workspace_snapshot=before_workspace,
             trusted_baseline=trusted_baseline,
             trusted_baseline_digest=trusted_baseline_digest,
         )
@@ -1064,7 +1302,7 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
             errors=boundary_errors,
         ), 1
 
-    if not message:
+    if not message and request.phase not in {"draft", "feedback"}:
         session = _session_record(
             request,
             turn,
@@ -1095,8 +1333,10 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
         ), 1
 
     if request.phase in {"draft", "feedback"}:
-        draft, draft_errors = _draft_from_message(request, message)
+        draft, draft_errors = _artifact_report_from_file(request)
         if draft is None:
+            if request.feedback_mode == "format-only":
+                _restore_format_only_report(request, prior_artifact_report_bytes)
             session = _session_record(
                 request,
                 turn,
@@ -1125,6 +1365,23 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
                 thread_id=thread_id,
                 errors=draft_errors,
             ), 1
+        checkpoint_error = _complex_checkpoint_error(request, draft)
+        if checkpoint_error is not None:
+            session = _session_record(
+                request, turn, thread_id=thread_id, status="correction_needed",
+                process=process, change_actions=change_actions,
+                workspace_snapshot=after_workspace, trusted_baseline=trusted_baseline,
+                trusted_baseline_digest=trusted_baseline_digest,
+            )
+            _write_session(request.session_path, session)
+            _write_turn_state(
+                request, turn, status="correction_needed", process=process,
+                changed_paths=changed_paths, errors=[checkpoint_error], thread_id=thread_id,
+            )
+            return _turn_outcome(
+                request, turn, status="correction_needed", thread_id=thread_id,
+                errors=[checkpoint_error],
+            ), 1
         _write_turn_state(
             request,
             turn,
@@ -1145,6 +1402,8 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
             trusted_baseline=trusted_baseline,
             trusted_baseline_digest=trusted_baseline_digest,
         )
+        if request.execution_class == "complex":
+            session["complex_checkpoint"] = draft["checkpoint"]
         _write_session(request.session_path, session)
         return _turn_outcome(
             request,
@@ -1231,12 +1490,190 @@ def run_spawn(request: SpawnRequest, *, executable: str | None = None) -> tuple[
     return result, 0 if result["status"] in {"completed", "needs_review"} else 1
 
 
+def _restore_format_only_report(
+    request: SpawnRequest,
+    prior: bytes | None,
+) -> None:
+    if prior is None:
+        request.artifact_report_path.unlink(missing_ok=True)
+    else:
+        request.artifact_report_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(request.artifact_report_path, prior.decode("utf-8"))
+
+
+def _seal_semantic_result(request: SpawnRequest) -> tuple[dict[str, Any], int]:
+    lock_path = _acquire_attempt_lock(request)
+    try:
+        return _seal_semantic_result_locked(request)
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def _acquire_attempt_lock(request: SpawnRequest) -> Path:
+    lock_path = request.session_dir / "turn.lock"
+    if lock_path.is_file() and not lock_path.is_symlink():
+        try:
+            owner = int(lock_path.read_text(encoding="ascii").strip())
+            os.kill(owner, 0)
+        except ProcessLookupError:
+            lock_path.unlink(missing_ok=True)
+        except (OSError, ValueError):
+            pass
+    try:
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.write(descriptor, str(os.getpid()).encode("ascii"))
+        os.close(descriptor)
+    except FileExistsError as exc:
+        raise ValueError("another attempt turn is already in progress") from exc
+    return lock_path
+
+
+def _seal_semantic_result_locked(request: SpawnRequest) -> tuple[dict[str, Any], int]:
+    turn = prepare_turn(request)
+    _prepare_session_storage(request, initial=False, session=turn.session)
+    _verify_execution_spec_immutable(request)
+    _ensure_accepted_checkpoint(request, turn)
+    assert turn.session is not None
+    checkpoint = turn.session["accepted_checkpoint"]
+    if request.execution_class == "complex":
+        required = "development_gate" if request.role == "developer" else "integration_evidence" if request.role == "tester" else "final_report"
+        if turn.session.get("complex_checkpoint") != required:
+            raise ValueError(
+                f"finalization requires accepted complex checkpoint {required!r}"
+            )
+    baseline = _load_workspace_baseline(
+        request,
+        expected_digest=turn.session["workspace_baseline_sha256"],
+    )
+    current_snapshot = snapshot_workspace(request.workspace)
+    current_changed = changed_workspace_paths(baseline, current_snapshot)
+    current_manifest = _accepted_product_paths(_merge_worker_change_manifest(
+        baseline,
+        {},
+        _workspace_change_actions(baseline, current_snapshot, current_changed),
+        current_snapshot,
+    ))
+    current_role_manifest = {
+        path: item
+        for path, item in current_manifest.items()
+        if request.effective_role_policy.allows_change(path)
+    }
+    if (
+        turn.session.get("last_status") != "draft_ready"
+        or checkpoint.get("turn_number") != turn.session.get("turn_count")
+        or _accepted_product_paths(turn.session.get("worker_change_manifest", {}))
+        != checkpoint.get("accepted_paths")
+        or current_role_manifest != checkpoint.get("accepted_paths")
+    ):
+        raise ValueError(
+            "finalization requires the latest worker turn and change manifest to be accepted"
+        )
+    semantic, report_errors = _artifact_report_from_file(request, pin_evidence=False)
+    if semantic is None:
+        raise ValueError("accepted artifact report is invalid: " + "; ".join(report_errors))
+    accepted_paths = checkpoint["accepted_paths"]
+    file_changes = [
+        {"path": path, "action": item["action"]}
+        for path, item in sorted(accepted_paths.items())
+    ]
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    result = {
+        "schema_version": "1.0",
+        "result_id": f"res-{request.task_id.lower()}-{request.attempt_id}",
+        "team_id": request.team_id,
+        "task_id": request.task_id,
+        "agent_role": request.role,
+        "attempt_id": request.attempt_id,
+        "status": request.result_status,
+        "summary": semantic["summary"],
+        "output": {
+            "exit_code": 0,
+            "stdout_tail": "",
+            "stderr_tail": "",
+            "duration_seconds": 0.0,
+        },
+        "file_changes": [] if request.role == "git_steward" else file_changes,
+        "evidence": [
+            {
+                "type": "artifact",
+                "artifact_ref": relative,
+                "summary": "Worker-reported evidence artifact.",
+            }
+            for relative in semantic["evidence"]
+        ],
+        "requested_followups": [],
+        "errors": [],
+        "warnings": [],
+        "limitations": semantic["limitations"],
+        "produced_at": now,
+    }
+    validate_result(
+        result,
+        expected_task=request.task_id,
+        expected_team=request.team_id,
+        expected_attempt=request.attempt_id,
+        expected_role=request.role,
+        expected_status=request.result_status,
+    )
+    artifact_errors = _result_artifact_errors(request, result)
+    policy_errors = _result_policy_errors(request, result)
+    if artifact_errors or policy_errors:
+        raise ValueError("deterministic final result validation failed: " + "; ".join(
+            artifact_errors + policy_errors
+        ))
+    process = ProcessResult(0, "", "", 0.0)
+    prior_session = request.session_path.read_bytes()
+    prior_state = turn.state_path.read_bytes() if turn.state_path.is_file() else None
+    created_result = False
+    try:
+        turn.message_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(turn.lead_prompt_path, request.prompt)
+        atomic_write_json(turn.message_path, result)
+        request.result_dir.mkdir(parents=True, exist_ok=True)
+        create_json(request.result_path, result)
+        created_result = True
+        session = _session_record(
+            request,
+            turn,
+            thread_id=turn.session["thread_id"],
+            status="finalized",
+            process=process,
+            trusted_baseline=baseline,
+            trusted_baseline_digest=turn.session["workspace_baseline_sha256"],
+            workspace_snapshot=current_snapshot,
+            final_result_path=request.result_path.relative_to(request.workspace).as_posix(),
+        )
+        _write_session(request.session_path, session)
+        _write_turn_state(
+            request,
+            turn,
+            status="finalized",
+            process=process,
+            changed_paths=(),
+            thread_id=turn.session["thread_id"],
+        )
+    except Exception:
+        if created_result:
+            request.result_path.unlink(missing_ok=True)
+        atomic_write_text(request.session_path, prior_session.decode("utf-8"))
+        if prior_state is None:
+            turn.state_path.unlink(missing_ok=True)
+        else:
+            atomic_write_text(turn.state_path, prior_state.decode("utf-8"))
+        turn.message_path.unlink(missing_ok=True)
+        turn.lead_prompt_path.unlink(missing_ok=True)
+        raise
+    return result, 0 if request.result_status in {"completed", "needs_review"} else 1
+
+
 def build_command(
     request: SpawnRequest,
     turn: TurnContext,
     *,
     executable: str | None = None,
 ) -> list[str]:
+    if request.phase == "final":
+        return []
     executable = executable or request.backend
     adapter = adapter_for(request.backend)
     if turn.is_initial:
@@ -1364,51 +1801,19 @@ def _mcp_override_args(request: SpawnRequest) -> list[str]:
 def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
     if request.phase == "feedback":
         return (
-            "[CODEXTEAM FEEDBACK TURN]\n"
-            f"Continue the existing {request.task_id}/{request.attempt_id} assignment as the same responsible AI.\n"
-            "Apply the Project Lead's feedback while preserving accepted work. Run relevant verification.\n"
-            + _draft_response_instruction(request, feedback=True)
-            + "Do not emit result and do not close canonical project state.\n\n"
-            f"[PROJECT LEAD FEEDBACK]\n{request.prompt.strip()}\n"
+            f"[CODEXTEAM FEEDBACK {request.feedback_mode}]\n"
+            f"Task: {request.task_id}/{request.attempt_id}\n"
+            f"Correction: {request.prompt.strip()}\n"
+            "Preserve: accepted workspace changes.\n"
+            f"Output: update {request.artifact_report_path.relative_to(request.workspace).as_posix()}.\n"
+            + (
+                "Use only edit or write on the artifact report; no other tools or file changes are allowed.\n"
+                if request.feedback_mode == "format-only"
+                else "Apply only the correction delta; do not rediscover context.\n"
+            )
         )
     if request.phase == "final":
-        checkpoint_note = ""
-        if request.backend == "opencode":
-            checkpoint = turn.session.get("accepted_checkpoint", {}) if turn.session else {}
-            checkpoint_note = (
-                "Immutable accepted draft checkpoint:\n"
-                f"{json.dumps(checkpoint, indent=2, sort_keys=True)}\n"
-                "Re-anchor every claim to this checkpoint. Do not run commands or modify files.\n"
-            )
-        return (
-            "[CODEXTEAM FINALIZATION TURN]\n"
-            f"The Project Lead accepted the draft for {request.task_id}/{request.attempt_id}.\n"
-            "Return one JSON object matching the result contract, with no prose.\n"
-            "Use the complete attempt and real evidence without inventing evidence or expanding scope.\n"
-            "Set these identity fields exactly:\n"
-            "schema_version: 1.0\n"
-            f"team_id: {request.team_id}\n"
-            f"task_id: {request.task_id}\n"
-            f"agent_role: {request.role}\n"
-            f"attempt_id: {request.attempt_id}\n"
-            "Include every required top-level key: schema_version, result_id, team_id, task_id, "
-            "agent_role, attempt_id, status, summary, output, file_changes, evidence, "
-            "requested_followups, errors, warnings, limitations, and produced_at.\n"
-            "Every created or modified file and every evidence artifact_ref must be an actual existing "
-            "project-relative path. Summarize relevant commands in evidence summary, never artifact_ref. Use empty arrays "
-            "when there are no entries. "
-            f"Allowed evidence types for this effective policy: {', '.join(request.effective_role_policy.allowed_evidence_types)}.\n"
-            + (
-                "The Git Steward model changed no project files; file_changes must be empty because the "
-                "deterministic executor owns Git mutation.\n"
-                if request.role == "git_steward"
-                else ""
-            )
-            + "Runtime identity, UTC produced_at, and process output are normalized by the launcher.\n"
-            + checkpoint_note
-            + "\n"
-            f"[PROJECT LEAD DECISION]\n{request.prompt.strip()}\n"
-        )
+        return "Finalization is deterministic and does not invoke a provider.\n"
 
     skills = []
     prompt_skill_files = request.skill_files
@@ -1446,6 +1851,7 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
                 "Do not launch it from this worker; request one same-digest host record from "
                 "the Project Lead and independently classify that evidence.\n"
             )
+    direct_context_note = _direct_context_instruction(request)
     return (
         "[CODEXTEAM HANDOFF]\n"
         f"{json.dumps(handoff, indent=2)}\n"
@@ -1453,12 +1859,30 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
         f"({request.role_policy.digest[:12]}).\n"
         + context_binding
         + gate_note
+        + direct_context_note
         + "You are the responsible AI for this task and logical attempt. Work only inside the assigned workspace "
         "and additional explicitly writable directories.\n"
         "Read relevant files before editing. Run task-relevant verification. Do not invent evidence.\n"
         + _draft_response_instruction(request, feedback=False)
         + "Do not emit result and do not close canonical project state; the Project Lead will review this draft.\n"
         + "".join(skills)
+    )
+
+
+def _direct_context_instruction(request: SpawnRequest) -> str:
+    if request.context_mode != "direct":
+        return ""
+    contract = _load_handoff_contract(request.session_dir)
+    sections = [
+        f"[DIRECT CONTEXT: {item['path']}:{item['start']}-{item['end']}]\n{item['content']}"
+        for item in contract.get("direct_context", [])
+    ]
+    return (
+        "Direct context is complete and authoritative. Discovery and shell tools are disabled. "
+        "Edit only scoped paths, write the required report, and return a short completion sentence; "
+        "the launcher owns verification and result construction.\n\n"
+        + "\n".join(sections)
+        + "\n"
     )
 
 
@@ -1482,6 +1906,8 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
         "task_context": {
             "prompt": request.prompt,
             "guidance_files": [path.name for path in request.skill_files],
+            "context_mode": request.context_mode,
+            "execution_class": request.execution_class,
         },
         "instruction_bundle": {
             "digest": request.guidance_digest,
@@ -1492,6 +1918,7 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
             "additional_writable_directories": [str(path) for path in request.add_dirs],
             "trust_parent_sandbox": request.trust_parent_sandbox,
             "timeout_seconds": request.timeout_seconds,
+            "execution_class": request.execution_class,
             "gate_routing": _gate_routing(request),
             "draft_format": request.draft_format,
             "task_write_scope": (
@@ -1511,19 +1938,16 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
 
 
 def _draft_response_instruction(request: SpawnRequest, *, feedback: bool) -> str:
-    if request.draft_format == COMPACT_JSON_DRAFT:
-        return (
-            "Return one JSON object matching the compact JSON draft contract, with no prose or Markdown fence. "
-            "Required fields: schema_version=1.0, outcome, evidence, findings, limitations, and "
-            "proposed_disposition. Evidence entries contain only artifact_ref and summary; artifact_ref "
-            "must be an existing project-relative path. Use empty arrays when none. proposed_disposition "
-            "is ready_for_review, correction_needed, or blocked. Bounds: outcome 1200 characters; each "
-            "array 8 items; each array text or reference 500 characters; no unknown fields.\n"
-        )
-    suffix = " State how the feedback was addressed." if feedback else ""
+    checkpoint = _required_complex_checkpoint(request)
+    checkpoint_text = (
+        f" For this complex stage set checkpoint={checkpoint!r}."
+        if checkpoint is not None else ""
+    )
     return (
-        f"Return a conversational draft headed 'DRAFT {request.task_id}/{request.attempt_id}' with sections "
-        f"Outcome, Evidence, Uncertainties or conflicts, and Proposed disposition.{suffix}\n"
+        f"Write the artifact report at {request.artifact_report_path.relative_to(request.workspace).as_posix()} "
+        "as one JSON object with version=1, non-empty summary, evidence path strings, and limitations strings. "
+        "Unknown fields are allowed. Terminal output is diagnostic only."
+        + checkpoint_text + "\n"
     )
 
 
@@ -1635,6 +2059,131 @@ def role_boundary_errors(
     return errors
 
 
+def _run_direct_verification(request: SpawnRequest) -> tuple[list[dict[str, Any]], list[str]]:
+    records: list[dict[str, Any]] = []
+    errors: list[str] = []
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key in {"PATH", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT", "WINDIR"}
+    }
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    gate_record: dict[str, Any] | None = None
+    try:
+        if not request.gate_routing or request.gate_routing["execution_surface"] != "worker":
+            raise ValueError("direct verification requires a worker-surface gate")
+        gate = request.gate_routing["gate"]
+        prefix = tuple(_direct_verification_command(request.workspace, ()))
+        gate_record = run_gate(
+            request.workspace,
+            gate,
+            execution_surface="worker",
+            command_prefix=prefix,
+            environment=environment,
+        )
+        records = list(gate_record["commands"])
+        if gate_record.get("status") != "passed":
+            errors.append(f"{gate} gate failed")
+    except (OSError, GateConfigError, ValueError) as exc:
+        errors.append(f"verification infrastructure failed: {exc}")
+    check_path = contained_path(
+        request.workspace,
+        f"{CHECK_RECORD_ROOT}/{request.task_id}-{request.attempt_id}.json",
+        label="direct verification record",
+    )
+    atomic_write_json(check_path, {
+        "schema_version": "1.0",
+        "task_id": request.task_id,
+        "attempt_id": request.attempt_id,
+        "status": "passed" if not errors else "failed",
+        "commands": records,
+        "gate": (
+            {
+                "name": request.gate_routing["gate"],
+                "artifact_ref": gate_record_path(
+                    request.workspace, request.gate_routing["gate"]
+                ).relative_to(request.workspace).as_posix(),
+                "status": gate_record.get("status") if gate_record else "not_run",
+            }
+            if request.gate_routing and request.gate_routing["execution_surface"] == "worker"
+            else None
+        ),
+    })
+    return records, errors
+
+
+def _direct_semantic_result(request: SpawnRequest) -> dict[str, Any]:
+    if request.result_report is None:
+        raise ValueError("direct result report is missing")
+    report = contained_path(request.workspace, request.result_report, label="result report")
+    if report.is_symlink() or not report.is_file():
+        raise ValueError(f"result report is missing or unsafe: {request.result_report}")
+    content = report.read_bytes()
+    if not content or len(content) > 64 * 1024:
+        raise ValueError("result report must contain 1 to 65536 bytes")
+    try:
+        report_text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("result report must be UTF-8") from exc
+    dispositions = re.findall(
+        r"^Disposition:\s*(ready_for_review|blocked)\s*$",
+        report_text,
+        re.MULTILINE,
+    )
+    if dispositions != ["ready_for_review"]:
+        raise ValueError(
+            "result report must contain exactly one 'Disposition: ready_for_review' line"
+        )
+    check_ref = f"{CHECK_RECORD_ROOT}/{request.task_id}-{request.attempt_id}.json"
+    evidence = [{
+        "type": "artifact",
+        "artifact_ref": request.result_report,
+        "summary": "Worker task report.",
+    }, {
+        "type": "test_output",
+        "artifact_ref": check_ref,
+        "summary": "Launcher-owned focused verification record.",
+    }]
+    if request.gate_routing and request.gate_routing["execution_surface"] == "worker":
+        gate_ref = gate_record_path(
+            request.workspace, request.gate_routing["gate"]
+        ).relative_to(request.workspace).as_posix()
+        evidence.append({
+            "type": "test_output",
+            "artifact_ref": gate_ref,
+            "summary": f"Launcher-owned {request.gate_routing['gate']} gate record.",
+        })
+    semantic = {
+        "version": 1,
+        "summary": f"{request.role} completed {request.task_id}; see {request.result_report}.",
+        "evidence": [item["artifact_ref"] for item in evidence],
+        "limitations": ["See the task report for detailed limitations."],
+    }
+    atomic_write_json(request.artifact_report_path, semantic)
+    return semantic
+
+
+def _direct_verification_command(
+    workspace: Path,
+    command: tuple[str, ...],
+) -> list[str]:
+    executable = shutil.which("bwrap")
+    if executable is None:
+        raise ValueError("direct verification requires bubblewrap")
+    return [
+        executable,
+        "--unshare-all",
+        "--die-with-parent",
+        "--new-session",
+        "--ro-bind", "/", "/",
+        "--tmpfs", "/tmp",
+        "--proc", "/proc",
+        "--dev", "/dev",
+        "--chdir", str(workspace),
+        "--",
+        *command,
+    ]
+
+
 def _workspace_scan_excluded(relative: str) -> bool:
     return any(
         relative == prefix or relative.startswith(prefix + "/")
@@ -1643,7 +2192,13 @@ def _workspace_scan_excluded(relative: str) -> bool:
 
 
 def _acceptance_path_excluded(relative: str) -> bool:
+    if re.fullmatch(r"results/reports/T[0-9]{3,6}-[A-Za-z0-9._-]+\.json", relative):
+        return True
+    if relative == CHECK_RECORD_ROOT or relative.startswith(CHECK_RECORD_ROOT + "/"):
+        return True
     if relative == "results/gates" or relative.startswith("results/gates/"):
+        return True
+    if re.fullmatch(r"results/T[0-9]{3,6}-att-[0-9]{3}\.json", relative):
         return True
     return any(
         relative == prefix or relative.startswith(prefix + "/")
@@ -1661,39 +2216,22 @@ def run_process(
     events_path: Path | None = None,
     stderr_path: Path | None = None,
     run_guard: bool = False,
+    debug_stream: str = "off",
 ) -> ProcessResult:
-    if run_guard:
-        return _run_guarded_process(
-            command,
-            prompt=prompt,
-            timeout_seconds=timeout_seconds,
-            env=env,
-            cwd=cwd,
-            events_path=events_path,
-            stderr_path=stderr_path,
-        )
-
-    started = time.monotonic()
-    process = subprocess.Popen(
+    return _run_streaming_process(
         command,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
+        prompt=prompt,
+        timeout_seconds=timeout_seconds,
         env=env,
         cwd=cwd,
+        events_path=events_path,
+        stderr_path=stderr_path,
+        run_guard=run_guard,
+        debug_stream=debug_stream,
     )
-    try:
-        stdout, stderr = process.communicate(prompt, timeout=timeout_seconds)
-        return ProcessResult(process.returncode, stdout, stderr, time.monotonic() - started)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        stdout, stderr = process.communicate()
-        return ProcessResult(124, stdout, stderr, time.monotonic() - started, timed_out=True)
 
 
-def _run_guarded_process(
+def _run_streaming_process(
     command: list[str],
     *,
     prompt: str,
@@ -1702,6 +2240,8 @@ def _run_guarded_process(
     cwd: Path | None,
     events_path: Path | None,
     stderr_path: Path | None,
+    run_guard: bool,
+    debug_stream: str,
 ) -> ProcessResult:
     started = time.monotonic()
     process = subprocess.Popen(
@@ -1740,7 +2280,7 @@ def _run_guarded_process(
     except BrokenPipeError:
         process.stdin.close()
 
-    guard = ExactFailedRepeatGuard()
+    guard = ExactFailedRepeatGuard() if run_guard else None
     guard_reason: str | None = None
     guard_deadline: float | None = None
     force_killed = False
@@ -1748,11 +2288,24 @@ def _run_guarded_process(
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
     completed_streams: set[str] = set()
+    event_count = 0
+    model_step_count = 0
+    last_tool: str | None = None
+    last_progress_at = started
     event_handle = _open_live_stream(events_path)
     error_handle = _open_live_stream(stderr_path)
     try:
         while len(completed_streams) < 2:
             now = time.monotonic()
+            if now - last_progress_at >= PROGRESS_INTERVAL_SECONDS:
+                print(
+                    "Worker progress: "
+                    f"{event_count} events, {model_step_count} model steps, "
+                    f"last tool {last_tool or '-'}, {int(now - started)}s elapsed",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                last_progress_at = now
             if guard_reason is None and not timed_out and now - started >= timeout_seconds:
                 timed_out = True
                 _signal_process_group(process, signal.SIGKILL)
@@ -1776,7 +2329,19 @@ def _run_guarded_process(
             if stream_name == "stdout":
                 stdout_chunks.append(chunk)
                 _write_live_chunk(event_handle, chunk)
-                if guard_reason is None and not timed_out:
+                event_type, tool = _safe_progress_event(chunk)
+                if event_type is not None:
+                    event_count += 1
+                    model_step_count += int(event_type == "step_finish")
+                if tool is not None:
+                    last_tool = tool
+                _print_debug_event(
+                    chunk,
+                    debug_stream,
+                    workspace=cwd,
+                    step_ordinal=model_step_count,
+                )
+                if guard is not None and guard_reason is None and not timed_out:
                     decision = guard.observe_line(chunk)
                     if decision is not None:
                         guard_reason = decision.reason
@@ -1797,6 +2362,20 @@ def _run_guarded_process(
             reader.join(timeout=1.0)
 
     exit_code = 124 if timed_out else process.returncode
+    if debug_stream == "activity":
+        process_status = (
+            "timed_out" if timed_out else
+            "interrupted" if guard_reason is not None else
+            "completed" if exit_code == 0 else
+            "failed"
+        )
+        print(
+            f"[worker process] {process_status}\n"
+            f"  exit: {exit_code}\n"
+            f"  duration: {_debug_duration_ms((time.monotonic() - started) * 1000)}",
+            file=sys.stderr,
+            flush=True,
+        )
     return ProcessResult(
         exit_code,
         "".join(stdout_chunks),
@@ -1835,6 +2414,330 @@ def _write_live_chunk(handle: Any, chunk: str) -> None:
         return
     handle.write(chunk)
     handle.flush()
+
+
+def _safe_progress_event(line: str) -> tuple[str | None, str | None]:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None, None
+    if not isinstance(event, dict):
+        return None, None
+    event_type = event.get("type")
+    safe_event = event_type if event_type in SAFE_PROGRESS_EVENT_TYPES else "unknown"
+    tool: str | None = None
+    if event_type == "tool_use":
+        part = event.get("part")
+        raw_tool = part.get("tool") if isinstance(part, dict) else None
+        tool = raw_tool if raw_tool in SAFE_PROGRESS_TOOLS else "unknown"
+    return safe_event, tool
+
+
+def _print_debug_event(
+    line: str,
+    mode: str,
+    *,
+    workspace: Path | None = None,
+    step_ordinal: int = 0,
+) -> None:
+    if mode == "off":
+        return
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(event, dict):
+        return
+    event_type = event.get("type")
+    part = event.get("part")
+    if event_type == "text" and isinstance(part, dict):
+        text = part.get("text")
+        if isinstance(text, str) and text:
+            print(
+                f"[worker assistant]\n{_debug_terminal_text(text)}",
+                file=sys.stderr,
+                flush=True,
+            )
+        return
+    if event_type == "error":
+        print("[worker error] provider error reported; see private JSONL", file=sys.stderr, flush=True)
+        return
+    if mode != "activity" or not isinstance(part, dict):
+        return
+    if event_type == "tool_use":
+        print(
+            "\n".join(_activity_tool_lines(part, workspace)),
+            file=sys.stderr,
+            flush=True,
+        )
+    elif event_type == "step_finish":
+        print(
+            "\n".join(_activity_step_lines(part, step_ordinal)),
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def _activity_tool_lines(part: dict[str, Any], workspace: Path | None) -> list[str]:
+    tool_name = _debug_label(part.get("tool"))
+    state = part.get("state")
+    state = state if isinstance(state, dict) else {}
+    status_name = _debug_label(state.get("status"))
+    inputs = state.get("input")
+    inputs = inputs if isinstance(inputs, dict) else {}
+    metadata = state.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    lines = [f"[worker tool] {tool_name} {status_name}"]
+
+    if tool_name == "read":
+        _append_activity_path(lines, "target", inputs.get("filePath"), workspace)
+        _append_optional(lines, "offset", inputs.get("offset"))
+        _append_optional(lines, "limit", inputs.get("limit"))
+    elif tool_name == "grep":
+        _append_redacted(lines, "query", inputs.get("pattern"))
+        _append_activity_path(lines, "path", inputs.get("path"), workspace)
+        _append_redacted(lines, "include", inputs.get("include"))
+    elif tool_name == "glob":
+        _append_redacted(lines, "pattern", inputs.get("pattern"))
+        _append_activity_path(lines, "path", inputs.get("path"), workspace)
+    elif tool_name == "bash":
+        command = inputs.get("command")
+        if isinstance(command, str) and command:
+            if workspace is not None:
+                command = command.replace(str(workspace.resolve(strict=False)), ".")
+            _append_redacted(lines, "command", command)
+        _append_activity_path(lines, "workdir", inputs.get("workdir"), workspace)
+    elif tool_name in {"write", "edit"}:
+        path_value = inputs.get("filePath") or inputs.get("path")
+        _append_activity_path(lines, "target", path_value, workspace)
+        if tool_name == "write":
+            _append_content_size(lines, "content", inputs.get("content"))
+        else:
+            _append_content_size(lines, "old text", inputs.get("oldString"))
+            _append_content_size(lines, "new text", inputs.get("newString"))
+    elif tool_name == "apply_patch":
+        patch = inputs.get("patchText")
+        patch = patch if isinstance(patch, str) else ""
+        paths = re.findall(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", patch, re.MULTILINE)
+        if paths:
+            rendered = ", ".join(_activity_path(path, workspace) for path in paths[:8])
+            lines.append(f"  targets: {rendered}")
+        lines.append(f"  actions: {len(paths)}")
+    elif tool_name == "webfetch":
+        _append_redacted(lines, "url", inputs.get("url"))
+        _append_redacted(lines, "format", inputs.get("format"))
+    elif tool_name == "skill":
+        _append_redacted(lines, "skill", inputs.get("name"))
+    elif tool_name == "task":
+        _append_redacted(lines, "agent", inputs.get("subagent_type"))
+    elif tool_name == "question":
+        questions = inputs.get("questions")
+        lines.append(f"  questions: {len(questions) if isinstance(questions, list) else 0}")
+    elif tool_name == "todowrite":
+        todos = inputs.get("todos")
+        lines.append(f"  items: {len(todos) if isinstance(todos, list) else 0}")
+    else:
+        safe_keys = sorted(
+            str(key) for key in inputs
+            if str(key).casefold() not in {
+                "content", "output", "patch", "patchtext", "prompt", "text"
+            }
+        )
+        if safe_keys:
+            lines.append(f"  input fields: {', '.join(safe_keys[:12])}")
+
+    duration = _activity_duration_ms(state.get("time"))
+    if duration is not None:
+        lines.append(f"  duration: {_debug_duration_ms(duration)}")
+    exit_code = next(
+        (
+            metadata.get(key)
+            for key in ("exit", "exit_code", "exitCode")
+            if metadata.get(key) is not None
+        ),
+        None,
+    )
+    _append_optional(lines, "exit", exit_code)
+    count = metadata.get("count")
+    if isinstance(count, int) and not isinstance(count, bool):
+        lines.append(f"  matches: {count}")
+    output_bytes = _activity_output_bytes(state, metadata)
+    result_parts = [f"{output_bytes} bytes"]
+    if metadata.get("truncated") is True:
+        result_parts.append("truncated")
+    elif output_bytes:
+        result_parts.append("complete")
+    lines.append(f"  result: {', '.join(result_parts)}")
+    if status_name in {"error", "failed"}:
+        lines.append("  error: provider error reported; see private JSONL")
+    return lines
+
+
+def _activity_step_lines(part: dict[str, Any], ordinal: int) -> list[str]:
+    lines = [f"[worker step] {ordinal} completed"]
+    _append_redacted(lines, "reason", part.get("reason"))
+    tokens = part.get("tokens")
+    if isinstance(tokens, dict):
+        cache = tokens.get("cache")
+        cache = cache if isinstance(cache, dict) else {}
+        input_tokens = sum(
+            value for value in (
+                _debug_nonnegative_int(tokens.get("input")),
+                _debug_nonnegative_int(cache.get("read")),
+                _debug_nonnegative_int(cache.get("write")),
+            )
+        )
+        output_tokens = sum(
+            value for value in (
+                _debug_nonnegative_int(tokens.get("output")),
+                _debug_nonnegative_int(tokens.get("reasoning")),
+            )
+        )
+        lines.append(f"  input: {input_tokens:,} tokens")
+        lines.append(f"  output: {output_tokens:,} tokens")
+    return lines
+
+
+def _append_activity_path(
+    lines: list[str], label: str, value: Any, workspace: Path | None
+) -> None:
+    if isinstance(value, str) and value:
+        lines.append(f"  {label}: {_activity_path(value, workspace)}")
+
+
+def _activity_path(value: str, workspace: Path | None) -> str:
+    safe = _debug_terminal_text(value)
+    candidate = Path(safe).expanduser()
+    if workspace is not None:
+        root = workspace.resolve(strict=False)
+        resolved = (
+            candidate.resolve(strict=False)
+            if candidate.is_absolute()
+            else (root / candidate).resolve(strict=False)
+        )
+        try:
+            return resolved.relative_to(root).as_posix() or "."
+        except ValueError:
+            return f"<outside-workspace>/{resolved.name or '?'}"
+    return safe[:512]
+
+
+def _append_redacted(lines: list[str], label: str, value: Any) -> None:
+    if isinstance(value, str) and value:
+        lines.append(f"  {label}: {_debug_preview(value)}")
+
+
+def _append_optional(lines: list[str], label: str, value: Any) -> None:
+    if value is not None and value != "":
+        lines.append(f"  {label}: {_debug_label(str(value))}")
+
+
+def _append_content_size(lines: list[str], label: str, value: Any) -> None:
+    if isinstance(value, str):
+        lines.append(f"  {label}: {len(value.encode('utf-8'))} bytes")
+
+
+def _activity_duration_ms(value: Any) -> float | None:
+    if not isinstance(value, dict):
+        return None
+    start = value.get("start")
+    end = value.get("end")
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+        return None
+    return max(0.0, float(end) - float(start))
+
+
+def _debug_duration_ms(value: float) -> str:
+    if value >= 1000:
+        return f"{value / 1000:.3f}s"
+    return f"{int(round(value))}ms"
+
+
+def _debug_serialized_bytes(value: Any) -> int:
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    try:
+        return len(
+            json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            .encode("utf-8")
+        )
+    except (TypeError, ValueError):
+        return 0
+
+
+def _activity_output_bytes(state: dict[str, Any], metadata: dict[str, Any]) -> int:
+    output = state.get("output")
+    if isinstance(output, str):
+        return len(output.encode("utf-8"))
+    error = state.get("error")
+    if isinstance(error, str):
+        return len(error.encode("utf-8"))
+    for key in ("output_bytes", "outputBytes"):
+        value = metadata.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    metadata_output = metadata.get("output")
+    if isinstance(metadata_output, str):
+        return len(metadata_output.encode("utf-8"))
+    return sum(
+        len(metadata[key].encode("utf-8"))
+        for key in ("stdout", "stderr")
+        if isinstance(metadata.get(key), str)
+    )
+
+
+def _debug_nonnegative_int(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _debug_error_text(event: dict[str, Any]) -> str:
+    value = event.get("error") or event.get("message") or "OpenCode reported an error"
+    if isinstance(value, dict):
+        data = value.get("data")
+        if isinstance(data, dict) and isinstance(data.get("message"), str):
+            return data["message"]
+        if isinstance(value.get("message"), str):
+            return value["message"]
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return str(value)
+
+
+def _debug_preview(value: Any) -> str:
+    if not isinstance(value, str):
+        value = json.dumps(value, sort_keys=True, ensure_ascii=False)
+    redacted = re.sub(r"(?i)Bearer\s+[^\s,;&'\"]+", "Bearer <redacted>", value)
+    redacted = re.sub(
+        r'(?i)("(?:token|secret|password|passwd|api[_-]?key|authorization|credential)"'
+        r'\s*:\s*")([^"]*)(")',
+        lambda match: f"{match.group(1)}<redacted>{match.group(3)}",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)(token|secret|password|passwd|api[_-]?key|authorization|credential)"
+        r"(\s*[=:]\s*|\s+)(?:'[^']*'|\"[^\"]*\"|[^\s,;&]+)",
+        lambda match: f"{match.group(1)}{match.group(2)}<redacted>",
+        redacted,
+    )
+    safe = _debug_terminal_text(redacted)
+    if len(safe) <= DEBUG_PREVIEW_CHARS:
+        return safe
+    return safe[:DEBUG_PREVIEW_CHARS] + "...[truncated]"
+
+
+def _debug_label(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return "unknown"
+    return _debug_terminal_text(value)[:64] or "unknown"
+
+
+def _debug_terminal_text(value: str) -> str:
+    return "".join(
+        character
+        for character in value
+        if character in {"\n", "\t"}
+        or ord(character) >= 160
+        or 32 <= ord(character) < 127
+    )
 
 
 def _signal_process_group(process: subprocess.Popen[str], target_signal: int) -> None:
@@ -1879,11 +2782,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--agent-spec",
         help="Select one technical specialization only when creating a new attempt",
     )
-    parser.add_argument(
-        "--draft-format",
-        choices=DRAFT_FORMATS,
-        help="Select the draft contract only when creating a new attempt",
-    )
     parser.add_argument("--profile", help="Select a curated backend-scoped profile on draft")
     parser.add_argument(
         "--reasoning-effort",
@@ -1908,7 +2806,10 @@ def build_parser() -> argparse.ArgumentParser:
             "a Codex workspace sandbox; local model profiles only"
         ),
     )
-    parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument(
+        "--timeout", type=int, default=None,
+        help="Override the handoff-derived timeout (small=600s, complex=1200s)",
+    )
     parser.add_argument(
         "--run-guard",
         action="store_true",
@@ -1917,7 +2818,28 @@ def build_parser() -> argparse.ArgumentParser:
             "after bounded context, preserving the resumable thread"
         ),
     )
+    parser.add_argument(
+        "--debug-stream",
+        choices=DEBUG_STREAM_MODES,
+        default=None,
+        help=(
+            "Stream OpenCode assistant text, or assistant text plus bounded tool activity, "
+            "to launcher stderr; defaults to activity for OpenCode and off for other backends; "
+            "content may contain sensitive project data"
+        ),
+    )
     parser.add_argument("--result-dir", default="results")
+    parser.add_argument(
+        "--feedback-mode",
+        choices=("revision", "format-only"),
+        help="Select compact revision or tool-free artifact-format correction",
+    )
+    parser.add_argument(
+        "--result-status",
+        choices=("completed", "failed", "partial", "blocked", "needs_review"),
+        default=None,
+        help="Select the Lead-owned terminal result status on finalization",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -1925,7 +2847,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        _require_canonical_draft_handoff(args)
         request = prepare_request(args)
+        if request.phase != "final":
+            require_execution_backend_enabled(request.backend)
         turn = prepare_turn(request)
         if args.dry_run:
             details = {
@@ -1967,8 +2892,8 @@ def main(argv: list[str] | None = None) -> int:
                 "lead_prompt_path": str(turn.lead_prompt_path),
                 "turn_path": str(turn.message_path),
                 "stderr_path": str(turn.stderr_path),
-                "result_schema_path": str(_result_schema_path(request)),
                 "result_path": str(request.result_path),
+                "result_status": request.result_status,
                 "skills": [str(path) for path in request.skill_files],
             }
             if request.backend == "opencode":
@@ -1978,6 +2903,7 @@ def main(argv: list[str] | None = None) -> int:
                         "resolved_model": request.model,
                         "backend_config_path": str(request.backend_config_path),
                         "backend_config_digest": request.backend_config_digest,
+                        "debug_stream": request.debug_stream,
                         "reasoning_effort": None,
                     }
                 )
@@ -2014,6 +2940,33 @@ def main(argv: list[str] | None = None) -> int:
     return code
 
 
+def _require_canonical_draft_handoff(args: argparse.Namespace) -> None:
+    if args.phase != "draft" or args.dry_run:
+        return
+    if args.prompt_file is None or args.prompt is not None:
+        raise ValueError(
+            "live drafts require the canonical management/tasks/<task>.md handoff"
+        )
+    workspace = ensure_existing_workspace(args.workspace)
+    task_id = normalize_task_id(args.task)
+    expected = contained_path(
+        workspace,
+        f"management/tasks/{task_id}.md",
+        label="canonical task handoff",
+    )
+    supplied = Path(args.prompt_file).expanduser()
+    if supplied.is_symlink():
+        raise ValueError("canonical task handoff must not be a symlink")
+    try:
+        supplied = supplied.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise ValueError(f"canonical task handoff is missing: {expected}") from exc
+    if supplied != expected or not supplied.is_file():
+        raise ValueError(
+            f"live drafts require the exact canonical task handoff: {expected}"
+        )
+
+
 def _read_prompt(
     prompt_file: str | None,
     prompt: str | None,
@@ -2034,34 +2987,153 @@ def _read_prompt(
     return content, source_path, hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def _task_write_scope(
+def _task_handoff_metadata(
     prompt: str,
     source_path: str | None,
     role: str,
-) -> tuple[str, ...] | None:
+) -> Any:
     if source_path is None or not re.fullmatch(r"management/tasks/T[0-9]{3,6}\.md", source_path):
-        return None
-    lines = prompt.splitlines()
+        return parse_task_handoff_metadata("")
     try:
-        start = next(
-            index for index, line in enumerate(lines) if line.strip() == "## Task Write Scope"
-        ) + 1
-    except StopIteration:
-        return None
-    patterns: list[str] = []
-    for line in lines[start:]:
-        if line.startswith("## "):
-            break
-        match = re.fullmatch(r"\s*-\s+`([^`]+)`\s*", line)
-        if match:
-            pattern = match.group(1)
-            _validate_task_scope_pattern(pattern)
-            patterns.append(pattern)
-        elif line.strip():
-            raise ValueError("Task Write Scope entries must be backticked bullet patterns")
-    if not patterns and role not in {"git_steward"}:
+        metadata = parse_task_handoff_metadata(prompt)
+    except TaskDocumentError as exc:
+        raise ValueError(str(exc)) from exc
+    if not metadata.task_write_scope and role not in {"git_steward"}:
         raise ValueError("canonical task handoff requires a non-empty task write scope")
-    return tuple(dict.fromkeys(patterns))
+    if metadata.context_mode is None:
+        metadata = replace(metadata, context_mode="bounded-mcp")
+    return metadata
+
+
+def _handoff_contract_path(session_dir: Path) -> Path:
+    return session_dir / HANDOFF_CONTRACT_FILENAME
+
+
+def _direct_context_pack(
+    workspace: Path,
+    targets: tuple[tuple[str, int, int], ...],
+) -> tuple[list[dict[str, Any]], str]:
+    records: list[dict[str, Any]] = []
+    sections: list[str] = []
+    total_bytes = 0
+    for relative, start, end in targets:
+        path = contained_path(workspace, relative, label="direct context target")
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"direct context target is missing or unsafe: {relative}")
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"direct context target is not UTF-8: {relative}") from exc
+        if end > len(lines):
+            raise ValueError(
+                f"direct context range exceeds {relative}: requested {start}-{end}, file has {len(lines)} lines"
+            )
+        excerpt = "\n".join(lines[start - 1:end]) + "\n"
+        total_bytes += len(excerpt.encode("utf-8"))
+        if total_bytes > 64 * 1024:
+            raise ValueError("direct context exceeds 65536 bytes")
+        records.append({
+            "path": relative,
+            "start": start,
+            "end": end,
+            "sha256": hashlib.sha256(excerpt.encode("utf-8")).hexdigest(),
+            "content": excerpt,
+        })
+        sections.append(f"[DIRECT CONTEXT: {relative}:{start}-{end}]\n{excerpt}")
+    return records, "\n".join(sections)
+
+
+def _build_handoff_contract(request: SpawnRequest) -> dict[str, Any]:
+    direct_records: list[dict[str, Any]] = []
+    if request.context_mode == "direct":
+        if request.result_report is None:
+            raise ValueError("direct context requires a result report")
+        report_path = contained_path(
+            request.workspace, request.result_report, label="result report"
+        )
+        report_relative = report_path.relative_to(request.workspace).as_posix()
+        if request.task_write_scope is None or not any(
+            fnmatchcase(report_relative, pattern) for pattern in request.task_write_scope
+        ):
+            raise ValueError("Result Report is outside Task Write Scope")
+        for pattern in request.task_write_scope:
+            if any(character in pattern for character in "*?["):
+                raise ValueError(
+                    f"direct Task Write Scope entries must be literal files: {pattern}"
+                )
+            if not request.effective_role_policy.allows_change(pattern):
+                raise ValueError(
+                    f"direct Task Write Scope exceeds role policy: {pattern}"
+                )
+            if pattern.startswith(".codexteam/"):
+                raise ValueError("direct Task Write Scope cannot include private runtime state")
+        for system_relative in (
+            f"{CHECK_RECORD_ROOT}/{request.task_id}-{request.attempt_id}.json",
+            request.result_path.relative_to(request.workspace).as_posix(),
+        ):
+            if any(
+                fnmatchcase(system_relative, pattern) for pattern in request.task_write_scope
+            ):
+                raise ValueError(
+                    f"system-owned path must not be in Task Write Scope: {system_relative}"
+                )
+        direct_records, _ = _direct_context_pack(request.workspace, request.direct_context)
+        for command in request.verification_commands:
+            executable = Path(command[0]).name
+            if executable not in DIRECT_VERIFICATION_EXECUTABLES:
+                raise ValueError(
+                    f"direct verification executable is not allowed: {command[0]}"
+                )
+        gate_config = load_gate_config(request.workspace)
+        approved_commands = list(gate_config.development_commands)
+        if request.role == "tester":
+            approved_commands.extend(gate_config.integration_commands)
+        if request.verification_commands != tuple(approved_commands):
+            raise ValueError(
+                "direct Verification Commands must exactly equal configured routed gate commands"
+            )
+        if request.gate_routing and request.gate_routing["execution_surface"] == "worker":
+            gate = request.gate_routing["gate"]
+            record_relative = gate_record_path(request.workspace, gate).relative_to(
+                request.workspace
+            ).as_posix()
+            if request.task_write_scope and any(
+                fnmatchcase(record_relative, pattern) for pattern in request.task_write_scope
+            ):
+                raise ValueError(
+                    f"system-owned gate record must not be in Task Write Scope: {record_relative}"
+                )
+    return {
+        "schema_version": "1.0",
+        "context_mode": request.context_mode,
+        "execution_class": request.execution_class,
+        "timeout_seconds": request.timeout_seconds,
+        "result_report": request.result_report,
+        "direct_context": direct_records,
+        "verification_commands": [list(item) for item in request.verification_commands],
+    }
+
+
+def _write_handoff_contract(request: SpawnRequest) -> None:
+    path = _handoff_contract_path(request.session_dir)
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"handoff contract already exists: {path}")
+    atomic_write_json(path, _build_handoff_contract(request))
+    path.chmod(0o600)
+
+
+def _load_handoff_contract(session_dir: Path) -> dict[str, Any]:
+    path = _handoff_contract_path(session_dir)
+    if path.is_symlink() or not path.is_file():
+        return {
+            "schema_version": "1.0", "context_mode": None,
+            "execution_class": None, "timeout_seconds": None,
+            "result_report": None, "direct_context": [], "verification_commands": [],
+        }
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("schema_version") != "1.0":
+        raise ValueError("invalid pinned handoff contract")
+    return value
 
 
 def _validate_task_scope_pattern(pattern: str) -> None:
@@ -2151,8 +3223,8 @@ def _opencode_context_bytes(
     assert request.backend_config_path is not None
     config = json.loads(request.backend_config_path.read_text(encoding="utf-8"))
     agent_name = (
-        opencode_backend.FINAL_AGENT
-        if request.phase == "final"
+        opencode_backend.FORMAT_AGENT
+        if request.phase == "feedback" and request.feedback_mode == "format-only"
         else opencode_backend.AGENT
     )
     agent = config.get("agent", {}).get(agent_name, {})
@@ -2167,7 +3239,6 @@ def _opencode_context_bytes(
             len(path.read_bytes()) for path in guidance
         ),
         "available_guidance_snapshot_count": len(guidance),
-        "available_result_schema_bytes": len(_result_schema_path(request).read_bytes()),
     }
     if request.phase == "final" and turn.session is not None:
         checkpoint = turn.session.get("accepted_checkpoint")
@@ -2294,20 +3365,29 @@ def _prepare_session_storage(
                 raise ValueError("new attempts require delegation attribution")
             write_delegation(request.session_dir / DELEGATION_FILENAME, request.delegation)
             _write_draft_format_pin(request.draft_format_path, request.draft_format)
-            if request.backend == "opencode":
+            _write_handoff_contract(request)
+            if request.backend == "opencode" or request.draft_format == ARTIFACT_REPORT:
                 _write_workspace_baseline(request)
             atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
             request.role_policy_path.chmod(0o600)
             if request.agent_spec is not None:
                 atomic_write_json(request.agent_spec_path, request.agent_spec.snapshot())
                 request.agent_spec_path.chmod(0o600)
-            _write_result_schema(request)
             _snapshot_skill_files(request)
             if request.execution_spec is None:
                 raise ValueError("new attempts require an execution specification")
             write_execution_spec(request.execution_spec_path, request.execution_spec)
             if request.backend == "opencode":
                 assert request.backend_config_path is not None
+                context_plugin = _opencode_context_plugin_config(
+                    request.session_dir,
+                    request.execution_profile,
+                )
+                if context_plugin is not None:
+                    plugin_path = Path(context_plugin["path"])
+                    plugin_path.parent.mkdir(parents=True, exist_ok=True)
+                    plugin_path.parent.chmod(0o700)
+                    opencode_backend.write_context_plugin(plugin_path)
                 config = opencode_backend.build_config(
                     model=request.model,
                     role_name=request.role,
@@ -2317,6 +3397,10 @@ def _prepare_session_storage(
                     display_name=request.execution_profile.model["display_name"],
                     context_limit=request.execution_profile.model["context_limit"],
                     output_limit=request.execution_profile.model["output_limit"],
+                    direct_mode=request.context_mode == "direct",
+                    editable_paths=request.task_write_scope or (),
+                    artifact_report_path=request.artifact_report_path.as_posix(),
+                    context_plugin=context_plugin,
                 )
                 opencode_backend.write_config(request.backend_config_path, config)
                 return
@@ -2354,12 +3438,26 @@ def _prepare_session_storage(
             request.backend_config_path,
             request.backend_config_digest,
         )
+        context_plugin = _opencode_context_plugin_config(
+            request.session_dir,
+            request.execution_profile,
+        )
+        if context_plugin is not None:
+            opencode_backend.ensure_context_plugin(
+                Path(context_plugin["path"]),
+                context_plugin["digest"],
+            )
         expected_baseline = session.get("workspace_baseline_sha256") if session else None
         if not isinstance(expected_baseline, str) or not expected_baseline:
             raise ValueError("OpenCode session workspace_baseline_sha256 must be a non-empty string")
         _load_workspace_baseline(request, expected_digest=expected_baseline)
     elif not request.codex_home.is_dir():
         raise FileNotFoundError(f"persistent Codex home is missing: {request.codex_home}")
+    if request.draft_format == ARTIFACT_REPORT and request.backend != "opencode":
+        expected_baseline = session.get("workspace_baseline_sha256") if session else None
+        if not isinstance(expected_baseline, str) or not expected_baseline:
+            raise ValueError("semantic session workspace_baseline_sha256 must be a non-empty string")
+        _load_workspace_baseline(request, expected_digest=expected_baseline)
     if not request.role_policy_path.is_file():
         atomic_write_json(request.role_policy_path, request.role_policy.snapshot())
         request.role_policy_path.chmod(0o600)
@@ -2369,71 +3467,12 @@ def _prepare_session_storage(
         )
         if loaded_agent_spec.reference() != request.agent_spec.reference():
             raise ValueError("AgentSpec snapshot changed during continuation")
-    _ensure_result_schema(request, session=session)
     if not (request.session_dir / GUIDANCE_MANIFEST_FILENAME).is_file():
         _snapshot_skill_files(request)
     if request.execution_spec is not None:
         loaded_spec = load_execution_spec(request.execution_spec_path)
         if loaded_spec != request.execution_spec:
             raise ValueError("execution specification changed during continuation")
-
-
-def _result_schema_path(request: SpawnRequest) -> Path:
-    return request.session_dir / RESULT_SCHEMA_FILENAME
-
-
-def _role_result_schema(request: SpawnRequest) -> dict[str, Any]:
-    schema = json.loads(RESULT_SCHEMA_PATH.read_text(encoding="utf-8"))
-    properties = schema["properties"]
-    for field, value in (
-        ("schema_version", "1.0"),
-        ("team_id", request.team_id),
-        ("task_id", request.task_id),
-        ("agent_role", request.role),
-        ("attempt_id", request.attempt_id),
-    ):
-        properties[field] = {"type": "string", "const": value}
-    properties["evidence"]["items"]["properties"]["type"]["enum"] = list(
-        request.effective_role_policy.allowed_evidence_types
-    )
-    properties["produced_at"]["pattern"] = "Z$"
-    if request.role == "git_steward":
-        properties["file_changes"]["maxItems"] = 0
-    return schema
-
-
-def _write_result_schema(request: SpawnRequest) -> None:
-    path = _result_schema_path(request)
-    if path.exists() or path.is_symlink():
-        raise FileExistsError(f"result schema already exists: {path}")
-    atomic_write_json(path, _role_result_schema(request))
-    path.chmod(0o600)
-
-
-def _ensure_result_schema(
-    request: SpawnRequest,
-    *,
-    session: dict[str, Any] | None,
-) -> None:
-    path = _result_schema_path(request)
-    if not path.exists():
-        _write_result_schema(request)
-        return
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"result schema is missing or unsafe: {path}")
-    try:
-        current = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid pinned result schema: {path}: {exc}") from exc
-    if not isinstance(current, dict) or current.get("$schema") is None:
-        raise ValueError(f"invalid pinned result schema contract: {path}")
-    expected_digest = session.get("result_schema_sha256") if session else None
-    actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if expected_digest is not None:
-        if not isinstance(expected_digest, str) or actual_digest != expected_digest:
-            raise ValueError(f"pinned result schema digest mismatch: {path}")
-    elif current != _role_result_schema(request):
-        raise ValueError(f"legacy pinned result schema mismatch: {path}")
 
 
 def _execution_codex_home(request: SpawnRequest) -> Path:
@@ -2492,10 +3531,10 @@ def _validate_session_scope(request: SpawnRequest, session: dict[str, Any]) -> N
         "task_id": request.task_id,
         "attempt_id": request.attempt_id,
         "agent_role": request.role,
-        "result_schema_sha256": hashlib.sha256(
-            _result_schema_path(request).read_bytes()
-        ).hexdigest(),
         "workspace_root": str(request.workspace),
+        "handoff_contract_sha256": hashlib.sha256(
+            _handoff_contract_path(request.session_dir).read_bytes()
+        ).hexdigest(),
     }
     mismatches = [
         f"{field}: expected {value!r}, found {session.get(field)!r}"
@@ -2539,10 +3578,10 @@ def _session_record(
         "task_id": request.task_id,
         "attempt_id": request.attempt_id,
         "agent_role": request.role,
-        "result_schema_sha256": hashlib.sha256(
-            _result_schema_path(request).read_bytes()
-        ).hexdigest(),
         "workspace_root": str(request.workspace),
+        "handoff_contract_sha256": hashlib.sha256(
+            _handoff_contract_path(request.session_dir).read_bytes()
+        ).hexdigest(),
         "thread_id": thread_id,
         "turn_count": turn.number,
         "last_phase": request.phase,
@@ -2556,12 +3595,9 @@ def _session_record(
         record["execution_spec"] = execution_spec_reference(request.execution_spec)
     else:
         record.pop("execution_spec", None)
-    if request.backend == "opencode":
+    if request.backend == "opencode" or request.draft_format == ARTIFACT_REPORT:
         if trusted_baseline is None or trusted_baseline_digest is None:
-            raise ValueError("trusted OpenCode workspace baseline is required")
-        record["backend_version"] = request.backend_version
-        record["backend_config_digest"] = request.backend_config_digest
-        record["opencode_session_id"] = thread_id
+            raise ValueError("trusted workspace baseline is required")
         record["workspace_baseline_sha256"] = trusted_baseline_digest
         worker_changes = _merge_worker_change_manifest(
             trusted_baseline,
@@ -2579,6 +3615,10 @@ def _session_record(
             )
         elif turn.session and "accepted_checkpoint" in turn.session:
             record["accepted_checkpoint"] = turn.session["accepted_checkpoint"]
+    if request.backend == "opencode":
+        record["backend_version"] = request.backend_version
+        record["backend_config_digest"] = request.backend_config_digest
+        record["opencode_session_id"] = thread_id
     if final_result_path is not None:
         record["final_result_path"] = final_result_path
     return record
@@ -2591,12 +3631,26 @@ def _accepted_checkpoint(
     thread_id: str,
     accepted_paths: dict[str, dict[str, str | None]],
 ) -> dict[str, Any]:
-    message_hash = hashlib.sha256(turn.message_path.read_bytes()).hexdigest()
+    report_relative = request.artifact_report_path.relative_to(request.workspace).as_posix()
+    report_bytes = request.artifact_report_path.read_bytes()
+    report_hash = hashlib.sha256(report_bytes).hexdigest()
+    try:
+        report = json.loads(report_bytes.decode("utf-8"))
+        validate_artifact_report(report)
+    except (UnicodeDecodeError, json.JSONDecodeError, ResultValidationError) as exc:
+        raise ValueError(f"cannot checkpoint invalid artifact report: {exc}") from exc
+    evidence_hashes = {
+        relative: hashlib.sha256(
+            contained_path(request.workspace, relative, label="checkpoint evidence").read_bytes()
+        ).hexdigest()
+        for relative in report["evidence"]
+    }
     return {
         "turn_number": turn.number,
         "phase": request.phase,
-        "message_path": turn.message_path.relative_to(request.workspace).as_posix(),
-        "message_sha256": message_hash,
+        "artifact_report_path": report_relative,
+        "artifact_report_sha256": report_hash,
+        "evidence_sha256": evidence_hashes,
         "workspace_sha256": _accepted_paths_digest(accepted_paths),
         "changed_paths": sorted(accepted_paths),
         "accepted_paths": accepted_paths,
@@ -2612,16 +3666,27 @@ def _accepted_checkpoint(
 def _ensure_accepted_checkpoint(request: SpawnRequest, turn: TurnContext) -> None:
     checkpoint = turn.session.get("accepted_checkpoint") if turn.session else None
     if not isinstance(checkpoint, dict):
-        raise ValueError("OpenCode finalization requires an accepted draft checkpoint")
-    relative = checkpoint.get("message_path")
-    expected_hash = checkpoint.get("message_sha256")
+        raise ValueError("finalization requires an accepted draft checkpoint")
+    relative = checkpoint.get("artifact_report_path")
+    expected_hash = checkpoint.get("artifact_report_sha256")
     if not isinstance(relative, str) or not isinstance(expected_hash, str):
-        raise ValueError("OpenCode accepted draft checkpoint is incomplete")
-    path = contained_path(request.workspace, relative, label="accepted message path")
+        raise ValueError("accepted draft checkpoint is incomplete")
+    path = contained_path(request.workspace, relative, label="accepted artifact report path")
     if path.is_symlink() or not path.is_file():
-        raise ValueError(f"accepted draft message is missing or unsafe: {path}")
+        raise ValueError(f"accepted artifact report is missing or unsafe: {path}")
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
-        raise ValueError(f"accepted draft message digest mismatch: {path}")
+        raise ValueError(f"accepted artifact report digest mismatch: {path}")
+    evidence_hashes = checkpoint.get("evidence_sha256")
+    if not isinstance(evidence_hashes, dict):
+        raise ValueError("accepted checkpoint evidence digests are missing")
+    for evidence_relative, evidence_hash in evidence_hashes.items():
+        evidence_path = contained_path(
+            request.workspace, evidence_relative, label="accepted evidence"
+        )
+        if evidence_path.is_symlink() or not evidence_path.is_file():
+            raise ValueError(f"accepted evidence is missing or unsafe: {evidence_relative}")
+        if hashlib.sha256(evidence_path.read_bytes()).hexdigest() != evidence_hash:
+            raise ValueError(f"accepted evidence digest mismatch: {evidence_relative}")
     accepted_paths = checkpoint.get("accepted_paths")
     if not isinstance(accepted_paths, dict):
         raise ValueError("OpenCode accepted draft checkpoint paths are incomplete")
@@ -2989,9 +4054,6 @@ def _turn_outcome(
             if request.execution_spec is not None
             else None
         ),
-        "result_schema_sha256": hashlib.sha256(
-            _result_schema_path(request).read_bytes()
-        ).hexdigest(),
         "mcp_context_project": request.mcp_context_project,
         "thread_id": thread_id,
         "turn_count": turn.number,
@@ -3081,44 +4143,54 @@ def _result_from_message(
     return None, errors
 
 
-def _draft_from_message(
+def _artifact_report_from_file(
     request: SpawnRequest,
-    message: str,
+    *,
+    pin_evidence: bool = True,
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    if request.draft_format == CONVERSATIONAL_DRAFT:
-        try:
-            validate_conversational_draft(message)
-        except ResultValidationError as exc:
-            return None, ["conversational draft validation failed", *exc.errors]
-        return {"format": CONVERSATIONAL_DRAFT, "text": message}, []
+    path = request.artifact_report_path
+    if path.is_symlink() or not path.is_file():
+        return None, [f"artifact report is missing or unsafe: {path.relative_to(request.workspace)}"]
     try:
-        candidate = json.loads(message)
+        raw = path.read_bytes()
+        if not raw or len(raw) > 64 * 1024:
+            return None, ["artifact report must contain 1 to 65536 bytes"]
+        candidate = json.loads(raw.decode("utf-8"))
+        validate_artifact_report(candidate)
+    except UnicodeDecodeError:
+        return None, ["artifact report must be UTF-8"]
     except json.JSONDecodeError as exc:
-        return None, ["compact JSON draft validation failed", f"draft must be one JSON object: {exc.msg}"]
-    try:
-        validate_draft(candidate)
+        return None, [f"artifact report must be valid JSON: {exc.msg}"]
     except ResultValidationError as exc:
-        return None, ["compact JSON draft validation failed", *exc.errors[:10]]
-    artifact_errors = []
-    for index, evidence in enumerate(candidate["evidence"]):
+        return None, list(exc.errors[:10])
+    errors: list[str] = []
+    for index, relative in enumerate(candidate["evidence"]):
         try:
-            path = contained_path(
-                request.workspace,
-                evidence["artifact_ref"],
-                label=f"evidence[{index}].artifact_ref",
+            evidence_path = contained_path(
+                request.workspace, relative, label=f"evidence[{index}]"
             )
         except ValueError as exc:
-            artifact_errors.append(str(exc))
+            errors.append(str(exc))
             continue
-        if not path.exists():
-            artifact_errors.append(
-                f"evidence[{index}].artifact_ref does not exist: {evidence['artifact_ref']}"
-            )
-    if not artifact_errors:
-        return candidate, []
-    errors = ["compact JSON draft validation failed"]
-    errors.extend(artifact_errors)
-    return None, errors
+        if evidence_path.is_symlink() or not evidence_path.is_file():
+            errors.append(f"evidence[{index}] does not name an existing regular file: {relative}")
+    if errors:
+        return None, errors
+    return candidate, []
+
+
+def _semantic_json_object(message: str) -> dict[str, Any]:
+    decoder = json.JSONDecoder()
+    stripped = message.strip()
+    value, end = decoder.raw_decode(stripped)
+    trailing = stripped[end:].strip()
+    if trailing and not re.fullmatch(r"(?:</atem:parameter>\s*)+", trailing):
+        raise json.JSONDecodeError("Extra data", stripped, end)
+    if not isinstance(value, dict):
+        raise json.JSONDecodeError("payload must be an object", stripped, 0)
+    return value
+
+
 
 
 def _result_artifact_errors(request: SpawnRequest, result: dict[str, Any]) -> list[str]:

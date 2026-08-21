@@ -9,9 +9,7 @@ from .contract_registry import DRAFT_FORMATS
 
 RESULT_SCHEMA_VERSION = "1.0"
 HANDOFF_SCHEMA_VERSION = "1.0"
-DRAFT_SCHEMA_VERSION = "1.0"
 RESULT_STATUSES = {"completed", "failed", "partial", "blocked", "needs_review"}
-DRAFT_DISPOSITIONS = {"ready_for_review", "correction_needed", "blocked"}
 AGENT_ROLES = {
     "architect",
     "developer",
@@ -58,14 +56,7 @@ REQUIRED_HANDOFF_FIELDS = {
     "constraints",
     "completion_criteria",
 }
-REQUIRED_DRAFT_FIELDS = {
-    "schema_version",
-    "outcome",
-    "evidence",
-    "findings",
-    "limitations",
-    "proposed_disposition",
-}
+REQUIRED_ARTIFACT_REPORT_FIELDS = {"version", "summary", "evidence", "limitations"}
 HANDOFF_FIELDS = REQUIRED_HANDOFF_FIELDS | {"role_policy", "instruction_bundle"}
 
 
@@ -256,37 +247,26 @@ def validate_handoff(data: Any) -> dict[str, Any]:
     return data
 
 
-def validate_draft(data: Any) -> dict[str, Any]:
+def validate_artifact_report(data: Any) -> dict[str, Any]:
     errors: list[str] = []
     if not isinstance(data, dict):
-        raise ResultValidationError(["draft must be a JSON object"])
-
-    missing = sorted(REQUIRED_DRAFT_FIELDS - data.keys())
-    unknown = sorted(set(data) - REQUIRED_DRAFT_FIELDS)
+        raise ResultValidationError(["artifact report must be a JSON object"])
+    missing = sorted(REQUIRED_ARTIFACT_REPORT_FIELDS - data.keys())
     if missing:
-        errors.append(f"missing required draft fields: {', '.join(missing)}")
-    if unknown:
-        errors.append(f"unknown draft fields: {', '.join(unknown)}")
-    if data.get("schema_version") != DRAFT_SCHEMA_VERSION:
-        errors.append(f"schema_version must be {DRAFT_SCHEMA_VERSION!r}")
-    _bounded_text(data.get("outcome"), "outcome", 1_200, errors)
-    _validate_draft_evidence(data.get("evidence"), errors)
-    _validate_bounded_string_list(data.get("findings"), "findings", errors)
-    _validate_bounded_string_list(data.get("limitations"), "limitations", errors)
-    if data.get("proposed_disposition") not in DRAFT_DISPOSITIONS:
-        errors.append(
-            "proposed_disposition must be one of "
-            + str(sorted(DRAFT_DISPOSITIONS))
-        )
-
+        errors.append("missing required artifact report fields: " + ", ".join(missing))
+    if data.get("version") != 1 or isinstance(data.get("version"), bool):
+        errors.append("version must be 1")
+    summary = data.get("summary")
+    if not isinstance(summary, str) or not summary.strip() or len(summary) > 2_000:
+        errors.append("summary must be a non-empty string of at most 2000 characters")
+    evidence = data.get("evidence")
+    if not isinstance(evidence, list) or any(
+        not isinstance(item, str) or not item.strip() for item in evidence
+    ):
+        errors.append("evidence must be a list of non-empty path strings")
+    _validate_string_list(data.get("limitations"), "limitations", errors)
     if errors:
         raise ResultValidationError(errors)
-    return data
-
-
-def validate_conversational_draft(data: Any) -> str:
-    if not isinstance(data, str) or not data.strip():
-        raise ResultValidationError(["conversational draft must be non-empty text"])
     return data
 
 
@@ -296,11 +276,12 @@ def validate_session(data: Any) -> dict[str, Any]:
         raise ResultValidationError(["session must be a JSON object"])
     allowed = {
         "schema_version", "team_id", "task_id", "attempt_id", "agent_role",
-        "result_schema_sha256", "workspace_root", "thread_id", "turn_count",
+        "workspace_root", "thread_id", "turn_count",
         "last_phase", "last_status", "last_turn_path", "created_at", "updated_at",
         "turns", "execution_spec", "final_result_path", "backend_version",
         "backend_config_digest", "opencode_session_id", "workspace_baseline_sha256",
-        "worker_change_manifest", "accepted_checkpoint",
+        "worker_change_manifest", "accepted_checkpoint", "handoff_contract_sha256",
+        "complex_checkpoint",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -309,7 +290,7 @@ def validate_session(data: Any) -> dict[str, Any]:
         errors.append("session schema_version must be '1.0'")
     required = {
         "schema_version", "team_id", "task_id", "attempt_id", "agent_role",
-        "result_schema_sha256", "workspace_root", "thread_id", "turn_count",
+        "workspace_root", "thread_id", "turn_count",
         "last_phase", "last_status", "last_turn_path", "created_at", "updated_at",
         "turns", "execution_spec",
     }
@@ -350,6 +331,10 @@ def validate_session(data: Any) -> dict[str, Any]:
         or not data.get("last_status", "").strip()
     ):
         errors.append("session last_status must be a non-empty string")
+    if "complex_checkpoint" in data and data.get("complex_checkpoint") not in {
+        "source_focused_tests", "development_gate", "integration_evidence", "final_report"
+    }:
+        errors.append("session complex_checkpoint is unsupported")
     for field in ("created_at", "updated_at"):
         if field in data:
             _validate_iso_timestamp(data.get(field), f"session {field}", errors)
@@ -540,43 +525,12 @@ def _validate_followups(value: Any, errors: list[str]) -> None:
 
 
 def _validate_string_list(value: Any, field: str, errors: list[str]) -> None:
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
         errors.append(f"{field} must be a list of strings")
 
 
-def _bounded_text(value: Any, field: str, maximum: int, errors: list[str]) -> None:
-    if not isinstance(value, str) or not value.strip():
-        errors.append(f"{field} must be a non-empty string")
-    elif len(value) > maximum:
-        errors.append(f"{field} must be at most {maximum} characters")
-
-
-def _validate_bounded_string_list(value: Any, field: str, errors: list[str]) -> None:
-    if not isinstance(value, list):
-        errors.append(f"{field} must be a list")
-        return
-    if len(value) > 8:
-        errors.append(f"{field} must contain at most 8 items")
-    for index, item in enumerate(value):
-        _bounded_text(item, f"{field}[{index}]", 500, errors)
-
-
-def _validate_draft_evidence(value: Any, errors: list[str]) -> None:
-    if not isinstance(value, list):
-        errors.append("evidence must be a list")
-        return
-    if len(value) > 8:
-        errors.append("evidence must contain at most 8 items")
-    for index, item in enumerate(value):
-        prefix = f"evidence[{index}]"
-        if not isinstance(item, dict):
-            errors.append(f"{prefix} must be an object")
-            continue
-        if set(item) != {"artifact_ref", "summary"}:
-            errors.append(f"{prefix} must contain only artifact_ref and summary")
-        _bounded_text(item.get("artifact_ref"), f"{prefix}.artifact_ref", 500, errors)
-        _relative(item.get("artifact_ref"), f"{prefix}.artifact_ref", errors)
-        _bounded_text(item.get("summary"), f"{prefix}.summary", 500, errors)
 
 
 def _validate_timestamp(value: Any, errors: list[str]) -> None:

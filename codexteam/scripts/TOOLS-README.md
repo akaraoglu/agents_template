@@ -62,13 +62,27 @@ Exit `1` means invalid JSON/contract. Exit `2` means the result is valid but doe
 
 Remove `--dry-run` only after inspecting the command, session location, and final result location. Continue with `--phase feedback` for revisions and `--phase final` after acceptance, keeping the same scope identity.
 
+OpenCode turns default to `--debug-stream activity`, which emits a metadata-only activity
+ledger. Activity records show tool name, status, safe target or command details,
+duration, exit code or match count when reported, result byte size, truncation,
+model-step token counts, and final process status. They never print file contents,
+command output, write/edit text, or patch bodies. Debug content is written to
+launcher stderr and may still contain sensitive project names, paths, commands,
+queries, or assistant text. Use `--debug-stream assistant` to also stream emitted
+assistant text, or `--debug-stream off` to disable it. Non-OpenCode backends
+default to off. These modes do not alter the
+complete mode-`0600` JSONL captured under the attempt's `turns/` directory. The
+flag is invocation-scoped, so repeat it on a feedback or final command only when
+live debugging is still needed. OpenCode can show only events the provider emits;
+private model reasoning is not available.
+
 Draft backend, backend-scoped profile, and reasoning are explicit and resolve
 through `execution_registry.toml`. Feedback/final omit them and use the pinned
 ExecutionSpec. RolePolicy contains no execution defaults. Role policies may
 narrow MCP access; immutable allowed/effective subsets live in the ExecutionSpec.
 
 Finalization passes a session-pinned, role-specific projection of
-`schemas/result-openai.json` to OpenAI-backed profiles with `--output-schema`.
+Finalization is provider-free and does not use a provider output schema.
 Its digest is retained in session state so later toolkit changes cannot alter an active
 attempt. Persisted records remain validated against the backward-compatible result
 contract. Local providers receive the same compact required-field instructions.

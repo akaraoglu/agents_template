@@ -2,17 +2,17 @@
 
 ## Status
 
-Implemented. Every new current draft attempt receives one immutable execution
+Implemented. Every new draft attempt receives one immutable execution
 specification in its existing session directory.
 
 ## Completed Work
 
-- Added `execution-spec-current` to the contract registry.
-- Added `schemas/execution-spec-current.json` and the current-native builder/validator in
+- Added `execution-spec` to the contract registry.
+- Added `schemas/execution-spec.json` and the builder/validator in
   `codexteam_tools.execution_spec`.
-- New attempts write `execution-spec-current.json` before worker execution.
+- New attempts write `execution-spec.json` before worker execution.
 - Dry-run displays the resolved specification without writing files.
-- Session current stores the specification contract, path, and digest reference.
+- Session stores the specification contract, path, and digest reference.
 - Feedback and final turns reload and verify the same specification.
 - Identity, RolePolicy, guidance, backend, model, reasoning, permissions,
   handoff digest, and gate-routing drift fail closed.
@@ -35,7 +35,7 @@ specification in its existing session directory.
 | RolePolicy | Lifecycle responsibility and permission ceiling |
 | Execution specification | Immutable supporting identity for one attempt |
 | Session | Mutable draft/feedback/final progression |
-| Result current | Final worker report |
+| Result | Final worker report |
 | Gates and close-loop | Verification and canonical closure authority |
 
 The execution specification cannot approve work, run gates, accept evidence,
@@ -46,30 +46,30 @@ close tasks, or authorize Git operations.
 - Team, task, attempt, role, and workspace identity.
 - Handoff source path and content digest.
 - RolePolicy identity and digest.
-- AgentSpec reference, initially nullable and populated by Phase 3.
+- Optional AgentSpec reference; omission remains null.
 - Guidance files and bundle digest.
 - Curated backend/model/profile definition digests and runtime version.
 - Explicit requested/effective reasoning mapping, support status, and verbosity.
 - Effective sandbox, write roots, MCP permissions, and bound MCP project.
-- Existing current gate route and execution surface.
+- Existing gate route and execution surface.
 
 ## Verification Summary
 
-The final current Phase 0-2 gate passed with the environment-dependent `rg` test
-excluded. Independent review found and verified fixes for tamper races,
+Current repository verification passes with the environment-dependent `rg` test
+skipped when unavailable. Independent review found and verified fixes for tamper races,
 failure-atomic rollback, reasoning continuity, handoff-byte identity, and corrupt
 spec observability.
 
 ## Original Plan Summary
 
-1. Resolve current current configuration in `prepare_request`.
+1. Resolve current configuration in `prepare_request`.
 2. Build and display a strict in-memory execution specification.
 3. Write it once before the draft worker starts.
 4. Store only its reference in mutable session state.
-5. Verify it on feedback/final without changing current lifecycle authority.
+5. Verify it on feedback/final without changing lifecycle authority.
 
-## Deferred Work
+## Follow-on Work
 
-AgentSpec selection and effective-policy intersection were implemented in Phase
-3. Curated reasoning control was implemented in Phase 4, and backend adapter
-extraction was implemented in Phase 5.
+AgentSpec selection, curated reasoning control, backend adapters, task write
+scope, context provenance, and telemetry were completed in subsequent phases.
+No ExecutionSpec work remains deferred from this phase.

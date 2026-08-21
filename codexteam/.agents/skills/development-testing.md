@@ -23,7 +23,9 @@ The Developer runs at most the targeted browser smoke required by the Developmen
 
 ## Workflow
 
-1. Map each changed behavior to a focused unit, algorithm, or component test.
+1. Identify the current `AC-*` references implemented by the assignment and map
+   each changed behavior to a focused unit, algorithm, or component test. Treat
+   the Verification Plan as the validation route, not as evidence that a check ran.
 2. Add a regression test for the assigned defect or boundary when the behavior can be asserted at development-test scope.
 3. Run the smallest changed-area command first.
 4. Run the complete configured development gate, including one startup or happy-path smoke check.
@@ -41,6 +43,8 @@ Run `run-test-gate.py <project-root> --gate development`. The executor loads the
 - Focused Developer-owned tests under the project convention, normally `tests/unit/` and `tests/smoke/`
 - A passing configured development gate or exact classified failures
 - A draft that distinguishes development evidence from independent integration acceptance
+- Applicable `AC-*` references with implementation and Development Gate evidence,
+  without claiming independent acceptance
 
 ## Validation
 

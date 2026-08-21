@@ -43,11 +43,22 @@ model settings, pinned `role-policy.json`, role-specific `result-schema.json`, p
 `execution-spec.json`, and turn artifacts under
 `.codexteam/runtime/sessions/<team>/<task>/<attempt>/`. Every turn persists the exact
 raw `<turn>.lead-prompt.md` plus `<turn>.jsonl`, `<turn>.txt`, `<turn>.stderr.txt`, and
-`<turn>.metrics.json`. Guarded turns flush JSONL and stderr while the process runs;
-ordinary turns keep the buffered path. Metrics are generated once after return and
+`<turn>.metrics.json`. Every turn flushes JSONL and stderr while the process runs.
+Metrics are generated once after return and
 record cumulative and delta usage, tool/failure counts, command-output volume,
 repeats, MCP response volume, and redacted previews of the three largest commands.
 They do not store command output, MCP arguments, or MCP response content.
+
+Attempts use the pinned `artifact-report-v1` contract. Workers write the derived
+JSON report under `results/reports/`; after Project Lead acceptance, the launcher
+seals identity, status, accepted file changes, process metadata, and timestamps
+without another provider turn.
+
+Direct attempts also pin `handoff-contract.json`, containing only validated
+report path, bounded context ranges with digests, and fixed verification argv.
+Launcher-owned focused records live under `results/checks/`; gate records remain
+under `results/gates/`. Both are excluded from the worker-owned accepted change
+manifest, are digest-pinned at acceptance, and become deterministic result evidence.
 `session.json` and `turn-state.json` record the effective draft format plus pinned
 MCP policy and effective subsets. The format sidecar is written before backend
 setup so even a pre-thread failed attempt retains its contract identity.

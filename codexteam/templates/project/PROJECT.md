@@ -31,9 +31,16 @@ The operator who initialized this project and the assigned CodexTeam workers.
 
 ## Acceptance Criteria
 
-- `T001` through `T005` are completed in dependency order.
-- Every completed task has independently checked evidence.
-- The delivered artifact and run instructions exist inside the project root.
+The Project Lead maintains these criteria throughout execution. Add or refine a
+criterion when implementation, testing, review, or an operator request exposes a
+new required outcome or preservation boundary. Keep the criteria observable and
+update the Verification Plan with each change. Only a material product or scope
+decision requires operator input; the operator is not required to verify every
+criterion.
+
+- **AC-01 - Dependency-safe execution:** Planned tasks execute only after their declared dependencies are satisfied.
+- **AC-02 - Independent product evidence:** Implemented product behavior has independently checked integration and review evidence.
+- **AC-03 - Runnable delivery:** The delivered artifact and run instructions exist inside the project root.
 
 ## Constraints
 
@@ -48,11 +55,28 @@ The accepted system structure is recorded in `ARCHITECTURE.md`; material archite
 
 ## Verification Plan
 
-`T001` configures both project-specific gate command arrays. The Architect defines the structure in `T002`; the Developer runs the Development Gate in `T003`; the Test Engineer runs the Integration Gate in `T004`; `T005` checks architecture conformance, source, test changes, gate composition, and evidence against this document before delivery.
+The Project Lead maintains this mapping as acceptance criteria and project checks
+are refined during planning and execution. Each named verifier produces the
+evidence for its rows; operator verification is not required unless explicitly
+listed. Exact automated commands remain in `management/TEST_GATES.toml`.
+
+| Criterion | Validation | Verifier | Expected Evidence |
+|---|---|---|---|
+| `AC-01` | Check declared dependencies before each task advances and audit canonical task state. | Project Lead | Synchronized `TASKS.md`, project state, and accepted upstream results. |
+| `AC-02` | Run the configured Development and Integration Gates and independently audit product behavior, coverage, and freshness. | Test Engineer and Reviewer | Accepted Integration Gate snapshots and findings-first review evidence. |
+| `AC-03` | Exercise the documented run procedure and inspect the delivered files. | Test Engineer | Acceptance smoke evidence and final file manifest. |
 
 ## Delivery Criteria
 
-All planned tasks are completed, verification passes, and `DONE_REPORT.md` identifies the delivered files and known limitations.
+The Project Lead checks this delivery evidence after acceptance verification is
+complete. Delivery checks do not replace the Verification Plan.
+
+| Delivery Requirement | Validation | Responsible Role | Expected Evidence |
+|---|---|---|---|
+| All current applicable acceptance criteria are satisfied. | Compare every Verification Plan row with current accepted evidence. | Project Lead | Accepted gate snapshots, review disposition, and verified results. |
+| Delivered files are complete and contain no unintended artifacts. | Inspect the final project manifest and relevant Git changes. | Project Lead | Recorded manifest audit with unexplained files resolved. |
+| Run instructions work as documented. | Execute the documented launch or usage procedure from the project root. | Test Engineer | Acceptance smoke evidence with the exact command and observed result. |
+| Delivery reporting is accurate about outputs and limitations. | Compare `DONE_REPORT.md` and delivery documentation with accepted results and evidence. | Reviewer | Findings-first delivery review with no unresolved blocking discrepancy. |
 
 ## Open Questions
 

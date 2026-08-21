@@ -11,8 +11,9 @@
 
 ## Execution
 
+- Use only curated Codex profiles for new worker execution. OpenCode draft and feedback execution is disabled; preserve its historical records and implementation.
 - Preview project initialization and subagent spawning before live execution.
-- Use `qwen36-27b` as the default tool-using profile for implementation, testing, review, and documentation. Use `gemma4-26b` only for a bounded secondary perspective after confirming the task does not depend on unsupported editing behavior.
+- Use qualified Codex `qwen38-27b` with explicit `medium` reasoning for routine new role attempts.
 - Use canonical uppercase task IDs.
 - Never evaluate agent-produced shell text.
 - Keep ordinary draft revisions in the exact responsible AI session and logical attempt.
@@ -37,3 +38,10 @@
 - After final closure, synchronize project-specific milestone and implementation-plan narrative with canonical delivered state.
 - Before delivery, compare nontrivial exact product output with the approved convention and inspect the file manifest for scratch or incomplete artifacts.
 - A Reviewer may claim only what the content of the named accepted evidence actually records.
+## Qwen 3.8 Routing And Stages
+
+- Select Codex `qwen38-27b` for every new role attempt.
+- Classify handoffs as `small` (600 seconds) or `complex` (1200 seconds).
+- Complex Developer sessions return source/focused-test evidence, then the
+  Development Gate in the same attempt. Complex Tester sessions return the final
+  browser/integration evidence and report before finalization.

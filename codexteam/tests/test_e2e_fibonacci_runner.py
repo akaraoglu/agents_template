@@ -159,7 +159,7 @@ def test_runner_dry_run_is_non_mutating_and_describes_ten_turns(tmp_path: Path):
 
     assert completed.returncode == 0, completed.stderr
     assert not (tmp_path / project_id).exists()
-    assert "Expected clean turns: 10" in completed.stdout
+    assert "Expected clean turns: 5" in completed.stdout
     assert completed.stdout.count("[deterministic draft gate]") == 5
     assert completed.stdout.count("--phase draft") == 5
     assert completed.stdout.count("--phase final") == 5

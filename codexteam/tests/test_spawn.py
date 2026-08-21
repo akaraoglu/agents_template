@@ -3,6 +3,9 @@ import hashlib
 import json
 import shutil
 import stat
+import subprocess
+import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,6 +14,8 @@ import pytest
 import codexteam_tools.spawn as spawn
 from codexteam_tools import opencode_backend
 from codexteam_tools.contracts import validate_result
+from codexteam_tools.execution_registry import load_execution_registry
+from codexteam_tools.execution_spec import execution_spec_reference
 
 
 THREAD_ID = "0199a213-81c0-7800-8aa1-bbab2a035a53"
@@ -29,6 +34,18 @@ def draft_message(**overrides) -> str:
     return json.dumps(value)
 
 
+def write_artifact_report(request, **overrides) -> None:
+    request.artifact_report_path.parent.mkdir(parents=True, exist_ok=True)
+    value = {
+        "version": 1,
+        "summary": "Completed and verified the assigned work.",
+        "evidence": ["results/evidence.txt"],
+        "limitations": [],
+    }
+    value.update(overrides)
+    request.artifact_report_path.write_text(json.dumps(value))
+
+
 def request_args(tmp_path: Path, monkeypatch, **overrides):
     monkeypatch.setattr(
         spawn,
@@ -38,7 +55,7 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
     codex_home = tmp_path / "source-codex-home"
     codex_home.mkdir(exist_ok=True)
     (codex_home / "qwen36-27b.config.toml").write_text(
-        'model = "qwen"\n'
+        'model = "qwen3.6-27b"\n'
         'model_provider = "ollama_local"\n'
         'model_catalog_json = "/tmp/local-models.json"\n'
         'model_reasoning_effort = "high"\n'
@@ -49,7 +66,6 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
     workspace.mkdir(exist_ok=True)
     values = {
         "backend": "codex",
-        "draft_format": None,
         "phase": "draft",
         "profile": "qwen36-27b",
         "reasoning_effort": "medium",
@@ -67,6 +83,7 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
         "timeout": 10,
         "result_dir": "results",
         "dry_run": False,
+        "feedback_mode": None,
     }
     values.update(overrides)
     if values["phase"] != "draft":
@@ -75,6 +92,15 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
         values["reasoning_effort"] = None
     elif values["backend"] == "opencode" and "reasoning_effort" not in overrides:
         values["reasoning_effort"] = "provider_default"
+    report = workspace / "results/reports" / f"{values['task']}-{values['attempt']}.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    if not report.exists():
+        report.write_text(json.dumps({
+            "version": 1,
+            "summary": "Completed and verified the assigned work.",
+            "evidence": [report.relative_to(workspace).as_posix()],
+            "limitations": [],
+        }))
     return argparse.Namespace(**values)
 
 
@@ -163,8 +189,9 @@ def run_draft(tmp_path: Path, monkeypatch) -> tuple[spawn.SpawnRequest, dict]:
     request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
     (request.workspace / "src").mkdir()
     (request.workspace / "src" / "main.py").write_text("VALUE = 1\n")
-    request.result_dir.mkdir()
+    request.result_dir.mkdir(exist_ok=True)
     (request.result_dir / "evidence.txt").write_text("passed\n")
+    write_artifact_report(request)
     monkeypatch.setattr(
         spawn,
         "run_process",
@@ -194,7 +221,365 @@ def test_prepare_request_uses_deterministic_result_and_session_paths(tmp_path: P
     )
 
 
-def test_handoff_prompt_requires_conversational_draft_and_contains_task_once(tmp_path: Path, monkeypatch):
+def test_new_attempt_defaults_to_artifact_report_contract(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+
+    assert request.draft_format == "artifact-report-v1"
+    assert request.artifact_report_path == request.workspace / "results/reports/T002-att-001.json"
+    prompt = spawn.build_prompt(request, spawn.prepare_turn(request))
+    assert "Write the artifact report" in prompt
+    assert "Terminal output is diagnostic only" in prompt
+
+
+def test_execution_class_derives_and_pins_timeout(tmp_path: Path, monkeypatch):
+    args = request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen38-27b-context",
+        reasoning_effort="medium", timeout=None
+    )
+    workspace = Path(args.workspace)
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n\n"
+        "## Execution Class\n\n- `complex`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+    assert request.execution_class == "complex"
+    assert request.timeout_seconds == 1200
+    spawn._prepare_session_storage(request, initial=True, session=None)
+    contract = json.loads((request.session_dir / spawn.HANDOFF_CONTRACT_FILENAME).read_text())
+    assert contract["execution_class"] == "complex"
+    assert contract["timeout_seconds"] == 1200
+
+
+def test_explicit_timeout_overrides_execution_class(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch, timeout=900)
+    workspace = Path(args.workspace)
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n\n"
+        "## Execution Class\n\n- `complex`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+    assert request.timeout_seconds == 900
+
+
+def test_continuation_rejects_timeout_drift(tmp_path: Path, monkeypatch):
+    args = request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen38-27b-context",
+        reasoning_effort="medium", timeout=900
+    )
+    workspace = Path(args.workspace)
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n\n"
+        "## Execution Class\n\n- `complex`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    draft = spawn.prepare_request(args)
+    assert draft.execution_spec is not None
+    spawn._prepare_session_storage(draft, initial=True, session=None)
+    session = {
+        "schema_version": "1.0", "team_id": draft.team_id, "task_id": draft.task_id,
+        "attempt_id": draft.attempt_id, "agent_role": draft.role,
+        "workspace_root": str(draft.workspace), "thread_id": THREAD_ID, "turn_count": 1,
+        "last_phase": "draft", "last_status": "draft_ready",
+        "last_turn_path": ".codexteam/runtime/placeholder", "created_at": "2026-08-20T00:00:00Z",
+        "updated_at": "2026-08-20T00:00:00Z", "turns": [{
+            "number": 1, "phase": "draft", "status": "draft_ready", "duration_seconds": 1,
+        }], "execution_spec": execution_spec_reference(draft.execution_spec),
+        "handoff_contract_sha256": hashlib.sha256(
+            (draft.session_dir / spawn.HANDOFF_CONTRACT_FILENAME).read_bytes()
+        ).hexdigest(), "backend_version": "1.18.18",
+        "backend_config_digest": draft.backend_config_digest,
+    }
+    spawn._write_session(draft.session_path, session)
+    with pytest.raises(ValueError, match="continuation timeout"):
+        spawn.prepare_request(request_args(
+            tmp_path, monkeypatch, backend="opencode", profile="qwen38-27b-context",
+            phase="feedback", prompt="continue", timeout=1200,
+        ))
+
+
+def test_continuation_tolerates_unrelated_registry_growth(tmp_path: Path, monkeypatch):
+    run_draft(tmp_path, monkeypatch)
+    registry = load_execution_registry()
+    registry.digest = "f" * 64
+    monkeypatch.setattr(spawn, "load_execution_registry", lambda: registry)
+
+    feedback = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="feedback", prompt="continue",
+    ))
+
+    assert feedback.execution_profile.registry_digest == "f" * 64
+
+
+def test_complex_checkpoint_sequence_is_same_session(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch, timeout=None)
+    workspace = Path(args.workspace)
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n\n"
+        "## Execution Class\n\n- `complex`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+    assert spawn._required_complex_checkpoint(request) == "source_focused_tests"
+    assert spawn._complex_checkpoint_error(
+        request, {"checkpoint": "development_gate"}
+    ) == "complex work requires checkpoint 'source_focused_tests', got 'development_gate'"
+
+
+def test_complex_developer_requires_both_checkpoints_before_final(tmp_path: Path, monkeypatch):
+    args = request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen38-27b-context",
+        reasoning_effort="medium", timeout=None
+    )
+    workspace = Path(args.workspace)
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n\n"
+        "## Execution Class\n\n- `complex`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+    (workspace / "results").mkdir(exist_ok=True)
+    (workspace / "results/evidence.txt").write_text("passed\n")
+    write_artifact_report(request, checkpoint="source_focused_tests")
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT")
+    )
+    draft_outcome, draft_code = spawn.run_spawn(request)
+    assert draft_code == 0, draft_outcome.get("errors")
+    session = json.loads(request.session_path.read_text())
+    assert session["complex_checkpoint"] == "source_focused_tests"
+
+    feedback = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
+        phase="feedback", prompt="run gate", timeout=None,
+    ))
+    assert feedback.timeout_seconds == 1200
+    write_artifact_report(feedback, checkpoint="development_gate")
+    assert spawn.run_spawn(feedback)[1] == 0
+    session = json.loads(feedback.session_path.read_text())
+    assert session["complex_checkpoint"] == "development_gate"
+
+
+def test_artifact_result_finalization_is_provider_free_and_launcher_owned(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+    (request.workspace / "src").mkdir()
+    (request.workspace / "results").mkdir(exist_ok=True)
+    (request.workspace / "results/evidence.txt").write_text("passed\n")
+    write_artifact_report(request)
+
+    def draft_process(*args, **kwargs):
+        (request.workspace / "src/main.py").write_text("VALUE = 1\n")
+        return successful_process("terminal prose is ignored")
+
+    monkeypatch.setattr(spawn, "run_process", draft_process)
+    draft, draft_code = spawn.run_spawn(request)
+    assert draft_code == 0
+    assert draft["status"] == "draft_ready"
+
+    final = spawn.prepare_request(
+        request_args(
+            tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT",
+            result_status="completed",
+        )
+    )
+    monkeypatch.setattr(
+        spawn,
+        "adapter_for",
+        lambda backend: (_ for _ in ()).throw(AssertionError("provider accessed")),
+    )
+    persisted, final_code = spawn.run_spawn(final)
+
+    assert final_code == 0
+    assert persisted["status"] == "completed"
+    assert persisted["team_id"] == "team-1"
+    assert persisted["file_changes"] == [{"path": "src/main.py", "action": "created"}]
+    assert persisted["output"] == {
+        "exit_code": 0, "stdout_tail": "", "stderr_tail": "", "duration_seconds": 0.0,
+    }
+    assert json.loads(final.session_path.read_text())["turns"][-1]["duration_seconds"] == 0.0
+
+
+@pytest.mark.parametrize("status", ("blocked", "failed", "partial", "needs_review"))
+def test_artifact_finalization_uses_explicit_lead_status(
+    tmp_path: Path, monkeypatch, status: str
+):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request.result_dir.mkdir(exist_ok=True)
+    (request.result_dir / "evidence.txt").write_text("evidence\n")
+    write_artifact_report(request)
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("ignored")
+    )
+    assert spawn.run_spawn(request)[1] == 0
+    final = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="final", prompt="close", result_status=status,
+    ))
+
+    result, code = spawn.run_spawn(final)
+
+    assert result["status"] == status
+    assert code == (0 if status == "needs_review" else 1)
+
+
+def test_result_status_is_rejected_before_finalization(tmp_path: Path, monkeypatch):
+    with pytest.raises(ValueError, match="only for finalization"):
+        spawn.prepare_request(request_args(
+            tmp_path, monkeypatch, result_status="completed",
+        ))
+
+
+def test_artifact_finalization_rolls_back_result_and_session_on_state_failure(
+    tmp_path: Path, monkeypatch
+):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request.result_dir.mkdir(exist_ok=True)
+    (request.result_dir / "evidence.txt").write_text("evidence\n")
+    write_artifact_report(request)
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("ignored")
+    )
+    assert spawn.run_spawn(request)[1] == 0
+    final = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="final", prompt="accept",
+    ))
+    session_before = final.session_path.read_bytes()
+    state_before = (final.session_dir / "turn-state.json").read_bytes()
+    monkeypatch.setattr(
+        spawn,
+        "_write_turn_state",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("state write failed")),
+    )
+
+    with pytest.raises(OSError, match="state write failed"):
+        spawn.run_spawn(final)
+
+    assert not final.result_path.exists()
+    assert final.session_path.read_bytes() == session_before
+    assert (final.session_dir / "turn-state.json").read_bytes() == state_before
+
+
+def test_artifact_finalization_rejects_existing_lock_before_reading_state(
+    tmp_path: Path, monkeypatch
+):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request.result_dir.mkdir(exist_ok=True)
+    (request.result_dir / "evidence.txt").write_text("evidence\n")
+    write_artifact_report(request)
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("ignored")
+    )
+    assert spawn.run_spawn(request)[1] == 0
+    final = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="final", prompt="accept",
+    ))
+    lock = final.session_dir / "turn.lock"
+    lock.write_text(str(spawn.os.getpid()))
+    session_before = final.session_path.read_bytes()
+
+    with pytest.raises(ValueError, match="already in progress"):
+        spawn.run_spawn(final)
+
+    assert final.session_path.read_bytes() == session_before
+    assert not final.result_path.exists()
+
+
+def test_artifact_finalization_recovers_dead_owner_lock(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request.result_dir.mkdir(exist_ok=True)
+    (request.result_dir / "evidence.txt").write_text("evidence\n")
+    write_artifact_report(request)
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("ignored")
+    )
+    assert spawn.run_spawn(request)[1] == 0
+    final = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="final", prompt="accept",
+    ))
+    lock = final.session_dir / "turn.lock"
+    lock.write_text("999999999")
+
+    result, code = spawn.run_spawn(final)
+
+    assert code == 0
+    assert result["status"] == "completed"
+    assert not lock.exists()
+
+
+def test_direct_context_rejects_codex_backend(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    workspace = Path(args.workspace)
+    source = workspace / "src/main.py"
+    source.parent.mkdir()
+    source.write_text("VALUE = 1\n")
+    configure_test_gates(workspace, integration_surface="lead_host")
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/main.py`\n- `results/report.md`\n\n"
+        "## Context Mode\n\n- `direct`\n\n## Result Report\n\n- `results/report.md`\n\n"
+        "## Direct Context\n\n- `src/main.py:1-1`\n\n"
+        "## Verification Commands\n\n- `[\"true\"]`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    with pytest.raises(ValueError, match="requires the OpenCode backend"):
+        spawn.prepare_request(args)
+
+
+def test_artifact_finalization_rejects_changes_after_latest_accepted_turn(
+    tmp_path: Path, monkeypatch
+):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request.result_dir.mkdir(exist_ok=True)
+    (request.result_dir / "evidence.txt").write_text("evidence\n")
+    write_artifact_report(request)
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("ignored")
+    )
+    assert spawn.run_spawn(request)[1] == 0
+    session = json.loads(request.session_path.read_text())
+    session["last_status"] = "correction_needed"
+    session["turn_count"] = 2
+    session["worker_change_manifest"]["src/unaccepted.py"] = {
+        "action": "created", "sha256": "a" * 64,
+    }
+    request.session_path.write_text(json.dumps(session))
+    final = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="final", prompt="accept",
+    ))
+
+    with pytest.raises(ValueError, match="latest worker turn"):
+        spawn.run_spawn(final)
+
+    assert not final.result_path.exists()
+
+
+def test_handoff_prompt_requires_artifact_report_and_contains_task_once(tmp_path: Path, monkeypatch):
     task = "Implement the uniquely named task once."
     request = spawn.prepare_request(request_args(tmp_path, monkeypatch, prompt=task))
     handoff = spawn.build_handoff(request)
@@ -202,108 +587,32 @@ def test_handoff_prompt_requires_conversational_draft_and_contains_task_once(tmp
     assert handoff["workspace_root"] == str(request.workspace)
     assert any("Return a draft" in item for item in handoff["completion_criteria"])
     assert "Do not emit result" in prompt
-    assert "DRAFT T002/att-001" in prompt
-    assert "Outcome, Evidence, Uncertainties or conflicts" in prompt
+    assert "results/reports/T002-att-001.json" in prompt
+    assert "Terminal output is diagnostic only" in prompt
     assert prompt.count(task) == 1
     assert "[TASK DETAILS]" not in prompt
 
 
-def test_invalid_draft_stays_resumable_as_correction_needed(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, draft_format="compact-json")
-    )
+def test_invalid_artifact_report_stays_resumable(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request.artifact_report_path.write_text('{"version":1}')
     monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process(draft_message(outcome="x" * 1201)),
+        spawn, "run_process", lambda *args, **kwargs: successful_process("ignored")
     )
-
     outcome, code = spawn.run_spawn(request)
-
     assert code == 1
     assert outcome["status"] == "correction_needed"
-    assert "compact JSON draft validation failed" in outcome["errors"]
-    session = json.loads(request.session_path.read_text())
-    assert session["thread_id"] == THREAD_ID
-    assert session["last_status"] == "correction_needed"
+    assert any("missing required artifact report fields" in error for error in outcome["errors"])
 
 
-def test_draft_rejects_malformed_json_like_output(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, draft_format="compact-json")
-    )
+def test_terminal_text_does_not_affect_valid_artifact_report(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
     monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process(draft_message() + "\ntrailing prose"),
-    )
-
-    outcome, code = spawn.run_spawn(request)
-
-    assert code == 1
-    assert outcome["status"] == "correction_needed"
-    assert any("one JSON object" in error for error in outcome["errors"])
-
-
-def test_compact_draft_rejects_prose_prefix_bypass(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, draft_format="compact-json")
-    )
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process("Here is the draft:\n" + draft_message()),
-    )
-
-    outcome, code = spawn.run_spawn(request)
-
-    assert code == 1
-    assert outcome["status"] == "correction_needed"
-    assert any("one JSON object" in error for error in outcome["errors"])
-
-
-def test_compact_draft_format_is_pinned_and_used_for_feedback(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, draft_format="compact-json")
-    )
-    assert "compact JSON draft contract" in spawn.build_prompt(request, spawn.prepare_turn(request))
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process(draft_message()),
+        spawn, "run_process", lambda *args, **kwargs: successful_process("malformed { terminal")
     )
     outcome, code = spawn.run_spawn(request)
-
     assert code == 0
-    assert outcome["draft_format"] == "compact-json"
-    assert json.loads(request.draft_format_path.read_text()) == {
-        "schema_version": "1.0",
-        "draft_format": "compact-json",
-    }
-    assert request.execution_spec["guidance"]
-
-    feedback = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
-    )
-    assert feedback.draft_format == "compact-json"
-    assert "compact JSON draft contract" in spawn.build_prompt(
-        feedback, spawn.prepare_turn(feedback)
-    )
-
-
-@pytest.mark.parametrize("phase", ("feedback", "final"))
-def test_continuation_rejects_draft_format_override(tmp_path: Path, monkeypatch, phase: str):
-    run_draft(tmp_path, monkeypatch)
-    with pytest.raises(ValueError, match="valid only when creating"):
-        spawn.prepare_request(
-            request_args(
-                tmp_path,
-                monkeypatch,
-                phase=phase,
-                prompt="continue",
-                draft_format="conversational",
-            )
-        )
+    assert outcome["status"] == "draft_ready"
 
 
 def test_session_draft_format_duplicate_is_rejected(tmp_path: Path, monkeypatch):
@@ -383,38 +692,32 @@ def test_session_additions_are_rejected(tmp_path: Path, monkeypatch):
 
 
 def test_draft_rejects_missing_evidence_artifact(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, draft_format="compact-json")
-    )
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    write_artifact_report(request, evidence=["results/missing.txt"])
     monkeypatch.setattr(
         spawn,
         "run_process",
-        lambda *args, **kwargs: successful_process(
-            draft_message(evidence=[{"artifact_ref": "results/missing.txt", "summary": "Claimed pass."}])
-        ),
+        lambda *args, **kwargs: successful_process("ignored"),
     )
 
     outcome, code = spawn.run_spawn(request)
 
     assert code == 1
     assert outcome["status"] == "correction_needed"
-    assert any("does not exist" in error for error in outcome["errors"])
+    assert any("does not name an existing regular file" in error for error in outcome["errors"])
 
 
 def test_draft_rejects_escaping_evidence_symlink_without_losing_session(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, draft_format="compact-json")
-    )
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
     outside = tmp_path / "outside"
     outside.mkdir()
     evidence_link = request.workspace / "evidence-link"
     evidence_link.symlink_to(outside, target_is_directory=True)
+    write_artifact_report(request, evidence=["evidence-link/proof.txt"])
     monkeypatch.setattr(
         spawn,
         "run_process",
-        lambda *args, **kwargs: successful_process(
-            draft_message(evidence=[{"artifact_ref": "evidence-link/proof.txt", "summary": "Claimed proof."}])
-        ),
+        lambda *args, **kwargs: successful_process("ignored"),
     )
 
     outcome, code = spawn.run_spawn(request)
@@ -444,27 +747,303 @@ def test_tester_handoff_carries_host_only_gate_routing(tmp_path: Path, monkeypat
     assert "same-digest host record" in prompt
 
 
-def test_final_prompt_relies_on_schema_and_keeps_task_specific_truth(tmp_path: Path, monkeypatch):
+def test_direct_context_mode_disables_task_context_mcp(tmp_path: Path, monkeypatch):
+    args = request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
+    )
+    handoff = Path(args.workspace) / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    source = Path(args.workspace) / "src/main.js"
+    source.parent.mkdir()
+    source.write_text("line one\nline two\n")
+    configure_test_gates(Path(args.workspace), integration_surface="lead_host")
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/main.js`\n- `results/task/REPORT.md`\n\n"
+        "## Context Mode\n\n- `direct`\n\n"
+        "## Result Report\n\n- `results/task/REPORT.md`\n\n"
+        "## Direct Context\n\n- `src/main.js:1-2`\n\n"
+        "## Verification Commands\n\n- `[\"true\"]`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+
+    request = spawn.prepare_request(args)
+
+    assert request.context_mode == "direct"
+    assert request.effective_mcp_servers == ()
+    assert request.effective_mcp_tools == ()
+    assert spawn.build_handoff(request)["task_context"]["context_mode"] == "direct"
+    config = json.loads(request.backend_config_path.read_text()) if request.backend_config_path.exists() else opencode_backend.build_config(
+        model=request.model, role_name=request.role,
+        role_instructions=request.effective_role_policy.developer_instructions,
+        context_limit=request.execution_profile.model["context_limit"],
+        output_limit=request.execution_profile.model["output_limit"],
+        direct_mode=True, editable_paths=request.task_write_scope or (),
+    )
+    permissions = config["agent"][opencode_backend.AGENT]["permission"]
+    assert permissions["read"] == permissions["grep"] == permissions["glob"] == "deny"
+    assert permissions["list"] == "deny"
+    assert permissions["bash"] == "deny"
+
+
+def test_artifact_finalization_rejects_evidence_changed_after_acceptance(
+    tmp_path: Path, monkeypatch
+):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request.result_dir.mkdir(exist_ok=True)
+    evidence = request.result_dir / "evidence.txt"
+    evidence.write_text("accepted\n")
+    write_artifact_report(request, evidence=["results/evidence.txt"])
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_process("ignored")
+    )
+    assert spawn.run_spawn(request)[1] == 0
+    evidence.write_text("changed\n")
+    final = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="final", prompt="accept",
+    ))
+    with pytest.raises(ValueError, match="evidence digest mismatch"):
+        spawn.run_spawn(final)
+
+
+def test_bounded_mcp_context_mode_enables_only_pinned_task_context(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b")
+    handoff = Path(args.workspace) / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+
+    request = spawn.prepare_request(args)
+
+    assert request.context_mode == "bounded-mcp"
+    assert request.effective_mcp_servers == ("codexteam-context",)
+    assert request.effective_mcp_tools == (("codexteam-context", ("get_task_context",)),)
+
+
+def test_direct_preflight_rejects_system_output_scope_before_launch(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
+    )
+    workspace = Path(args.workspace)
+    source = workspace / "src/main.js"
+    source.parent.mkdir()
+    source.write_text("value\n")
+    configure_test_gates(workspace, integration_surface="lead_host")
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/**`\n- `results/**`\n\n"
+        "## Context Mode\n\n- `direct`\n\n"
+        "## Result Report\n\n- `results/task/REPORT.md`\n\n"
+        "## Direct Context\n\n- `src/main.js:1-1`\n\n"
+        "## Verification Commands\n\n- `[\"true\"]`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+
+    with pytest.raises(ValueError, match="literal files"):
+        spawn.run_spawn(request)
+
+    assert not request.session_dir.exists()
+
+
+def test_direct_attempt_ignores_terminal_contract_and_runs_launcher_verification(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
+    )
+    workspace = Path(args.workspace)
+    source = workspace / "src/main.js"
+    source.parent.mkdir()
+    source.write_text("const value = 1;\n")
+    configure_test_gates(workspace, integration_surface="lead_host")
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/main.js`\n- `results/task/REPORT.md`\n\n"
+        "## Context Mode\n\n- `direct`\n\n"
+        "## Result Report\n\n- `results/task/REPORT.md`\n\n"
+        "## Direct Context\n\n- `src/main.js:1-1`\n\n"
+        "## Verification Commands\n\n- `[\"true\"]`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+
+    observed = {}
+
+    def worker(command, **kwargs):
+        if "true" in command:
+            return spawn.ProcessResult(0, "verification passed\n", "", 0.01)
+        observed["prompt"] = kwargs["prompt"]
+        source.write_text("const value = 2;\n")
+        report = workspace / "results/task/REPORT.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("# Report\n\nDisposition: ready_for_review\n\nChanged the value.\n")
+        return successful_opencode_process("not JSON and deliberately ignored")
+
+    monkeypatch.setattr(spawn, "run_process", worker)
+    def gate(*args, **kwargs):
+        record = {
+            "status": "passed", "gate": "development",
+            "commands": [{"argv": ["true"], "exit_code": 0}],
+        }
+        path = workspace / "results/gates/development.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record))
+        return record
+    monkeypatch.setattr(spawn, "run_gate", gate)
+    draft, code = spawn.run_spawn(request)
+
+    assert code == 0, draft.get("errors")
+    assert draft["status"] == "draft_ready"
+    assert "[DIRECT CONTEXT: src/main.js:1-1]" in observed["prompt"]
+    assert "const value = 1;" in observed["prompt"]
+    semantic = json.loads(request.session_dir.joinpath("turns/001-draft.txt").read_text())
+    assert semantic["summary"] == "developer completed T002; see results/task/REPORT.md."
+    assert semantic["evidence"] == [
+        "results/task/REPORT.md",
+        "results/checks/T002-att-001.json",
+        "results/gates/development.json",
+    ]
+    config = json.loads(request.backend_config_path.read_text())
+    permissions = config["agent"][opencode_backend.AGENT]["permission"]
+    assert permissions["read"] == permissions["bash"] == "deny"
+
+    final = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="final", prompt="accept",
+    ))
+    monkeypatch.setattr(
+        spawn,
+        "adapter_for",
+        lambda backend: (_ for _ in ()).throw(AssertionError("provider accessed")),
+    )
+    result, final_code = spawn.run_spawn(final)
+    assert final_code == 0
+    assert result["status"] == "completed"
+
+
+def test_direct_feedback_replays_pinned_context_not_worker_modified_source(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(
+        tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
+    )
+    workspace = Path(args.workspace)
+    source = workspace / "src/main.js"
+    source.parent.mkdir()
+    source.write_text("original context\n")
+    configure_test_gates(workspace, integration_surface="lead_host")
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "# T002\n\n## Task Write Scope\n\n- `src/main.js`\n- `results/task/REPORT.md`\n\n"
+        "## Context Mode\n\n- `direct`\n\n"
+        "## Result Report\n\n- `results/task/REPORT.md`\n\n"
+        "## Direct Context\n\n- `src/main.js:1-1`\n\n"
+        "## Verification Commands\n\n- `[\"true\"]`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+    request = spawn.prepare_request(args)
+
+    def worker(command, **kwargs):
+        if "true" in command:
+            return spawn.ProcessResult(0, "", "", 0.01)
+        source.write_text("worker modified context\n")
+        report = workspace / "results/task/REPORT.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("Disposition: ready_for_review\n")
+        return successful_opencode_process("ignored")
+
+    monkeypatch.setattr(spawn, "run_process", worker)
+    def gate(*args, **kwargs):
+        record = {
+            "status": "passed", "gate": "development",
+            "commands": [{"argv": ["true"], "exit_code": 0}],
+        }
+        path = workspace / "results/gates/development.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record))
+        return record
+    monkeypatch.setattr(spawn, "run_gate", gate)
+    assert spawn.run_spawn(request)[1] == 0
+    feedback = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="feedback", prompt="revise report",
+    ))
+    prompt = spawn.build_prompt(feedback, spawn.prepare_turn(feedback))
+    assert "original context" not in prompt
+    assert "worker modified context" not in prompt
+    assert "Correction: revise report" in prompt
+
+
+def test_direct_report_requires_ready_disposition(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    request = replace(
+        request,
+        context_mode="direct",
+        result_report="results/report.md",
+    )
+    report = request.workspace / "results/report.md"
+    report.parent.mkdir(exist_ok=True)
+    report.write_text("Disposition: blocked\n")
+    with pytest.raises(ValueError, match="ready_for_review"):
+        spawn._direct_semantic_result(request)
+
+
+def test_direct_verification_uses_bwrap_and_scrubbed_environment(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    configure_test_gates(request.workspace, integration_surface="lead_host")
+    request = replace(
+        request,
+        verification_commands=(("true",),),
+        gate_routing={"gate": "development", "execution_surface": "worker"},
+    )
+    observed = {}
+    monkeypatch.setenv("SECRET_TOKEN", "private")
+
+    def process(command, **kwargs):
+        observed["command"] = command
+        observed["env"] = kwargs["env"]
+        return spawn.ProcessResult(0, "", "", 0.01)
+
+    def gate(*args, **kwargs):
+        observed["command"] = [*kwargs["command_prefix"], "true"]
+        observed["env"] = kwargs["environment"]
+        path = request.workspace / "results/gates/development.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+        return {"status": "passed", "commands": []}
+
+    monkeypatch.setattr(spawn, "run_gate", gate)
+    spawn._run_direct_verification(request)
+    assert observed["command"][0].endswith("bwrap")
+    assert "--unshare-all" in observed["command"]
+    assert "SECRET_TOKEN" not in observed["env"]
+
+
+def test_finalization_has_no_provider_payload(tmp_path: Path, monkeypatch):
     run_draft(tmp_path, monkeypatch)
     request = spawn.prepare_request(
         request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
     )
     prompt = spawn.build_prompt(request, spawn.prepare_turn(request))
 
-    assert "matching the result contract" in prompt
-    assert "team_id: team-1" in prompt
-    assert "task_id: T002" in prompt
-    assert "agent_role: developer" in prompt
-    assert "attempt_id: att-001" in prompt
-    assert "requested_followups, errors, warnings, limitations, and produced_at" in prompt
-    assert "actual existing project-relative path" in prompt
-    assert '"artifact_ref": "<actual existing project-relative evidence artifact>"' not in prompt
-    assert "Allowed evidence types for this effective policy" in prompt
-    assert "normalized by the launcher" in prompt
-    assert len(prompt) < 1600
+    assert prompt == "Finalization is deterministic and does not invoke a provider.\n"
+    assert spawn.build_command(request, spawn.prepare_turn(request)) == []
 
 
-def test_final_command_supplies_result_schema_only_for_openai_final_phase(
+def test_feedback_never_supplies_result_schema_and_final_has_no_command(
     tmp_path: Path, monkeypatch
 ):
     run_draft(tmp_path, monkeypatch)
@@ -479,22 +1058,7 @@ def test_final_command_supplies_result_schema_only_for_openai_final_phase(
         request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
     )
     final_turn = spawn.prepare_turn(final)
-    local_final_command = spawn.build_command(final, final_turn)
-    assert "--output-schema" not in local_final_command
-
-    openai_final = replace(final, model_provider="openai")
-    final_command = spawn.build_command(openai_final, final_turn)
-    schema_index = final_command.index("--output-schema")
-
-    schema_path = final.session_dir / spawn.RESULT_SCHEMA_FILENAME
-    assert final_command[schema_index + 1] == str(schema_path)
-    schema = json.loads(schema_path.read_text())
-    assert schema["properties"]["task_id"]["const"] == "T002"
-    assert schema["properties"]["agent_role"]["const"] == "developer"
-    assert schema["properties"]["evidence"]["items"]["properties"]["type"][
-        "enum"
-    ] == list(final.role_policy.allowed_evidence_types)
-    assert schema["properties"]["produced_at"]["pattern"] == "Z$"
+    assert spawn.build_command(final, final_turn) == []
 
 
 def test_initial_command_persists_json_session_without_ephemeral(tmp_path: Path, monkeypatch):
@@ -637,7 +1201,7 @@ def test_mcp_tool_subsets_are_persisted_in_session_and_turn_state(
     source_home = Path(spawn.os.environ["CODEX_HOME"])
     configure_mcp_servers(source_home, Path(args.workspace).parent)
     request = spawn.prepare_request(args)
-    request.result_dir.mkdir()
+    request.result_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(
         spawn,
         "run_process",
@@ -690,11 +1254,8 @@ def test_context_binding_is_pinned_across_continuation_turns(
     )
     command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
 
-    assert feedback.mcp_context_project == "workspace"
-    assert (
-        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="workspace"'
-        in mcp_overrides(command)
-    )
+    assert feedback.mcp_context_project is None
+    assert not any("CODEXTEAM_CONTEXT_PROJECT" in item for item in mcp_overrides(command))
 
 
 def test_pre_cutover_continuation_without_execution_spec_is_rejected(tmp_path: Path, monkeypatch):
@@ -937,7 +1498,8 @@ def test_declared_task_write_scope_rejects_role_allowed_out_of_scope_change(
     handoff = Path(args.workspace) / "management/tasks/T002.md"
     handoff.parent.mkdir(parents=True)
     handoff.write_text(
-        "# Task T002\n\n## Task Write Scope\n\n- `src/**`\n\n## Reporting\n\nReport.\n"
+        "# Task T002\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n\n## Reporting\n\nReport.\n"
     )
     args.prompt = None
     args.prompt_file = str(handoff)
@@ -1083,7 +1645,7 @@ def test_resume_command_uses_exact_thread_and_no_initial_only_flags(tmp_path: Pa
     assert "--profile" not in command
     assert "-C" not in command
     assert "--add-dir" not in command
-    assert command[command.index("-m") + 1] == "qwen"
+    assert command[command.index("-m") + 1] == "qwen3.6-27b"
     assert 'model_provider="ollama_local"' in command
     assert 'model_catalog_json="/tmp/local-models.json"' in command
     assert 'model_reasoning_effort="medium"' in command
@@ -1150,7 +1712,6 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
     prompt_path = Path(outcome["lead_prompt_path"])
     assert prompt_path.read_text() == "Implement the task."
     assert stat.S_IMODE(prompt_path.stat().st_mode) == 0o600
-    assert (request.session_dir / spawn.RESULT_SCHEMA_FILENAME).is_file()
     assert stat.S_IMODE(request.codex_home.stat().st_mode) == 0o700
     assert summary["task_id"] == "T002"
     assert summary["attempt_id"] == "att-001"
@@ -1176,7 +1737,8 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
         "schema_version", "team_id", "task_id", "attempt_id", "agent_role",
         "workspace_root", "thread_id", "turn_count", "last_phase", "last_status",
         "last_turn_path", "created_at", "updated_at", "turns", "execution_spec",
-        "result_schema_sha256",
+        "handoff_contract_sha256",
+        "workspace_baseline_sha256", "worker_change_manifest", "accepted_checkpoint",
     }
     assert set(state) == {
         "schema_version",
@@ -1229,8 +1791,7 @@ def test_draft_persists_private_session_and_no_result(tmp_path: Path, monkeypatc
         "effective_policy_digest",
         "instruction_bundle_digest",
         "execution_spec",
-        "result_schema_sha256",
-        "mcp_context_project",
+            "mcp_context_project",
         "thread_id",
         "turn_count",
         "session_path",
@@ -1272,7 +1833,7 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
     assert outcome["status"] == "draft_ready"
     assert session["thread_id"] == THREAD_ID
     assert session["attempt_id"] == "att-001"
-    assert request.execution_spec["execution_profile"]["model"]["provider_locator"] == "qwen"
+    assert request.execution_spec["execution_profile"]["model"]["provider_locator"] == "qwen3.6-27b"
     assert request.execution_spec["execution_profile"]["model"]["provider"] == "ollama_local"
     assert request.execution_spec["execution_profile"]["reasoning"]["effective"] == "medium"
     assert session["turn_count"] == 2
@@ -1286,6 +1847,93 @@ def test_feedback_resumes_same_home_thread_and_attempt_without_result(tmp_path: 
     assert observed["codex_home"] == str(initial.codex_home)
     assert observed["sqlite_home"] == str(initial.codex_home)
     assert not request.result_path.exists()
+
+
+def test_feedback_prompt_is_delta_only_without_context_replay(tmp_path: Path, monkeypatch):
+    run_draft(tmp_path, monkeypatch)
+    feedback = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="feedback", prompt="Fix the exact assertion.",
+    ))
+    prompt = spawn.build_prompt(feedback, spawn.prepare_turn(feedback))
+    assert "Task: T002/att-001" in prompt
+    assert "Correction: Fix the exact assertion." in prompt
+    assert "Output: update results/reports/T002-att-001.json" in prompt
+    assert "[CODEXTEAM HANDOFF]" not in prompt
+    assert "PINNED GUIDANCE" not in prompt
+    assert "BOUNDED LOCAL MCP CONTEXT" not in prompt
+
+
+def test_opencode_feedback_does_not_inject_mcp_context(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(opencode_backend, "version", lambda executable: "1.18.18")
+    values = {"backend": "opencode", "profile": "qwen36-27b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("ignored")
+    )
+    assert spawn.run_spawn(draft)[1] == 0
+    feedback = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="feedback", prompt="revise", **values,
+    ))
+    monkeypatch.setattr(
+        spawn,
+        "_opencode_task_context",
+        lambda request: (_ for _ in ()).throw(AssertionError("MCP replayed")),
+    )
+    assert spawn.run_spawn(feedback)[1] == 0
+
+
+def test_format_only_feedback_uses_no_tools_agent_and_rejects_other_changes(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda executable: "1.18.18")
+    values = {"backend": "opencode", "profile": "qwen36-27b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("ignored")
+    )
+    assert spawn.run_spawn(draft)[1] == 0
+    feedback = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="feedback", prompt="repair JSON",
+        feedback_mode="format-only", **values,
+    ))
+    command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
+    assert command[command.index("--agent") + 1] == opencode_backend.FORMAT_AGENT
+
+    def mutate(*args, **kwargs):
+        (feedback.workspace / "src").mkdir(exist_ok=True)
+        (feedback.workspace / "src/forbidden.py").write_text("bad\n")
+        return successful_opencode_process("ignored")
+
+    monkeypatch.setattr(spawn, "run_process", mutate)
+    outcome, code = spawn.run_spawn(feedback)
+    assert code == 1
+    assert any("format-only feedback" in error for error in outcome["errors"])
+    assert not (feedback.workspace / "src/forbidden.py").exists()
+
+
+def test_format_only_invalid_report_restores_previous_bytes(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(opencode_backend, "version", lambda executable: "1.18.18")
+    values = {"backend": "opencode", "profile": "qwen36-27b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    monkeypatch.setattr(
+        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("ignored")
+    )
+    assert spawn.run_spawn(draft)[1] == 0
+    before = draft.artifact_report_path.read_bytes()
+    feedback = spawn.prepare_request(request_args(
+        tmp_path, monkeypatch, phase="feedback", prompt="repair",
+        feedback_mode="format-only", **values,
+    ))
+
+    def corrupt(*args, **kwargs):
+        feedback.artifact_report_path.write_text("{bad")
+        return successful_opencode_process("ignored")
+
+    monkeypatch.setattr(spawn, "run_process", corrupt)
+    outcome, code = spawn.run_spawn(feedback)
+    assert code == 1
+    assert any("valid JSON" in error for error in outcome["errors"])
+    assert feedback.artifact_report_path.read_bytes() == before
 
 
 def test_openai_profile_reuses_authenticated_source_home_without_copying_auth(
@@ -1342,43 +1990,6 @@ def test_final_writes_one_contract_valid_result_and_finalizes_session(
     assert list(request.result_dir.glob("T002-*.json")) == [request.result_path]
 
 
-def test_completed_final_normalizes_launcher_owned_bookkeeping(
-    tmp_path: Path, monkeypatch, result_factory
-):
-    run_draft(tmp_path, monkeypatch)
-    result = result_factory(task_id="T002", role="developer")
-    result["result_id"] = ""
-    result["schema_version"] = "0.0"
-    result["team_id"] = "wrong-team"
-    result["task_id"] = "T999"
-    result["agent_role"] = "reviewer"
-    result["attempt_id"] = "wrong-attempt"
-    result["produced_at"] = "not-utc"
-    result.pop("requested_followups")
-    result["warnings"] = [{"level": "cosmetic", "message": "Minor wording mismatch."}]
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process(json.dumps(result)),
-    )
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
-    )
-
-    persisted, code = spawn.run_spawn(request)
-
-    assert code == 0
-    assert persisted["result_id"] == "res-t002-att-001"
-    assert persisted["schema_version"] == "1.0"
-    assert persisted["team_id"] == "team-1"
-    assert persisted["task_id"] == "T002"
-    assert persisted["agent_role"] == "developer"
-    assert persisted["attempt_id"] == "att-001"
-    assert persisted["produced_at"].endswith("Z")
-    assert persisted["requested_followups"] == []
-    assert persisted["warnings"] == ["Minor wording mismatch."]
-
-
 def test_git_steward_final_has_role_specific_schema_and_empty_changes(
     tmp_path: Path, monkeypatch, result_factory
 ):
@@ -1391,7 +2002,7 @@ def test_git_steward_final_has_role_specific_schema_and_empty_changes(
             prompt="Plan the verified local commit.",
         )
     )
-    draft.result_dir.mkdir()
+    draft.result_dir.mkdir(exist_ok=True)
     (draft.result_dir / "evidence.txt").write_text("commit facts\n")
     monkeypatch.setattr(
         spawn,
@@ -1401,20 +2012,6 @@ def test_git_steward_final_has_role_specific_schema_and_empty_changes(
     _, draft_code = spawn.run_spawn(draft)
     assert draft_code == 0
 
-    schema = json.loads((draft.session_dir / spawn.RESULT_SCHEMA_FILENAME).read_text())
-    assert schema["properties"]["file_changes"]["maxItems"] == 0
-    assert "test_output" not in schema["properties"]["evidence"]["items"][
-        "properties"
-    ]["type"]["enum"]
-
-    result = result_factory(task_id="T220", role="git_steward")
-    result["file_changes"] = [{"path": "src/main.py", "action": "modified"}]
-    result["evidence"][0]["type"] = "artifact"
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process(json.dumps(result)),
-    )
     final = spawn.prepare_request(
         request_args(
             tmp_path,
@@ -1430,89 +2027,6 @@ def test_git_steward_final_has_role_specific_schema_and_empty_changes(
 
     assert final_code == 0
     assert persisted["file_changes"] == []
-
-
-def test_continuation_uses_session_pinned_result_schema_after_global_change(
-    tmp_path: Path, monkeypatch
-):
-    request, _ = run_draft(tmp_path, monkeypatch)
-    pinned_path = request.session_dir / spawn.RESULT_SCHEMA_FILENAME
-    pinned_before = pinned_path.read_bytes()
-    session = json.loads(request.session_path.read_text())
-    assert session["result_schema_sha256"] == hashlib.sha256(pinned_before).hexdigest()
-
-    changed_global = tmp_path / "changed-global-schema.json"
-    changed_schema = json.loads(spawn.RESULT_SCHEMA_PATH.read_text())
-    changed_schema["title"] = "Future Result Contract"
-    changed_global.write_text(json.dumps(changed_schema))
-    monkeypatch.setattr(spawn, "RESULT_SCHEMA_PATH", changed_global)
-
-    feedback = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="feedback", prompt="Continue pinned attempt")
-    )
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process("DRAFT T002/att-001\n\nOutcome: continued"),
-    )
-    _, code = spawn.run_spawn(feedback)
-
-    assert code == 0
-    assert pinned_path.read_bytes() == pinned_before
-
-
-def test_invalid_final_writes_no_result_and_session_remains_resumable(tmp_path: Path, monkeypatch):
-    run_draft(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process('{"status":"completed"}'),
-    )
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
-    )
-    outcome, code = spawn.run_spawn(request)
-    session = json.loads(request.session_path.read_text())
-    assert code == 1
-    assert outcome["status"] == "correction_needed"
-    assert not request.result_path.exists()
-    assert session["last_status"] == "correction_needed"
-    feedback = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="feedback", prompt="Correct the result contract")
-    )
-    assert spawn.prepare_turn(feedback).number == 3
-
-
-def test_final_with_missing_declared_artifact_remains_resumable(
-    tmp_path: Path, monkeypatch, result_factory
-):
-    run_draft(tmp_path, monkeypatch)
-    result = result_factory(
-        task_id="T002",
-        role="developer",
-        artifact_ref="live command: python3 -B src/main.py",
-    )
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process(json.dumps(result)),
-    )
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="final", prompt="FEEDBACK: ACCEPT")
-    )
-
-    outcome, code = spawn.run_spawn(request)
-    session = json.loads(request.session_path.read_text())
-
-    assert code == 1
-    assert outcome["status"] == "correction_needed"
-    assert any("artifact_ref does not exist" in error for error in outcome["errors"])
-    assert not request.result_path.exists()
-    assert session["last_status"] == "correction_needed"
-    feedback = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="feedback", prompt="Correct the artifact ref")
-    )
-    assert spawn.prepare_turn(feedback).number == 3
 
 
 def test_feedback_can_resume_when_draft_created_the_reserved_result_path(
@@ -1551,9 +2065,7 @@ def test_timeout_after_thread_start_preserves_resumable_session(tmp_path: Path, 
 
 
 def test_failure_before_thread_start_requires_new_attempt(tmp_path: Path, monkeypatch):
-    request = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, draft_format="compact-json")
-    )
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
     monkeypatch.setattr(
         spawn,
         "run_process",
@@ -1563,7 +2075,7 @@ def test_failure_before_thread_start_requires_new_attempt(tmp_path: Path, monkey
     assert code == 1
     assert outcome["thread_id"] is None
     assert not request.session_path.exists()
-    assert json.loads(request.draft_format_path.read_text())["draft_format"] == "compact-json"
+    assert json.loads(request.draft_format_path.read_text())["draft_format"] == "artifact-report-v1"
     assert request.session_dir.joinpath("turns", "001-draft.stderr.txt").read_text() == "worker failed"
     with pytest.raises(ValueError, match="non-resumable session data"):
         spawn.prepare_turn(spawn.prepare_request(request_args(tmp_path, monkeypatch)))
@@ -1652,7 +2164,7 @@ def test_fake_cli_runs_draft_feedback_final_in_one_persistent_session(
     draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, phase="draft"))
     (draft.workspace / "src").mkdir()
     (draft.workspace / "src" / "main.py").write_text("VALUE = 1\n")
-    draft.result_dir.mkdir()
+    draft.result_dir.mkdir(exist_ok=True)
     (draft.result_dir / "evidence.txt").write_text("passed\n")
     draft_outcome, draft_code = spawn.run_spawn(draft, executable=str(fake))
     feedback = spawn.prepare_request(
@@ -1670,8 +2182,8 @@ def test_fake_cli_runs_draft_feedback_final_in_one_persistent_session(
     assert final_outcome["status"] == "completed"
     assert session["thread_id"] == THREAD_ID
     assert session["turn_count"] == 3
-    assert (final.codex_home / "turn-count").read_text() == "3"
-    assert len(list((final.session_dir / "turns").glob("*.jsonl"))) == 3
+    assert (final.codex_home / "turn-count").read_text() == "2"
+    assert len(list((final.session_dir / "turns").glob("*.jsonl"))) == 2
     assert list(final.result_dir.glob("T002-*.json")) == [final.result_path]
     validate_result(json.loads(final.result_path.read_text()), expected_attempt="att-001")
 
@@ -1720,6 +2232,365 @@ def test_run_guard_streams_and_interrupts_identical_failed_commands(tmp_path: Pa
     assert events_path.read_text() == result.stdout
     assert stderr_path.read_text() == result.stderr
     assert "diagnostic" in result.stderr
+
+
+def test_ordinary_run_streams_without_enabling_guard(tmp_path: Path):
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys, time\n"
+        "event = {'type':'item.completed','item':{'type':'command_execution',"
+        "'command':'false','aggregated_output':'same failure','exit_code':1,'status':'failed'}}\n"
+        "for _ in range(3): print(json.dumps(event), flush=True)\n"
+        "print('diagnostic', file=sys.stderr, flush=True)\n"
+        "time.sleep(.5)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    events_path = tmp_path / "turn.jsonl"
+    stderr_path = tmp_path / "turn.stderr.txt"
+    observed = {}
+
+    def run():
+        observed["result"] = spawn.run_process(
+            [str(fake)], prompt="run", timeout_seconds=5,
+            env=spawn.os.environ.copy(), events_path=events_path,
+            stderr_path=stderr_path,
+        )
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and (
+        not stderr_path.exists()
+        or stderr_path.stat().st_size == 0
+        or not events_path.exists()
+        or events_path.read_text().count("item.completed") < 3
+    ):
+        time.sleep(.01)
+    assert events_path.read_text().count("item.completed") == 3
+    assert stderr_path.read_text() == "diagnostic\n"
+    assert worker.is_alive()
+    worker.join(timeout=2)
+    result = observed["result"]
+    assert result.exit_code == 0
+    assert result.guard_triggered is False
+    assert result.stdout == events_path.read_text()
+    assert result.stderr == stderr_path.read_text()
+
+
+def test_streaming_progress_reports_only_safe_metadata(tmp_path: Path, monkeypatch, capsys):
+    fake = tmp_path / "fake-codex"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        "print(json.dumps({'type':'tool_use','part':{'tool':'read','state':{"
+        "'status':'completed','input':{'path':'/private/secret'}}}}), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(spawn, "PROGRESS_INTERVAL_SECONDS", 0.0)
+
+    spawn.run_process(
+        [str(fake)], prompt="secret prompt", timeout_seconds=5,
+        env=spawn.os.environ.copy(),
+    )
+
+    progress = capsys.readouterr().err
+    assert "Worker progress:" in progress
+    assert "last tool read" in progress
+    assert "private" not in progress
+    assert "secret" not in progress
+
+
+def test_progress_replaces_unknown_provider_labels():
+    event_type, tool = spawn._safe_progress_event(json.dumps({
+        "type": "API_KEY_private", "part": {"tool": "token_private"},
+    }))
+    assert event_type == "unknown"
+    assert tool is None
+
+
+def test_debug_stream_assistant_prints_text_without_tool_payload(tmp_path: Path, capsys):
+    fake = tmp_path / "fake-opencode"
+    events = [
+        {"type": "text", "sessionID": THREAD_ID, "part": {"text": "Inspecting routes."}},
+        {"type": "tool_use", "sessionID": THREAD_ID, "part": {
+            "tool": "read", "state": {
+                "status": "completed", "input": {"path": "/private/source.py"},
+                "output": "secret source content",
+            },
+        }},
+    ]
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        f"events = {events!r}\n"
+        "for event in events: print(json.dumps(event), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    result = spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5,
+        env=spawn.os.environ.copy(), debug_stream="assistant",
+    )
+
+    debug = capsys.readouterr().err
+    assert "[worker assistant]\nInspecting routes." in debug
+    assert "[worker tool]" not in debug
+    assert "/private/source.py" not in debug
+    assert "secret source content" not in debug
+    assert result.stdout == "".join(json.dumps(event) + "\n" for event in events)
+
+
+def test_debug_stream_activity_reports_metadata_without_output_content(tmp_path: Path, capsys):
+    fake = tmp_path / "fake-opencode"
+    events = [
+        {"type": "tool_use", "sessionID": THREAD_ID, "part": {
+            "tool": "read", "state": {
+                "status": "completed", "input": {"filePath": str(tmp_path / "README.md")},
+                "output": "private file contents", "time": {"start": 1000, "end": 1005},
+                "metadata": {"truncated": False},
+            },
+        }},
+        {"type": "tool_use", "sessionID": THREAD_ID, "part": {
+            "tool": "grep", "state": {
+                "status": "completed", "input": {
+                    "pattern": "Debug Stream", "path": str(tmp_path), "include": "*.md",
+                },
+                "output": "private matching line", "time": {"start": 2000, "end": 6750},
+                "metadata": {"count": 3, "truncated": False},
+            },
+        }},
+        {"type": "tool_use", "sessionID": THREAD_ID, "part": {
+            "tool": "glob", "state": {
+                "status": "completed", "input": {"pattern": "**/*.py", "path": str(tmp_path)},
+                "output": "private paths", "time": {"start": 7000, "end": 7014},
+                "metadata": {"count": 100, "truncated": True},
+            },
+        }},
+        {"type": "tool_use", "sessionID": THREAD_ID, "part": {
+            "tool": "bash", "state": {
+                "status": "completed",
+                "input": {
+                    "command": "API_KEY='alpha beta gamma' curl -H 'Authorization: Bearer private-token' /status",
+                    "token": "structured-private-token",
+                    "workdir": str(tmp_path),
+                },
+                "output": "api_key=private-key private command output\x1b[2J",
+                "time": {"start": 8000, "end": 8003},
+                "metadata": {"exit": 0, "truncated": True},
+            },
+        }},
+        {"type": "step_finish", "sessionID": THREAD_ID, "part": {
+            "reason": "tool-calls", "tokens": {
+                "input": 100, "output": 20, "reasoning": 3,
+                "cache": {"read": 10, "write": 5},
+            },
+        }},
+    ]
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        f"events = {events!r}\n"
+        "for event in events: print(json.dumps(event), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    result = spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5,
+        env=spawn.os.environ.copy(), cwd=tmp_path, debug_stream="activity",
+    )
+
+    debug = capsys.readouterr().err
+    assert "[worker tool] read completed" in debug
+    assert "target: README.md" in debug
+    assert "duration: 5ms" in debug
+    assert "result: 21 bytes, complete" in debug
+    assert "[worker tool] grep completed" in debug
+    assert "query: Debug Stream" in debug
+    assert "path: ." in debug
+    assert "matches: 3" in debug
+    assert "duration: 4.750s" in debug
+    assert "[worker tool] glob completed" in debug
+    assert "pattern: **/*.py" in debug
+    assert "matches: 100" in debug
+    assert "result: 13 bytes, truncated" in debug
+    assert "[worker tool] bash completed" in debug
+    assert "command: API_KEY=<redacted> curl -H 'Authorization: <redacted>" in debug
+    assert str(tmp_path) not in debug
+    assert "workdir: ." in debug
+    assert "exit: 0" in debug
+    assert "result: 46 bytes, truncated" in debug
+    assert "[worker step] 1 completed" in debug
+    assert "reason: tool-calls" in debug
+    assert "input: 115 tokens" in debug
+    assert "output: 23 tokens" in debug
+    assert "[worker process] completed" in debug
+    assert "private-token" not in debug
+    assert "alpha beta gamma" not in debug
+    assert "private-key" not in debug
+    assert "structured-private-token" not in debug
+    assert "private file contents" not in debug
+    assert "private matching line" not in debug
+    assert "private command output" not in debug
+    assert "\x1b" not in debug
+    assert result.stdout == "".join(json.dumps(event) + "\n" for event in events)
+
+
+def test_debug_stream_activity_hides_write_edit_and_patch_bodies(tmp_path: Path, capsys):
+    fake = tmp_path / "fake-opencode"
+    outside = tmp_path.parent / "outside.txt"
+    events = [
+        {"type": "tool_use", "part": {"tool": "write", "state": {
+            "status": "completed", "input": {
+                "filePath": str(tmp_path / "new.txt"), "content": "PRIVATE WRITE BODY",
+            }, "output": "PRIVATE WRITE RESULT",
+        }}},
+        {"type": "tool_use", "part": {"tool": "edit", "state": {
+            "status": "completed", "input": {
+                "filePath": str(outside), "oldString": "PRIVATE OLD", "newString": "PRIVATE NEW",
+            }, "output": "PRIVATE EDIT RESULT",
+        }}},
+        {"type": "tool_use", "part": {"tool": "apply_patch", "state": {
+            "status": "completed", "input": {
+                "patchText": "*** Begin Patch\n*** Update File: src/app.py\n-PRIVATE PATCH OLD\n+PRIVATE PATCH NEW\n*** End Patch",
+            }, "output": "PRIVATE PATCH RESULT",
+        }}},
+    ]
+    fake.write_text(
+        "#!/usr/bin/env python3\nimport json\n"
+        f"events = {events!r}\n"
+        "for event in events: print(json.dumps(event), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5,
+        env=spawn.os.environ.copy(), cwd=tmp_path, debug_stream="activity",
+    )
+
+    debug = capsys.readouterr().err
+    assert "[worker tool] write completed" in debug
+    assert "target: new.txt" in debug
+    assert "content: 18 bytes" in debug
+    assert "[worker tool] edit completed" in debug
+    assert "target: <outside-workspace>/outside.txt" in debug
+    assert "old text: 11 bytes" in debug
+    assert "new text: 11 bytes" in debug
+    assert "[worker tool] apply_patch completed" in debug
+    assert "targets: src/app.py" in debug
+    assert "actions: 1" in debug
+    for private in (
+        "PRIVATE WRITE BODY", "PRIVATE WRITE RESULT", "PRIVATE OLD", "PRIVATE NEW",
+        "PRIVATE EDIT RESULT", "PRIVATE PATCH OLD", "PRIVATE PATCH NEW", "PRIVATE PATCH RESULT",
+    ):
+        assert private not in debug
+
+
+def test_debug_stream_activity_reports_unknown_tools_without_payload(tmp_path: Path, capsys):
+    fake = tmp_path / "fake-opencode"
+    event = {"type": "tool_use", "part": {"tool": "custom", "state": {
+        "status": "failed", "input": {"target": "x", "prompt": "PRIVATE PROMPT"},
+        "metadata": {"outputBytes": 14, "exitCode": 7},
+        "error": "PRIVATE ERROR OUTPUT",
+    }}}
+    fake.write_text(
+        "#!/usr/bin/env python3\nimport json\n"
+        f"print(json.dumps({event!r}), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5,
+        env=spawn.os.environ.copy(), cwd=tmp_path, debug_stream="activity",
+    )
+
+    debug = capsys.readouterr().err
+    assert "[worker tool] custom failed" in debug
+    assert "input fields: target" in debug
+    assert "result: 20 bytes" in debug
+    assert "exit: 7" in debug
+    assert "error: provider error reported; see private JSONL" in debug
+    assert "PRIVATE PROMPT" not in debug
+    assert "PRIVATE ERROR OUTPUT" not in debug
+
+
+def test_debug_stream_activity_hides_delegated_description_and_marks_relative_escape(
+    tmp_path: Path, capsys
+):
+    fake = tmp_path / "fake-opencode"
+    events = [
+        {"type": "tool_use", "part": {"tool": "task", "state": {
+            "status": "completed", "input": {
+                "description": "PRIVATE DELEGATED PROMPT", "subagent_type": "explore",
+            }, "metadata": {"output_bytes": 25},
+        }}},
+        {"type": "tool_use", "part": {"tool": "read", "state": {
+            "status": "error", "input": {"filePath": "../secret.txt"},
+            "error": "PRIVATE FILE EXCERPT",
+        }}},
+        {"type": "error", "error": {"message": "PRIVATE PROVIDER PAYLOAD"}},
+    ]
+    fake.write_text(
+        "#!/usr/bin/env python3\nimport json\n"
+        f"events = {events!r}\n"
+        "for event in events: print(json.dumps(event), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5,
+        env=spawn.os.environ.copy(), cwd=tmp_path, debug_stream="activity",
+    )
+
+    debug = capsys.readouterr().err
+    assert "[worker tool] task completed" in debug
+    assert "agent: explore" in debug
+    assert "result: 25 bytes" in debug
+    assert "target: <outside-workspace>/secret.txt" in debug
+    assert "[worker error] provider error reported; see private JSONL" in debug
+    assert "PRIVATE DELEGATED PROMPT" not in debug
+    assert "PRIVATE FILE EXCERPT" not in debug
+    assert "PRIVATE PROVIDER PAYLOAD" not in debug
+
+
+def test_debug_stream_neutralizes_terminal_controls_in_assistant_and_labels(
+    tmp_path: Path, capsys
+):
+    fake = tmp_path / "fake-opencode"
+    events = [
+        {"type": "text", "sessionID": THREAD_ID, "part": {
+            "text": "before\x1b[2Jafter\rforged",
+        }},
+        {"type": "tool_use", "sessionID": THREAD_ID, "part": {
+            "tool": "bash\x1b[2J", "state": {"status": "completed\rforged"},
+        }},
+    ]
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        f"events = {events!r}\n"
+        "for event in events: print(json.dumps(event), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5,
+        env=spawn.os.environ.copy(), debug_stream="activity",
+    )
+
+    debug = capsys.readouterr().err
+    assert "before[2Jafterforged" in debug
+    assert "[worker tool] bash[2J completedforged" in debug
+    assert "\x1b" not in debug
+    assert "\r" not in debug
+
+
+def test_debug_stream_rejects_codex_backend(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    args.debug_stream = "assistant"
+    with pytest.raises(ValueError, match="supported only by the OpenCode backend"):
+        spawn.prepare_request(args)
 
 
 def test_run_guard_interruption_preserves_exact_thread_for_feedback(
@@ -1775,10 +2646,11 @@ def test_run_guard_interruption_preserves_exact_thread_for_feedback(
         request_args(
             tmp_path,
             monkeypatch,
-            phase="feedback",
-            prompt="Use a materially different diagnostic.",
+                phase="feedback",
+                prompt="Use a materially different diagnostic.",
+                timeout=5,
+            )
         )
-    )
     feedback_outcome, feedback_code = spawn.run_spawn(feedback, executable=str(fake))
 
     assert feedback_code == 0
@@ -1873,7 +2745,7 @@ def test_installed_unregistered_profile_is_rejected(tmp_path: Path, monkeypatch)
     args = request_args(tmp_path, monkeypatch, profile="alternate")
     source_home = Path(spawn.os.environ["CODEX_HOME"])
     (source_home / "alternate.config.toml").write_text(
-        'model = "qwen"\nmodel_provider = "ollama_local"\n'
+        'model = "qwen3.6-27b"\nmodel_provider = "ollama_local"\n'
     )
     with pytest.raises(ValueError, match="unsupported execution profile"):
         spawn.prepare_request(args)
@@ -1944,46 +2816,6 @@ def test_parser_requires_explicit_backend_for_draft(tmp_path: Path, monkeypatch)
     ).backend is None
 
 
-def test_pre_cutover_conversational_attempt_is_rejected(
-    tmp_path: Path, monkeypatch, result_factory
-):
-    initial, _ = run_draft(tmp_path, monkeypatch)
-    session = json.loads(initial.session_path.read_text())
-    for field in (
-        "execution_backend",
-        "mcp_context_project",
-        "role_policy_name",
-        "role_policy_version",
-        "role_policy_digest",
-        "instruction_bundle_digest",
-        "result_schema_sha256",
-        "draft_format",
-        "execution_spec",
-    ):
-        session.pop(field, None)
-    initial.execution_spec_path.unlink()
-    initial.session_path.write_text(json.dumps(session))
-    initial.draft_format_path.unlink()
-    initial.role_policy_path.unlink()
-    (initial.session_dir / spawn.GUIDANCE_MANIFEST_FILENAME).unlink()
-    shutil.rmtree(initial.session_dir / "guidance")
-    (initial.session_dir / spawn.RESULT_SCHEMA_FILENAME).unlink()
-
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_process(
-            "DRAFT T002/att-001\n\nOutcome: legacy feedback applied\n"
-            "Evidence: focused tests pass\nUncertainties or conflicts: none\n"
-            "Proposed disposition: ready for review"
-        ),
-    )
-    with pytest.raises(ValueError, match="execution_spec"):
-        spawn.prepare_request(
-            request_args(tmp_path, monkeypatch, phase="feedback", prompt="continue")
-        )
-
-
 def test_codex_dry_run_retains_pre_backend_shape(tmp_path: Path, monkeypatch, capsys):
     args = request_args(tmp_path, monkeypatch)
     code = spawn.main([
@@ -2027,14 +2859,28 @@ def test_codex_dry_run_retains_pre_backend_shape(tmp_path: Path, monkeypatch, ca
         "lead_prompt_path",
         "turn_path",
         "stderr_path",
-        "result_schema_path",
-        "result_path",
-        "skills",
+            "result_path",
+            "result_status",
+            "skills",
     }
     assert details["phase"] == "draft"
     assert details["profile_file"].endswith("qwen36-27b.config.toml")
     assert details["reasoning_effort"] == "medium"
     assert details["command"][:2] == ["codex", "exec"]
+
+
+def test_live_draft_rejects_inline_and_noncanonical_handoffs(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    args.prompt = "work"
+    with pytest.raises(ValueError, match="canonical management/tasks/<task>.md"):
+        spawn._require_canonical_draft_handoff(args)
+
+    other = Path(args.workspace) / "other.md"
+    other.write_text("# T002\n\n## Task Write Scope\n\n- `src/**`\n")
+    args.prompt = None
+    args.prompt_file = str(other)
+    with pytest.raises(ValueError, match="exact canonical task handoff"):
+        spawn._require_canonical_draft_handoff(args)
 
 
 def test_opencode_resolves_local_profiles_without_codex_profile(tmp_path: Path, monkeypatch):
@@ -2048,17 +2894,30 @@ def test_opencode_resolves_local_profiles_without_codex_profile(tmp_path: Path, 
     )
     assert qwen.model == "ollama/qwen3.6-27b:latest"
     assert qwen.model_provider == "ollama"
+    qwen38 = spawn.prepare_request(
+        request_args(
+            tmp_path, monkeypatch, backend="opencode", profile="qwen38-27b-context",
+            reasoning_effort="medium",
+        )
+    )
+    assert qwen38.model == "ollama/qwen3.8-27b:latest"
+    assert qwen38.model_provider == "ollama"
+    muse = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, backend="opencode", profile="muse-glimmer")
+    )
+    assert muse.model == "ollama/muse-glimmer:30b"
+    assert muse.model_provider == "ollama"
     muse_config = opencode_backend.build_config(
-        model="ollama/muse-glimmer:30b-131k",
+        model=muse.model,
         role_name="Developer",
         role_instructions="Implement the task.",
         display_name="Muse Glimmer 30B",
         context_limit=131072,
         output_limit=32768,
     )
-    assert muse_config["model"] == muse_config["small_model"] == "ollama/muse-glimmer:30b-131k"
+    assert muse_config["model"] == muse_config["small_model"] == "ollama/muse-glimmer:30b"
     assert muse_config["provider"]["ollama"]["models"] == {
-        "muse-glimmer:30b-131k": {
+        "muse-glimmer:30b": {
             "name": "Muse Glimmer 30B",
             "limit": {"context": 131072, "output": 32768},
         }
@@ -2111,7 +2970,7 @@ def test_opencode_command_environment_and_prompt_are_private(tmp_path: Path, mon
         "models": {
             "ornith:35b": {
                 "name": "Ornith 35B",
-                "limit": {"context": 131072, "output": 32768},
+                "limit": {"context": 262144, "output": 32768},
             }
         },
     }
@@ -2162,21 +3021,13 @@ def test_opencode_spawn_records_exact_unicode_context_bytes(
         "lead_prompt_source_bytes": len(draft.prompt.encode("utf-8")),
         "available_guidance_snapshot_bytes": len(guidance.read_bytes()),
         "available_guidance_snapshot_count": 1,
-        "available_result_schema_bytes": len(
-            (draft.session_dir / spawn.RESULT_SCHEMA_FILENAME).read_bytes()
-        ),
     }
 
-    draft.result_dir.mkdir()
-    (draft.result_dir / "evidence.txt").write_text("passed\n")
-    result = result_factory(task_id="T002", role="developer")
-    result["file_changes"] = []
     observed.clear()
     monkeypatch.setattr(
         spawn,
         "run_process",
-        lambda *args, **kwargs: observed.update(prompt=kwargs["prompt"])
-        or successful_opencode_process(json.dumps(result)),
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("provider accessed")),
     )
     final = spawn.prepare_request(
         request_args(
@@ -2188,32 +3039,9 @@ def test_opencode_spawn_records_exact_unicode_context_bytes(
             prompt="Accept résumé ✓.",
         )
     )
-    final_turn = spawn.prepare_turn(final)
-    checkpoint_json = json.dumps(
-        final_turn.session["accepted_checkpoint"],
-        indent=2,
-        sort_keys=True,
-    )
     _, final_code = spawn.run_spawn(final)
     assert final_code == 0
-
-    final_metrics = json.loads(
-        (final.session_dir / "turns/002-final.metrics.json").read_text()
-    )
-    final_config = json.loads(final.backend_config_path.read_text())
-    assert final_metrics["context_bytes"] == {
-        "worker_prompt_bytes": len(observed["prompt"].encode("utf-8")),
-        "agent_prompt_bytes": len(
-            final_config["agent"][opencode_backend.FINAL_AGENT]["prompt"].encode("utf-8")
-        ),
-        "lead_prompt_source_bytes": len(final.prompt.encode("utf-8")),
-        "available_guidance_snapshot_bytes": len(guidance.read_bytes()),
-        "available_guidance_snapshot_count": 1,
-        "available_result_schema_bytes": len(
-            (final.session_dir / spawn.RESULT_SCHEMA_FILENAME).read_bytes()
-        ),
-        "accepted_checkpoint_embedded_bytes": len(checkpoint_json.encode("utf-8")),
-    }
+    assert not (final.session_dir / "turns/002-final.metrics.json").exists()
 
 
 def test_opencode_environment_neutralizes_hostile_parent_overrides(tmp_path: Path, monkeypatch):
@@ -2471,24 +3299,12 @@ def test_opencode_worker_cannot_repin_mutated_workspace_baseline(
     accepted = recovered["accepted_checkpoint"]["accepted_paths"]
     assert accepted["src/main.py"]["action"] == "created"
 
-    draft.result_dir.mkdir()
-    (draft.result_dir / "evidence.txt").write_text("passed\n")
-    result = result_factory(task_id="T002", role="developer")
-    result["file_changes"] = []
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
-    )
     final = spawn.prepare_request(
         request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
     )
     outcome, final_code = spawn.run_spawn(final)
-    assert final_code == 1
-    assert any(
-        "must declare accepted created path: src/main.py" in error
-        for error in outcome["errors"]
-    )
+    assert final_code == 0
+    assert outcome["file_changes"] == [{"path": "src/main.py", "action": "created"}]
 
 
 @pytest.mark.parametrize(
@@ -2519,12 +3335,126 @@ def test_opencode_config_disables_integrations_and_final_agent_is_read_only():
     assert config["skills"] == {"paths": [], "urls": []}
     assert config["enabled_providers"] == ["ollama"]
     assert config["provider"]["ollama"]["npm"] == "@ai-sdk/openai-compatible"
-    final = config["agent"]["codexteam-final"]["permission"]
-    assert final["edit"] == "deny"
-    assert final["bash"] == "deny"
-    assert final["read"] == "allow"
-    assert final["webfetch"] == "deny"
-    assert final["websearch"] == "deny"
+    formatter = config["agent"]["codexteam-format"]["permission"]
+    assert "*" not in formatter
+    assert formatter["read"] == "deny"
+    assert formatter["bash"] == "deny"
+
+
+def test_opencode_qwen38_config_pins_context_plugin_and_reasoning(tmp_path: Path):
+    plugin = tmp_path / "codexteam-context-plugin.js"
+    archive = tmp_path / "private" / "tool-results"
+    digest = "a" * 64
+    config = opencode_backend.build_config(
+        model="ollama/qwen3.8-27b:latest",
+        role_name="reviewer",
+        role_instructions="Review only the handoff.",
+        context_limit=262144,
+        output_limit=32768,
+        context_plugin={
+            "path": str(plugin),
+            "archive_root": str(archive),
+            "digest": digest,
+            "reasoning_effort": "medium",
+        },
+    )
+    assert config["plugin"] == [[plugin.as_uri(), {
+        "archiveRoot": str(archive),
+        "sourceSha256": digest,
+        "reasoningEffort": "medium",
+    }]]
+    command = opencode_backend.build_command(
+        executable="opencode", workspace=tmp_path,
+        model="ollama/qwen3.8-27b:latest", phase="draft",
+        session_id=None, title="test", pure=False,
+    )
+    assert "--pure" not in command
+
+
+def test_opencode_context_plugin_copy_is_digest_verified(tmp_path: Path):
+    path = tmp_path / "plugin.js"
+    opencode_backend.write_context_plugin(path)
+    digest = opencode_backend.context_plugin_digest()
+    opencode_backend.ensure_context_plugin(path, digest)
+    assert path.read_bytes() == opencode_backend.CONTEXT_PLUGIN_SOURCE.read_bytes()
+    path.write_text(path.read_text() + "\n// tampered\n")
+    with pytest.raises(ValueError, match="digest mismatch"):
+        opencode_backend.ensure_context_plugin(path, digest)
+
+
+def test_opencode_context_plugin_archives_and_projects_bounded_history(tmp_path: Path):
+    plugin = tmp_path / "plugin.js"
+    opencode_backend.write_context_plugin(plugin)
+    digest = opencode_backend.context_plugin_digest()
+    archive = tmp_path / "private" / "tool-results"
+    full = tmp_path / "provider-output.txt"
+    full_text = "FAILED test_auth\n" + ("success noise\n" * 3000) + "TRACE src/auth.py:4\n"
+    full.write_text(full_text)
+    runner = Path(__file__).parent / "fixtures" / "run_opencode_context_plugin.mjs"
+    completed = subprocess.run(
+        ["node", str(runner), str(plugin), str(archive), digest, str(full)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    value = json.loads(completed.stdout)
+    assert value["reasoningEffort"] == "medium"
+    assert value["artifactText"] == full_text
+    assert value["artifactMode"] == 0o600
+    assert value["rootMode"] == 0o700
+    assert len(value["projected"].encode()) < 6500
+    assert value["projected"] == value["resumedProjected"]
+    assert "FAILED test_auth" in value["projected"]
+    assert "TRACE src/auth.py:4" in value["projected"]
+    assert value["projected"].count("success noise") <= 80
+    assert "provider-output.txt" not in value["projected"]
+    record = value["manifest"]["records"][0]
+    assert record["bytes"] == len(full_text.encode())
+    assert record["compacted"] is True
+    assert record["sha256"] == hashlib.sha256(full_text.encode()).hexdigest()
+
+
+def test_opencode_format_agent_allows_only_exact_report_edit():
+    report = "/workspace/results/reports/T001-att-001.json"
+    config = opencode_backend.build_config(
+        model="ollama/qwen3.8-27b:latest",
+        role_name="developer",
+        role_instructions="Implement only the handoff.",
+        context_limit=262144,
+        output_limit=32768,
+        artifact_report_path=report,
+    )
+    permissions = config["agent"]["codexteam-format"]["permission"]
+    assert config["agent"]["codexteam-format"]["prompt"] == (
+        "Correct only the assigned artifact report JSON. "
+        "Use only the edit or write tool on that exact report path."
+    )
+    assert permissions["edit"] == "allow"
+    assert all(
+        permissions[name] == "deny"
+        for name in (
+            "read", "glob", "grep", "list", "bash", "task", "skill", "lsp",
+            "question", "webfetch", "websearch", "external_directory",
+        )
+    )
+
+
+def test_opencode_format_agent_config_preserves_edit_tool_for_post_turn_audit(tmp_path: Path):
+    report = "/workspace/results/reports/T001-att-001.json"
+    config = opencode_backend.build_config(
+        model="ollama/qwen3.8-27b:latest",
+        role_name="developer",
+        role_instructions="Implement only the handoff.",
+        context_limit=262144,
+        output_limit=32768,
+        artifact_report_path=report,
+    )
+    path = tmp_path / "opencode.json"
+    opencode_backend.write_config(path, config)
+    written = json.loads(path.read_text())
+    permissions = written["agent"]["codexteam-format"]["permission"]
+    assert permissions["edit"] == "allow"
+    assert permissions["read"] == permissions["bash"] == "deny"
 
 
 def test_opencode_qwen_config_selects_only_tuned_qwen_model():
@@ -2545,7 +3475,28 @@ def test_opencode_qwen_config_selects_only_tuned_qwen_model():
         }
     }
     assert config["agent"]["codexteam"]["model"] == "ollama/qwen3.6-27b:latest"
-    assert config["agent"]["codexteam-final"]["model"] == "ollama/qwen3.6-27b:latest"
+    assert config["agent"]["codexteam-format"]["model"] == "ollama/qwen3.6-27b:latest"
+
+
+def test_opencode_qwen38_config_selects_only_tuned_qwen_model():
+    config = opencode_backend.build_config(
+        model="ollama/qwen3.8-27b:latest",
+        role_name="developer",
+        role_instructions="Implement the handoff.",
+        display_name="Qwen 3.8 27B",
+        context_limit=262144,
+        output_limit=32768,
+    )
+    assert config["model"] == "ollama/qwen3.8-27b:latest"
+    assert config["small_model"] == "ollama/qwen3.8-27b:latest"
+    assert config["provider"]["ollama"]["models"] == {
+        "qwen3.8-27b:latest": {
+            "name": "Qwen 3.8 27B",
+            "limit": {"context": 262144, "output": 32768},
+        }
+    }
+    assert config["agent"]["codexteam"]["model"] == "ollama/qwen3.8-27b:latest"
+    assert config["agent"]["codexteam-format"]["model"] == "ollama/qwen3.8-27b:latest"
 
 
 def test_opencode_event_parser_handles_tools_steps_and_bad_streams():
@@ -2634,7 +3585,7 @@ def test_opencode_event_parser_does_not_reuse_progress_for_blank_terminal_stop()
     assert summary.last_agent_message == ""
 
 
-def test_opencode_stop_without_text_is_resumable_correction(tmp_path: Path, monkeypatch):
+def test_opencode_stop_without_text_accepts_valid_artifact_report(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.18")
     request = spawn.prepare_request(
         request_args(tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b")
@@ -2655,12 +3606,11 @@ def test_opencode_stop_without_text_is_resumable_correction(tmp_path: Path, monk
 
     outcome, code = spawn.run_spawn(request)
 
-    assert code == 1
-    assert outcome["status"] == "correction_needed"
-    assert outcome["errors"] == ["OpenCode returned no final agent message for this turn"]
+    assert code == 0
+    assert outcome["status"] == "draft_ready"
     session = json.loads(request.session_path.read_text())
     assert session["thread_id"] == THREAD_ID
-    assert session["last_status"] == "correction_needed"
+    assert session["last_status"] == "draft_ready"
 
 
 @pytest.mark.parametrize(
@@ -2668,6 +3618,7 @@ def test_opencode_stop_without_text_is_resumable_correction(tmp_path: Path, monk
     [
         ("ornith35b", "ollama/ornith:35b", "ornith:35b"),
         ("qwen36-27b", "ollama/qwen3.6-27b:latest", "qwen3.6-27b:latest"),
+        ("qwen38-27b-context", "ollama/qwen3.8-27b:latest", "qwen3.8-27b:latest"),
     ],
 )
 def test_fake_opencode_draft_feedback_final_persists_session_and_result(
@@ -2704,12 +3655,12 @@ def test_fake_opencode_draft_feedback_final_persists_session_and_result(
     values = {
         "backend": "opencode",
         "profile": profile,
-        "draft_format": "compact-json",
+        "reasoning_effort": "medium" if profile == "qwen38-27b-context" else "provider_default",
     }
     draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, phase="draft", **values))
     (draft.workspace / "src").mkdir()
     (draft.workspace / "src/main.py").write_text("VALUE = 1\n")
-    draft.result_dir.mkdir()
+    draft.result_dir.mkdir(exist_ok=True)
     (draft.result_dir / "evidence.txt").write_text("passed\n")
     draft_outcome, draft_code = spawn.run_spawn(draft, executable=str(fake))
     continuation_values = {"backend": "opencode", "profile": profile}
@@ -2731,9 +3682,9 @@ def test_fake_opencode_draft_feedback_final_persists_session_and_result(
     assert state["opencode_session_id"] == THREAD_ID
     assert session["backend_version"] == "1.18.14"
     assert session["backend_config_digest"]
-    assert session["accepted_checkpoint"]["message_sha256"]
-    assert final.draft_format == "compact-json"
-    assert (final.session_dir / "opencode-runtime/home/count").read_text() == "3"
+    assert session["accepted_checkpoint"]["artifact_report_sha256"]
+    assert final.draft_format == "artifact-report-v1"
+    assert (final.session_dir / "opencode-runtime/home/count").read_text() == "2"
     observed_config = json.loads(
         (final.session_dir / "opencode-runtime/home/observed-config.json").read_text()
     )
@@ -2742,7 +3693,7 @@ def test_fake_opencode_draft_feedback_final_persists_session_and_result(
     assert "draft_format" not in json.loads(final.result_path.read_text())
 
 
-def test_opencode_feedback_reuses_pinned_handoff_mcp_permissions(
+def test_opencode_feedback_disables_pinned_handoff_mcp_permissions(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
@@ -2755,7 +3706,10 @@ def test_opencode_feedback_reuses_pinned_handoff_mcp_permissions(
     draft_args = request_args(tmp_path, monkeypatch, **values)
     handoff = Path(draft_args.workspace) / "management/tasks/T002.md"
     handoff.parent.mkdir(parents=True)
-    handoff.write_text("# T002\n\nImplement the task.\n")
+    handoff.write_text(
+        "# T002\n\nImplement the task.\n\n## Task Write Scope\n\n"
+        "- `src/**`\n\n## Context Mode\n\n- `bounded-mcp`\n"
+    )
     draft_args.prompt = None
     draft_args.prompt_file = str(handoff)
     draft = spawn.prepare_request(draft_args)
@@ -2775,9 +3729,9 @@ def test_opencode_feedback_reuses_pinned_handoff_mcp_permissions(
         )
     )
 
-    assert feedback.effective_mcp_servers == draft.effective_mcp_servers
-    assert feedback.effective_mcp_tools == draft.effective_mcp_tools
-    assert feedback.mcp_context_project == draft.mcp_context_project
+    assert feedback.effective_mcp_servers == ()
+    assert feedback.effective_mcp_tools == ()
+    assert feedback.mcp_context_project is None
     assert feedback.execution_spec["permissions"] == draft.execution_spec["permissions"]
 
 
@@ -2820,7 +3774,7 @@ def test_opencode_final_tolerates_private_lead_prompt_update(
     product = draft.workspace / "src/main.py"
     product.parent.mkdir()
     product.write_text("VALUE = 1\n")
-    draft.result_dir.mkdir()
+    draft.result_dir.mkdir(exist_ok=True)
     (draft.result_dir / "evidence.txt").write_text("passed\n")
     spawn.run_spawn(draft)
 
@@ -2856,20 +3810,13 @@ def test_opencode_empty_accepted_manifest_rejects_declared_change(
     spawn.run_spawn(draft)
     extra = draft.workspace / "extra.py"
     extra.write_text("EXTRA = True\n")
-    draft.result_dir.mkdir()
+    draft.result_dir.mkdir(exist_ok=True)
     (draft.result_dir / "evidence.txt").write_text("passed\n")
-    result = result_factory(task_id="T002", role="developer", file_path="extra.py")
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
-    )
     final = spawn.prepare_request(
         request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
     )
-    outcome, code = spawn.run_spawn(final)
-    assert code == 1
-    assert any("path outside accepted product manifest: extra.py" in error for error in outcome["errors"])
+    with pytest.raises(ValueError, match="latest worker turn"):
+        spawn.run_spawn(final)
 
 
 def test_opencode_final_allows_independent_gate_and_test_artifacts(
@@ -2886,7 +3833,7 @@ def test_opencode_final_allows_independent_gate_and_test_artifacts(
         return successful_opencode_process("DRAFT")
 
     monkeypatch.setattr(spawn, "run_process", create_product)
-    draft.result_dir.mkdir()
+    draft.result_dir.mkdir(exist_ok=True)
     (draft.result_dir / "evidence.txt").write_text("passed\n")
     spawn.run_spawn(draft)
     integration_test = draft.workspace / "tests/integration/test_feature.py"
@@ -2950,6 +3897,31 @@ def test_opencode_rolling_gate_change_is_not_an_accepted_product_path(
     assert outcome["status"] == "completed"
 
 
+def test_opencode_upstream_task_result_is_not_an_accepted_product_path(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.18")
+    values = {"backend": "opencode", "profile": "qwen36-27b"}
+    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
+    product = draft.workspace / "src/main.py"
+    upstream_result = draft.workspace / "results/T001-att-001.json"
+
+    def worker_changes(*args, **kwargs):
+        product.parent.mkdir(parents=True)
+        product.write_text("VALUE = 1\n")
+        upstream_result.parent.mkdir(parents=True, exist_ok=True)
+        upstream_result.write_text('{"status":"completed"}\n')
+        return successful_opencode_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", worker_changes)
+    spawn.run_spawn(draft)
+    session = json.loads(draft.session_path.read_text())
+
+    assert "src/main.py" in session["accepted_checkpoint"]["accepted_paths"]
+    assert "results/T001-att-001.json" not in session["accepted_checkpoint"]["accepted_paths"]
+    assert "results/T001-att-001.json" in session["worker_change_manifest"]
+
+
 def test_opencode_failed_turn_changes_survive_noop_feedback(
     tmp_path: Path, monkeypatch
 ):
@@ -2985,76 +3957,6 @@ def test_opencode_failed_turn_changes_survive_noop_feedback(
     assert feedback_code == 0
     session = json.loads(feedback.session_path.read_text())
     assert session["accepted_checkpoint"]["accepted_paths"]["src/main.py"]["action"] == "created"
-
-
-@pytest.mark.parametrize(
-    ("declared_changes", "expected_error"),
-    [
-        ([], "must declare accepted created path: src/main.py"),
-        (
-            [{"path": "src/main.py", "action": "modified", "size_bytes": 1}],
-            "must declare accepted created path: src/main.py",
-        ),
-        (
-            [
-                {"path": "src/main.py", "action": "created", "size_bytes": 1},
-                {"path": "extra.py", "action": "created", "size_bytes": 1},
-            ],
-            "path outside accepted product manifest: extra.py",
-        ),
-        (
-            [
-                {"path": "src/main.py", "action": "created", "size_bytes": 1},
-                {"path": "src/main.py", "action": "created", "size_bytes": 1},
-            ],
-            "duplicate path: src/main.py",
-        ),
-    ],
-)
-def test_opencode_noop_feedback_retains_provenance_and_rejects_bad_declaration(
-    tmp_path: Path, monkeypatch, result_factory, declared_changes, expected_error
-):
-    monkeypatch.setattr(opencode_backend, "version", lambda _executable: "1.18.14")
-    values = {"backend": "opencode", "profile": "ornith35b"}
-    draft = spawn.prepare_request(request_args(tmp_path, monkeypatch, **values))
-    product = draft.workspace / "src/main.py"
-    product.parent.mkdir()
-
-    def create_product(*args, **kwargs):
-        product.write_text("VALUE = 1\n")
-        return successful_opencode_process("DRAFT")
-
-    monkeypatch.setattr(spawn, "run_process", create_product)
-    draft.result_dir.mkdir()
-    (draft.result_dir / "evidence.txt").write_text("passed\n")
-    spawn.run_spawn(draft)
-    monkeypatch.setattr(
-        spawn, "run_process", lambda *args, **kwargs: successful_opencode_process("DRAFT revised")
-    )
-    feedback = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="feedback", prompt="revise", **values)
-    )
-    _, feedback_code = spawn.run_spawn(feedback)
-    assert feedback_code == 0
-    session = json.loads(feedback.session_path.read_text())
-    assert session["accepted_checkpoint"]["changed_paths"] == ["src/main.py"]
-    assert session["accepted_checkpoint"]["accepted_paths"]["src/main.py"]["action"] == "created"
-
-    result = result_factory(task_id="T002", role="developer")
-    result["file_changes"] = declared_changes
-    if any(item["path"] == "extra.py" for item in declared_changes):
-        (draft.workspace / "extra.py").write_text("EXTRA = True\n")
-    monkeypatch.setattr(
-        spawn,
-        "run_process",
-        lambda *args, **kwargs: successful_opencode_process(json.dumps(result)),
-    )
-    final = spawn.prepare_request(
-        request_args(tmp_path, monkeypatch, phase="final", prompt="accept", **values)
-    )
-    outcome, code = spawn.run_spawn(final)
-    assert code == 1
-    assert any(expected_error in error for error in outcome["errors"])
 
 
 def test_opencode_continuation_rejects_config_mismatch(
@@ -3113,14 +4015,33 @@ def test_opencode_continuation_uses_pinned_project_instructions_and_version(
         spawn.run_spawn(next_feedback)
 
 
-def test_opencode_dry_run_has_no_reasoning_effort(tmp_path: Path, monkeypatch, capsys):
+def test_opencode_draft_command_is_disabled(tmp_path: Path, monkeypatch, capsys):
+    workspace = Path(request_args(tmp_path, monkeypatch).workspace)
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text("# T002\n\n## Task Write Scope\n\n- `src/**`\n")
     code = spawn.main([
         "--backend", "opencode", "--phase", "draft", "--profile", "ornith35b",
         "--reasoning-effort", "provider_default",
         "--team", "team-1", "--task", "T002", "--attempt", "att-001",
-        "--role", "developer", "--workspace", request_args(tmp_path, monkeypatch).workspace,
-        "--prompt", "work", "--dry-run",
+        "--role", "developer", "--workspace", str(workspace),
+        "--prompt-file", str(handoff), "--dry-run",
     ])
-    assert code == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["execution_spec"]["execution_profile"]["reasoning"]["support_status"] == "provider_default"
+    assert code == 2
+    assert "opencode execution is disabled" in capsys.readouterr().out
+
+
+def test_opencode_draft_command_remains_disabled_with_debug_override(tmp_path: Path, monkeypatch, capsys):
+    workspace = Path(request_args(tmp_path, monkeypatch).workspace)
+    handoff = workspace / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text("# T002\n\n## Task Write Scope\n\n- `src/**`\n")
+    code = spawn.main([
+        "--backend", "opencode", "--phase", "draft", "--profile", "ornith35b",
+        "--reasoning-effort", "provider_default",
+        "--team", "team-1", "--task", "T002", "--attempt", "att-001",
+        "--role", "developer", "--workspace", str(workspace),
+        "--prompt-file", str(handoff), "--debug-stream", "off", "--dry-run",
+    ])
+    assert code == 2
+    assert "opencode execution is disabled" in capsys.readouterr().out

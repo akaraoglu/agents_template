@@ -33,7 +33,7 @@ STARTED_AT=""
 FINISHED_AT=""
 ELAPSED_SECONDS=0
 AGENT_TURNS=0
-EXPECTED_AGENT_TURNS=10
+EXPECTED_AGENT_TURNS=5
 RUN_STATUS="NOT_STARTED"
 BUDGET_STATUS="NOT_RUN"
 LIFECYCLE_VERDICT="NOT_RUN"
@@ -64,8 +64,8 @@ Usage:
   run-e2e-fibonacci-test.sh --product-only PROJECT [options]
 
 Runs the controlled five-task Fibonacci Tree CLI canary. The live workflow uses
-exactly one draft and one final turn per task, with deterministic gates and no
-automatic retry or model transfer.
+exactly one provider draft per task followed by provider-free deterministic
+final sealing, with deterministic gates and no automatic retry or model transfer.
 
 Options:
   --profile PROFILE          Codex profile for every responsible AI (required live)
@@ -295,7 +295,6 @@ run_task() {
 
     CURRENT_PHASE="final"
     CURRENT_STAGE="${task} final turn"
-    ((AGENT_TURNS += 1))
     run_command "${SPAWN}" --phase final "${identity[@]}" --prompt-file "${final_prompt}"
 
     [[ -s "${result}" ]] || fail "final turn did not persist the expected result: ${result}"

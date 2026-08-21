@@ -39,10 +39,10 @@ After that approval, “handle it yourself” or “end to end” means the Proj
   --prompt-file <project-root>/management/tasks/T002.md
 ```
 
-Use `--dry-run` to inspect the exact command, profile, guidance, session path, and final result path without starting Codex. The draft is conversational output and does not create a result.
+Use `--dry-run` to inspect the exact command, profile, guidance, session path, and final result path without starting Codex. New drafts are strict semantic JSON and do not create a result; accepted finalization seals the result without another provider turn.
 
-To run OpenCode, explicitly select a curated profile on draft and use
-`--reasoning-effort provider_default`. Feedback/final omit backend, profile, and
+To run OpenCode, explicitly select a curated profile and one of its execution-
+catalog reasoning requests on draft. Feedback/final omit backend, profile, and
 reasoning and reuse the pinned ExecutionSpec.
 
 Use the opt-in `--run-guard` for turns where an unchanged command-failure loop or

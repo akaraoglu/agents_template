@@ -52,7 +52,7 @@ def test_spawn_dry_run_preparation_selects_ux_policy_and_skill(
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
     (codex_home / "qwen36-27b.config.toml").write_text(
-        'model = "qwen"\nmodel_provider = "ollama_local"\n',
+        'model = "qwen3.6-27b"\nmodel_provider = "ollama_local"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))

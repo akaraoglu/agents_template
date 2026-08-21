@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -18,6 +19,9 @@ TASK_STATUSES = {
     "completed": "Completed",
 }
 EXPECTED_HEADER = ("Task ID", "Description", "Status", "Owner", "Verification", "Evidence")
+CONTEXT_MODES = {"direct", "bounded-mcp"}
+EXECUTION_CLASSES = {"small", "complex"}
+MAX_DIRECT_CONTEXT_TARGETS = 5
 
 
 class TaskDocumentError(ValueError):
@@ -35,6 +39,173 @@ class TaskRow:
 
     def cells(self) -> tuple[str, ...]:
         return (self.task_id, self.description, self.status, self.owner, self.verification, self.evidence)
+
+
+@dataclass(frozen=True)
+class TaskHandoffMetadata:
+    task_write_scope: tuple[str, ...] | None
+    context_mode: str | None
+    result_report: str | None
+    direct_context: tuple[tuple[str, int, int], ...]
+    verification_commands: tuple[tuple[str, ...], ...]
+    execution_class: str | None
+
+
+def parse_task_handoff_metadata(text: str) -> TaskHandoffMetadata:
+    lines = text.splitlines()
+    scope_sections = _section_indexes(lines, "Task Write Scope")
+    if len(scope_sections) > 1:
+        raise TaskDocumentError("task handoff contains multiple Task Write Scope sections")
+    scope: tuple[str, ...] | None = None
+    if scope_sections:
+        patterns: list[str] = []
+        for line in _section_lines(lines, scope_sections[0]):
+            match = re.fullmatch(r"\s*-\s+`([^`]+)`\s*", line)
+            if match is None:
+                raise TaskDocumentError("Task Write Scope entries must be backticked bullet patterns")
+            pattern = match.group(1)
+            if (
+                not pattern
+                or pattern.startswith("/")
+                or "\\" in pattern
+                or any(part == ".." for part in Path(pattern).parts)
+            ):
+                raise TaskDocumentError(f"unsafe task write scope pattern: {pattern!r}")
+            patterns.append(pattern)
+        scope = tuple(dict.fromkeys(patterns))
+
+    context_sections = _section_indexes(lines, "Context Mode")
+    if len(context_sections) > 1:
+        raise TaskDocumentError("task handoff contains multiple Context Mode sections")
+    context_mode: str | None = None
+    if context_sections:
+        values = _section_lines(lines, context_sections[0])
+        if len(values) != 1:
+            raise TaskDocumentError("Context Mode must contain exactly one value")
+        match = re.fullmatch(r"\s*-\s+`([^`]+)`\s*", values[0])
+        if match is None or match.group(1) not in CONTEXT_MODES:
+            raise TaskDocumentError(
+                "Context Mode must be one backticked bullet: direct or bounded-mcp"
+            )
+        context_mode = match.group(1)
+
+    execution_sections = _section_indexes(lines, "Execution Class")
+    if len(execution_sections) > 1:
+        raise TaskDocumentError("task handoff contains multiple Execution Class sections")
+    execution_class: str | None = None
+    if execution_sections:
+        values = _section_lines(lines, execution_sections[0])
+        if len(values) != 1:
+            raise TaskDocumentError("Execution Class must contain exactly one value")
+        match = re.fullmatch(r"\s*-\s+`([^`]+)`\s*", values[0])
+        if match is None or match.group(1) not in EXECUTION_CLASSES:
+            raise TaskDocumentError(
+                "Execution Class must be one backticked bullet: small or complex"
+            )
+        execution_class = match.group(1)
+    result_sections = _section_indexes(lines, "Result Report")
+    if len(result_sections) > 1:
+        raise TaskDocumentError("task handoff contains multiple Result Report sections")
+    result_report: str | None = None
+    if result_sections:
+        values = _section_lines(lines, result_sections[0])
+        if len(values) != 1:
+            raise TaskDocumentError("Result Report must contain exactly one path")
+        match = re.fullmatch(r"\s*-\s+`([^`]+)`\s*", values[0])
+        if match is None:
+            raise TaskDocumentError("Result Report must be one backticked path bullet")
+        result_report = _safe_handoff_path(match.group(1), "Result Report")
+
+    direct_sections = _section_indexes(lines, "Direct Context")
+    if len(direct_sections) > 1:
+        raise TaskDocumentError("task handoff contains multiple Direct Context sections")
+    direct_context: list[tuple[str, int, int]] = []
+    if direct_sections:
+        values = _section_lines(lines, direct_sections[0])
+        if len(values) > MAX_DIRECT_CONTEXT_TARGETS:
+            raise TaskDocumentError(
+                f"Direct Context must contain at most {MAX_DIRECT_CONTEXT_TARGETS} targets"
+            )
+        for value in values:
+            match = re.fullmatch(r"\s*-\s+`([^`]+):(\d+)-(\d+)`\s*", value)
+            if match is None:
+                raise TaskDocumentError(
+                    "Direct Context entries must use `relative/path:start-end`"
+                )
+            path = _safe_handoff_path(match.group(1), "Direct Context")
+            start, end = int(match.group(2)), int(match.group(3))
+            if start < 1 or end < start or end - start + 1 > 400:
+                raise TaskDocumentError(
+                    "Direct Context ranges must be positive, ordered, and at most 400 lines"
+                )
+            direct_context.append((path, start, end))
+
+    verification_sections = _section_indexes(lines, "Verification Commands")
+    if len(verification_sections) > 1:
+        raise TaskDocumentError("task handoff contains multiple Verification Commands sections")
+    verification_commands: list[tuple[str, ...]] = []
+    if verification_sections:
+        for value in _section_lines(lines, verification_sections[0]):
+            match = re.fullmatch(r"\s*-\s+`(.+)`\s*", value)
+            if match is None:
+                raise TaskDocumentError(
+                    "Verification Commands entries must be backticked JSON argv arrays"
+                )
+            try:
+                command = json.loads(match.group(1))
+            except json.JSONDecodeError as exc:
+                raise TaskDocumentError(f"invalid Verification Commands JSON: {exc.msg}") from exc
+            if (
+                not isinstance(command, list)
+                or not command
+                or any(not isinstance(item, str) or not item or "\x00" in item for item in command)
+            ):
+                raise TaskDocumentError(
+                    "Verification Commands entries must be non-empty string argv arrays"
+                )
+            verification_commands.append(tuple(command))
+
+    if context_mode == "direct":
+        if result_report is None:
+            raise TaskDocumentError("direct context requires a Result Report")
+        if not direct_context:
+            raise TaskDocumentError("direct context requires at least one Direct Context target")
+        if not verification_commands:
+            raise TaskDocumentError("direct context requires at least one Verification Command")
+    return TaskHandoffMetadata(
+        scope,
+        context_mode,
+        result_report,
+        tuple(direct_context),
+        tuple(verification_commands),
+        execution_class,
+    )
+
+
+def _safe_handoff_path(value: str, label: str) -> str:
+    if (
+        not value
+        or value.startswith("/")
+        or "\\" in value
+        or any(part == ".." for part in Path(value).parts)
+    ):
+        raise TaskDocumentError(f"unsafe {label} path: {value!r}")
+    return value
+
+
+def _section_indexes(lines: list[str], heading: str) -> list[int]:
+    expected = f"## {heading}"
+    return [index for index, line in enumerate(lines) if line.strip() == expected]
+
+
+def _section_lines(lines: list[str], start: int) -> list[str]:
+    values: list[str] = []
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        if line.strip():
+            values.append(line)
+    return values
 
 
 @dataclass(frozen=True)

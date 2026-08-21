@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from .paths import ensure_existing_workspace
-from .contract_registry import DEFAULT_DRAFT_FORMAT, DRAFT_FORMATS
+from .contract_registry import ARTIFACT_REPORT, DRAFT_FORMATS
 from .execution_spec import EXECUTION_SPEC_FILENAME, load_execution_spec, ExecutionSpecError
 from .execution_spec import execution_spec_reference
+from .live_progress import collect_live_progress
 
 DRAFT_FORMAT_FILENAME = "draft-format.json"
 
@@ -72,6 +73,7 @@ def collect_subagent_status(
         status = str(merged.get("status") or merged.get("last_status") or "unknown")
         if turn_state.get("status") == "running":
             status = _running_status(turn_state, observed_at)
+        live_progress = collect_live_progress(attempt_dir, turn_state, observed_at)
         record = {
             "team": merged.get("team_id", identity.get("team_id", attempt_dir.parents[1].name)),
             "task": merged.get("task_id", identity.get("task_id", attempt_dir.parent.name)),
@@ -83,7 +85,7 @@ def collect_subagent_status(
                 if isinstance(execution_spec.get("agent_spec"), dict)
                 else None
             ),
-            "draft_format": pinned_format or DEFAULT_DRAFT_FORMAT,
+            "draft_format": pinned_format or ARTIFACT_REPORT,
             "draft_format_pinned": format_is_pinned,
             "policy": execution_spec.get("role_policy", {}).get("name", "invalid/unavailable"),
             "policy_digest": execution_spec.get("role_policy", {}).get("digest"),
@@ -97,6 +99,7 @@ def collect_subagent_status(
             "execution_spec_pinned": execution_spec_status in {"valid", "invalid"},
             "execution_spec_status": execution_spec_status,
             "execution_spec_error": execution_spec_error,
+            **live_progress,
         }
         if profile_record.get("backend", {}).get("id"):
             record["backend"] = profile_record["backend"]["id"]
@@ -176,7 +179,11 @@ def main(argv: list[str] | None = None) -> int:
         fields.append("draft_format")
     if include_agent_spec:
         fields.append("agent_spec")
-    fields.extend(("profile", "policy", "phase", "turn", "status", "updated_at"))
+    fields.extend((
+        "profile", "policy", "phase", "turn", "status", "activity_state",
+        "idle_seconds", "event_count", "output_bytes", "model_step_count",
+        "last_event_type", "last_tool", "last_event_at", "updated_at",
+    ))
     headers = [
         "UPDATED" if field == "updated_at" else "FORMAT" if field == "draft_format" else "AGENT_SPEC" if field == "agent_spec" else field.upper()
         for field in fields

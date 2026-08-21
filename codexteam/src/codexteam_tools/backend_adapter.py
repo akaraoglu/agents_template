@@ -83,12 +83,20 @@ class CodexBackendAdapter:
         return self._resume(request, turn, executable)
 
     def environment(self, request: Any) -> dict[str, str]:
-        environment = os.environ.copy()
-        environment.pop("CODEX_THREAD_ID", None)
-        environment["CODEXTEAM_LAUNCHED_WORKER"] = "1"
-        environment["PYTHONDONTWRITEBYTECODE"] = "1"
-        environment["CODEX_HOME"] = str(request.execution_codex_home)
-        environment["CODEX_SQLITE_HOME"] = str(request.codex_home)
+        allowed = {
+            "PATH", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR",
+            "SYSTEMROOT", "WINDIR", "SSL_CERT_FILE", "SSL_CERT_DIR",
+        }
+        environment = {
+            name: value for name, value in os.environ.items() if name in allowed
+        }
+        environment.update({
+            "HOME": str(request.codex_home),
+            "CODEXTEAM_LAUNCHED_WORKER": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "CODEX_HOME": str(request.execution_codex_home),
+            "CODEX_SQLITE_HOME": str(request.codex_home),
+        })
         return environment
 
     def parse_events(self, text: str) -> BackendEventSummary:
@@ -180,11 +188,6 @@ class CodexBackendAdapter:
             ),
             "--skip-git-repo-check",
             "--json",
-            *(
-                ["--output-schema", str(request.result_schema_path)]
-                if request.phase == "final" and request.model_provider == "openai"
-                else []
-            ),
             "-o",
             str(turn.message_path),
             turn.session["thread_id"],
@@ -247,8 +250,10 @@ class OpenCodeBackendAdapter:
             workspace=request.workspace,
             model=request.model,
             phase=request.phase,
+            feedback_mode=request.feedback_mode,
             session_id=session_id,
             title=f"CodexTeam {request.task_id}/{request.attempt_id}",
+            pure=request.execution_profile.profile_id != "qwen38-27b-context",
         )
 
 

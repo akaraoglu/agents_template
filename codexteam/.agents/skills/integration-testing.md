@@ -23,7 +23,11 @@ Use after a Developer draft and development-gate evidence exist, before the Deve
    to identify the changed surface, and `get_gate_status` for gate configuration or
    freshness. Do not repeat a sufficient result with a broad repository scan. Open the
    returned exact source, tests, and artifacts before making an acceptance claim.
-2. Map acceptance criteria and affected existing behavior to integration, regression, negative, lifecycle, concurrency, security, browser, or environment checks as applicable.
+2. Read the current Verification Plan in `PROJECT.md`. Map each applicable row
+   assigned to the Test Engineer, plus affected existing behavior, to integration,
+   regression, negative, lifecycle, concurrency, security, browser, or environment
+   checks as applicable. Report each `AC-*` reference as passed, failed, blocked,
+   or unverified with exact evidence; the plan itself is not evidence.
 3. Inspect existing tests before editing. Add or modify Test Engineer-owned tests and controlled fixtures only when the handoff authorizes the paths. When a browser is necessary, use the role-allowed Playwright inspection tools for a bounded observation and prefer `browser_find` over a full snapshot when one text target is sufficient. Do not use screenshots, form input, clicks, uploads, keyboard input, page evaluation, or arbitrary browser code in the inspection-only pilot.
 4. For every changed assertion or golden value, record the requirement, accepted decision, or confirmed test defect that justifies the change.
 5. Demonstrate a relevant failure before the product fix when practical, then preserve the passing rerun after correction.
@@ -57,6 +61,7 @@ and CI acceptance cannot drift.
 - Exact CI-equivalent commands, observations, environment notes, and failure classifications
 - Reusable evidence under `results/`
 - A clear PASS, FAIL, or unresolved disposition without production repairs
+- Criterion-level statuses and evidence for applicable Test Engineer rows
 
 ## Validation
 
@@ -67,6 +72,8 @@ and CI acceptance cannot drift.
 - Playwright MCP observations identify what to test; repository-owned browser tests and the Integration Gate remain the acceptance evidence.
 - Repeated runs are deterministic or limitations are explicit.
 - The Reviewer can trace each changed expectation and acceptance claim to project truth and named evidence.
+- Every applicable Test Engineer Verification Plan row has an explicit status;
+  operator verification is required only when the row names it.
 
 ## Common Mistakes Or Failure Modes
 

@@ -18,10 +18,15 @@ not proof of current host availability or every current registry metadata field.
 The original machine result remains outside the repository; Git history is the
 archive for the retired qualification implementation.
 
-## Current Status
+## Current Qualified Status
 
-The derived `muse-glimmer:30b-131k` profile is not qualified. On 2026-08-17,
-OpenCode 1.18.18 with Ollama 0.32.9 completed a bounded edit and test, including
-same-session correction, but a second fresh run failed to emit a terminal
-response before the six-minute bound. The profile is therefore quarantined and
-absent from the supported execution catalog. No automatic fallback is used.
+On 2026-08-17, the existing `muse-glimmer:30b` tag was tuned in place to
+`num_ctx=131072`, temperature `0.6`, top-k `20`, and top-p `0.95`, then tested
+through OpenCode 1.18.18 and Ollama 0.32.9 on the local RTX 5090. Five fresh
+isolated runs each made the exact requested edit, passed the shell assertion,
+and emitted non-empty terminal text whose `messageID` matched
+`step_finish(reason="stop")`. Same-session correction also passed. The exact
+combination is qualified for implementation-oriented spawned roles. Real-project
+Tester and Reviewer canaries exceeded bounded scope and timed out, so Qwen
+remains the default for those independent evidence roles. There is no automatic
+model fallback.

@@ -75,6 +75,12 @@ canonical task IDs and handoffs.
 
 1. On cold start, route the request through `AGENTS.md` and `.agents/LEAD_BOOT.md`. For an existing project, use the routed context MCP skill to identify the active state, then inspect only the handoff and named files or evidence needed for the decision. Read the brief when orientation is required. Do not begin with repo-wide rediscovery.
 2. Resolve missing requirements internally when the approved specification provides enough evidence; ask the operator only when a material choice or showstopper truly requires them.
+   Maintain the Acceptance Criteria, Verification Plan, and Delivery Criteria in
+   `PROJECT.md` as implementation, testing, review, or operator requests expose
+   new required outcomes or preservation boundaries. Keep each current criterion
+   mapped to a validation, named verifier, and expected evidence. Do not require
+   operator verification unless a row explicitly assigns it or a material product
+   or scope decision requires operator input.
 3. Decide whether accepted design needs Feature Planner decomposition. If so, accept or revise its `results/` artifact before creating implementation tasks; never let the planner implement, activate tasks, spawn workers, or approve its own proposal.
 4. Assign each active task attempt or evidence stage to one responsible AI role, profile, session, and logical attempt. Synchronize the assignment status in both `TASKS.md` and `CURRENT_TASK.md` before handoff. For context-heavy work, include question-oriented `Context Targets` with exact locators and intended use; remove broad reading lists that contradict them.
    Resolve backend/profile/reasoning from the curated execution catalog before a
@@ -86,11 +92,11 @@ canonical task IDs and handoffs.
    When a worker reports repeated unchanged evidence, keep the same task, attempt, profile, and thread. Treat the checkpoint as diagnostic evidence, then provide one materially different diagnostic or the missing dependency. Repetition is justified only after relevant state changed, for an explicit determinism check, for a known bounded transient, or with an approved changed setup.
 7. Resume the same responsible AI for ordinary corrections. Reassign only for irrecoverable session loss, material scope change, or intentional capability transfer.
 8. Authorize finalization only after the draft is acceptable.
-9. Validate the final result and run the appropriate independent gate before advancing canonical task state.
+9. Validate the final result and run the appropriate independent gate before advancing canonical task state. Confirm the applicable Verification Plan rows have evidence from their named verifiers or remain explicitly unresolved.
 10. Keep the one-page brief and management documents synchronized with verified truth.
 11. Keep feedback and handoffs in literal prompt files when they contain shell metacharacters.
 12. Report evidence, remaining risks, and any real showstopper to the operator.
-13. Before delivery, run an acceptance-level product check and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
+13. Before delivery, check each current Delivery Criteria row, run an acceptance-level product check, and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
 14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
 15. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
 16. After substantial discovery or deep research, preserve durable reusable
@@ -155,6 +161,9 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 ## Validation
 
 - Tasks map to acceptance criteria and name responsible AIs.
+- Current acceptance criteria have maintained Verification Plan rows, task
+  handoffs route applicable `AC-*` references, and Delivery Criteria evidence is
+  checked separately from acceptance evidence.
 - Feature Planner is used only after architecture acceptance for materially multi-part implementation; the Project Lead owns task IDs and plan acceptance.
 - Feedback cites observable defects or ground truth.
 - Small-slice roles receive the brief, their handoff, and named artifacts instead of a generic repository-wide reading assignment.

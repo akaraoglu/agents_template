@@ -56,14 +56,14 @@ def _args(tmp_path: Path, monkeypatch, **overrides):
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir(parents=True, exist_ok=True)
     (codex_home / "qwen36-27b.config.toml").write_text(
-        'model = "qwen"\nmodel_provider = "ollama_local"\n'
+        'model = "qwen3.6-27b"\nmodel_provider = "ollama_local"\n'
         'model_reasoning_effort = "high"\nmodel_verbosity = "medium"\n'
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     workspace = tmp_path / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     values = {
-        "backend": "codex", "draft_format": None, "phase": "draft",
+        "backend": "codex", "phase": "draft",
         "profile": "qwen36-27b", "reasoning_effort": "medium", "team": "team-1",
         "task": "T002", "attempt": "att-001", "role": "developer",
         "workspace": str(workspace), "prompt_file": None,
@@ -72,6 +72,13 @@ def _args(tmp_path: Path, monkeypatch, **overrides):
         "result_dir": "results", "dry_run": False,
     }
     values.update(overrides)
+    report = workspace / "results/reports" / f"{values['task']}-{values['attempt']}.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    if not report.exists():
+        report.write_text(json.dumps({
+            "version": 1, "summary": "Done.",
+            "evidence": [report.relative_to(workspace).as_posix()], "limitations": [],
+        }))
     if values["phase"] != "draft":
         values["backend"] = None
         values["profile"] = None
@@ -242,7 +249,10 @@ def test_prompt_file_records_path_and_digest_without_content(tmp_path: Path, mon
     args = _args(tmp_path, monkeypatch)
     handoff = Path(args.workspace) / "management/tasks/T002.md"
     handoff.parent.mkdir(parents=True)
-    handoff.write_text("PRIVATE-HANDOFF-CONTENT\n")
+    handoff.write_text(
+        "PRIVATE-HANDOFF-CONTENT\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n"
+    )
     request = spawn.prepare_request(
         _args(
             tmp_path,

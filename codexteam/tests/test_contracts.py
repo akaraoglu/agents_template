@@ -8,8 +8,7 @@ from codexteam_tools.contract_registry import CONTRACT_REGISTRY, get_contract
 from codexteam_tools.contracts import (
     ResultValidationError,
     synthetic_result,
-    validate_conversational_draft,
-    validate_draft,
+    validate_artifact_report,
     validate_handoff,
     validate_result,
     validate_session,
@@ -19,8 +18,7 @@ from codexteam_tools.contracts import (
 def test_contract_registry_contains_registered_contracts():
     assert set(CONTRACT_REGISTRY) == {
         "handoff",
-        "conversational",
-        "compact-json",
+        "artifact-report-v1",
         "result",
         "session",
         "role-policy",
@@ -37,10 +35,26 @@ def test_contract_registry_contains_registered_contracts():
         get_contract("missing")
 
 
-def test_conversational_and_session_contracts_are_strict():
-    assert validate_conversational_draft("DRAFT T001/att-001\n\nOutcome: done")
-    with pytest.raises(ResultValidationError, match="non-empty text"):
-        validate_conversational_draft("   ")
+def test_artifact_report_is_small_and_permissive():
+    payload = {
+        "version": 1,
+        "summary": "Reviewed the accepted change.",
+        "evidence": ["results/review.md"],
+        "limitations": [],
+        "future_field": {"ignored": True},
+    }
+    assert validate_artifact_report(payload) is payload
+    with pytest.raises(ResultValidationError, match="version must be 1"):
+        validate_artifact_report({**payload, "version": "1"})
+    with pytest.raises(ResultValidationError, match="version must be 1"):
+        validate_artifact_report({**payload, "version": True})
+    with pytest.raises(ResultValidationError, match="evidence"):
+        validate_artifact_report({**payload, "evidence": ["   "]})
+    with pytest.raises(ResultValidationError, match="limitations"):
+        validate_artifact_report({**payload, "limitations": [""]})
+
+
+def test_session_contract_is_strict():
     session = {
         "schema_version": "1.0",
         "thread_id": "thread-1",
@@ -211,66 +225,11 @@ def test_handoff_requires_absolute_workspace():
         })
 
 
-def test_valid_compact_draft_contract():
-    draft = {
-        "schema_version": "1.0",
-        "outcome": "Implemented the assigned behavior.",
-        "evidence": [{"artifact_ref": "results/development.txt", "summary": "Development gate passed."}],
-        "findings": [],
-        "limitations": ["Integration remains unverified."],
-        "proposed_disposition": "ready_for_review",
-    }
-    assert validate_draft(draft) is draft
-
-
-def test_draft_schema_text_fields_reject_whitespace_only_values():
-    schema = json.loads(
-        (Path(__file__).parents[1] / "schemas/draft.json").read_text(encoding="utf-8")
-    )
-    properties = schema["properties"]
-    assert properties["outcome"]["pattern"] == r".*\S.*"
-    assert properties["evidence"]["items"]["properties"]["artifact_ref"]["pattern"] == r".*\S.*"
-    assert properties["evidence"]["items"]["properties"]["summary"]["pattern"] == r".*\S.*"
-    assert properties["findings"]["items"]["pattern"] == r".*\S.*"
-    assert properties["limitations"]["items"]["pattern"] == r".*\S.*"
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    (
-        ("outcome", "x" * 1201, "at most 1200"),
-        ("findings", ["finding"] * 9, "at most 8"),
-        ("limitations", ["x" * 501], "at most 500"),
-        ("evidence", [{"artifact_ref": "x" * 501, "summary": "Too long."}], "at most 500"),
-        ("proposed_disposition", "completed", "proposed_disposition"),
-    ),
-)
-def test_draft_contract_bounds_semantic_output(field, value, message):
-    draft = {
-        "schema_version": "1.0",
-        "outcome": "Implemented the assigned behavior.",
-        "evidence": [],
-        "findings": [],
-        "limitations": [],
-        "proposed_disposition": "ready_for_review",
-    }
-    draft[field] = value
-    with pytest.raises(ResultValidationError, match=message):
-        validate_draft(draft)
-
-
-def test_draft_contract_rejects_unknown_fields_and_unsafe_evidence_paths():
-    draft = {
-        "schema_version": "1.0",
-        "outcome": "Implemented the assigned behavior.",
-        "evidence": [{"artifact_ref": "../outside.txt", "summary": "Not contained."}],
-        "findings": [],
-        "limitations": [],
-        "proposed_disposition": "ready_for_review",
-        "task_id": "T001",
-    }
-    with pytest.raises(ResultValidationError, match="unknown draft fields"):
-        validate_draft(draft)
-    del draft["task_id"]
-    with pytest.raises(ResultValidationError, match="unsafe evidence"):
-        validate_draft(draft)
+def test_artifact_report_required_fields_and_types():
+    report = {"version": 1, "summary": "Done.", "evidence": [], "limitations": []}
+    assert validate_artifact_report(report) is report
+    for field in ("version", "summary", "evidence", "limitations"):
+        invalid = dict(report)
+        del invalid[field]
+        with pytest.raises(ResultValidationError, match="missing required artifact report fields"):
+            validate_artifact_report(invalid)

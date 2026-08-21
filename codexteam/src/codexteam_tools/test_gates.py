@@ -85,6 +85,8 @@ def run_gate(
     *,
     dry_run: bool = False,
     execution_surface: str = "worker",
+    command_prefix: tuple[str, ...] = (),
+    environment: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if gate not in GATES:
         raise GateConfigError(f"unsupported gate: {gate}")
@@ -132,12 +134,13 @@ def run_gate(
             command_started = time.monotonic()
             try:
                 completed = subprocess.run(
-                    list(argv),
+                    [*command_prefix, *argv],
                     cwd=root,
                     text=True,
                     capture_output=True,
                     timeout=remaining,
                     check=False,
+                    env=environment,
                 )
                 exit_code = completed.returncode
                 stdout = completed.stdout

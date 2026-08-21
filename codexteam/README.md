@@ -1,11 +1,12 @@
 # CodexTeam
 
-CodexTeam is a local workflow toolkit for coordinating bounded AI subagents around a specification-driven software project. It provides project guidance, task handoffs, strict result contracts, local-model spawning, independent verification, and deterministic project-state closure. Codex remains the default execution backend; an explicit OpenCode canary backend is also available.
+CodexTeam is a local workflow toolkit for coordinating bounded AI subagents around a specification-driven software project. It provides project guidance, task handoffs, strict result contracts, local-model spawning, independent verification, and deterministic project-state closure. Codex is the only enabled execution backend; OpenCode implementation and historical records are retained but execution is disabled.
 
 CodexTeam has one project execution system. It preserves the Project Lead and
 the draft, feedback, final, gate, review, close-loop, and Git Steward lifecycle.
-Codex and OpenCode are supported backends. Profiles and models come from the
-curated execution registry, and AgentSpecs provide optional specialization.
+Codex is the only enabled execution backend. Historical OpenCode profiles remain
+in the curated registry for attempt readability, but new draft and feedback
+execution is rejected. AgentSpecs provide optional specialization.
 No alternate execution system exists.
 
 It is not an application server, controller service, board, HTTP API, or MCP implementation. Historical archives are not source inputs for this system.
@@ -66,6 +67,11 @@ Profiles are curated per backend and identified as `backend/profile`. Use
 `./scripts/inspect-execution-catalog.py profiles --backend <backend>` to inspect
 supported and host-available options. Installation alone does not imply support.
 
+Curated optional Codex local profiles include `qwen38-27b`, `muse-glimmer`, and
+`gemma4-26b` in addition to the existing profiles. `ornith35b`, `gpt56-luna`,
+and `gpt56-terra` remain installed but uncurated because their live qualification
+did not pass or could not run.
+
 ## Commands
 
 `./.agents/scripts/spawn-subagent.sh` is the supported worker entry point.
@@ -81,16 +87,17 @@ Start a developer draft:
 
 ```bash
 ./.agents/scripts/spawn-subagent.sh \
-  --phase draft --backend codex --profile qwen36-27b --reasoning-effort medium \
+  --phase draft --backend codex --profile qwen38-27b --reasoning-effort medium \
   --team example --task T003 --attempt att-001 \
   --role developer --workspace ./projects/example \
   --prompt-file ./projects/example/management/tasks/T003.md
 ```
 
-Conversational drafts remain the default. For a new attempt only, opt into the
-bounded compact JSON draft contract with `--draft-format compact-json`. The
-launcher pins the format at attempt creation; feedback and final cannot override
-it, and finalization still writes `result`.
+Every attempt uses `artifact-report-v1`. The worker writes
+`results/reports/<TASK>-<attempt>.json` with `version`, `summary`, evidence path
+strings, and limitations; unknown fields are ignored. Terminal output is
+diagnostic only. The launcher owns identity, status, file changes, output
+metadata, timestamps, and provider-free finalization.
 
 Every new attempt also receives an immutable `execution-spec.json` under its
 existing session directory. It records resolved role, handoff digest,
@@ -104,21 +111,19 @@ Role, AgentSpec, and execution profile remain
 separate; feedback/final reuse the pin and reject selection overrides. See
 `docs/AGENT_SPECS.md`.
 
-Start the same role through the opt-in OpenCode backend:
+OpenCode profiles, implementation, qualification evidence, and historical
+attempt readers remain in the repository. Supported commands mark those profiles
+disabled and reject new OpenCode drafts and feedback. Existing finalized records
+remain readable; provider-free finalization code is retained for an already
+accepted historical attempt.
 
-```bash
-./.agents/scripts/spawn-subagent.sh \
-  --backend opencode --profile muse-glimmer \
-  --reasoning-effort provider_default --phase draft --team example --task T003 --attempt att-001 \
-  --role developer --workspace ./projects/example \
-  --prompt-file ./projects/example/management/tasks/T003.md
-```
-
-OpenCode uses an attempt-private configuration and exact session ID. MCP, LSP,
-plugins, external skills, `--trust-parent-sandbox`, and `--run-guard` are
-unsupported; its explicit reasoning request is `provider_default`.
-
-Use `muse-glimmer` for bounded implementation canaries, or `qwen36-27b` for tuned local Qwen. A matched three-run implementation comparison gave both models 26/26 hidden correctness in every run, while Muse used 58% fewer median input tokens and completed 35% faster. A separate matched Reviewer comparison favored Qwen over Ornith, so Qwen remains the preferred OpenCode Reviewer candidate. These findings do not change global role or backend defaults.
+New handoffs explicitly classify execution as `small` or `complex`. Small work
+defaults to 600 seconds; complex work defaults to 1200 seconds; explicit
+`--timeout` values override and are pinned for continuation turns. Complex
+Developers return source/focused-test evidence before the Development Gate, then
+return the gate in the same session. Complex Test Engineers return their final
+browser/integration evidence and report before finalization. The catalog never
+silently falls back between models.
 
 Review the draft, then continue the exact session with `--phase feedback` while
 omitting backend, profile, reasoning, and AgentSpec selectors. Final does the

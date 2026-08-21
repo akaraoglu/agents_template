@@ -29,10 +29,20 @@ modalities = ["text"]
 known_capabilities = ["tool-use", "reasoning"]
 
 [[models]]
+model_id = "qwen38-27b"
+display_name = "Qwen 3.8 27B"
+family = "qwen"
+provider_locator = "qwen3.8-27b"
+context_limit = 262144
+output_limit = 32768
+modalities = ["text"]
+known_capabilities = ["tool-use", "reasoning"]
+
+[[models]]
 model_id = "muse-glimmer"
 display_name = "Muse Glimmer 30B"
 family = "muse"
-provider_locator = "ollama/muse-glimmer:30b-131k"
+provider_locator = "ollama/muse-glimmer:30b"
 context_limit = 131072
 output_limit = 32768
 modalities = ["text"]
@@ -43,10 +53,20 @@ model_id = "ornith35b"
 display_name = "Ornith 35B"
 family = "ornith"
 provider_locator = "ollama/ornith:35b"
-context_limit = 131072
+context_limit = 262144
 output_limit = 32768
 modalities = ["text"]
 known_capabilities = ["tool-use"]
+
+[[models]]
+model_id = "gemma4-26b"
+display_name = "Gemma 4 26B"
+family = "gemma"
+provider_locator = "gemma4-26b"
+context_limit = 32768
+output_limit = 24000
+modalities = ["text", "image"]
+known_capabilities = ["tool-use", "reasoning"]
 
 [[models]]
 model_id = "gpt54-mini"
@@ -71,10 +91,46 @@ status = "qualified"
 evidence_ref = "docs/E2E_ACCEPTANCE_PLAN.md"
 
 [[qualifications]]
+qualification_id = "codex-qwen38"
+profile = "codex/qwen38-27b"
+status = "qualified"
+evidence_ref = "docs/CODEX_LOCAL_PROFILE_QUALIFICATION.md"
+
+[[qualifications]]
+qualification_id = "codex-muse-glimmer"
+profile = "codex/muse-glimmer"
+status = "qualified"
+evidence_ref = "docs/CODEX_LOCAL_PROFILE_QUALIFICATION.md"
+
+[[qualifications]]
+qualification_id = "codex-gemma4-26b"
+profile = "codex/gemma4-26b"
+status = "qualified"
+evidence_ref = "docs/CODEX_LOCAL_PROFILE_QUALIFICATION.md"
+
+[[qualifications]]
 qualification_id = "opencode-qwen36"
 profile = "opencode/qwen36-27b"
 status = "qualified"
 evidence_ref = "docs/OPENCODE_QWEN_QUALIFICATION.md"
+
+[[qualifications]]
+qualification_id = "opencode-qwen38"
+profile = "opencode/qwen38-27b"
+status = "qualified"
+evidence_ref = "docs/OPENCODE_QWEN38_QUALIFICATION.md"
+
+[[qualifications]]
+qualification_id = "opencode-qwen38-context"
+profile = "opencode/qwen38-27b-context"
+status = "qualified"
+evidence_ref = "docs/OPENCODE_QWEN38_QUALIFICATION.md"
+
+[[qualifications]]
+qualification_id = "opencode-muse"
+profile = "opencode/muse-glimmer"
+status = "qualified"
+evidence_ref = "docs/MUSE_GLIMMER_QUALIFICATION.md"
 
 [[qualifications]]
 qualification_id = "opencode-ornith"
@@ -87,7 +143,7 @@ profile_id = "qwen36-27b"
 backend_id = "codex"
 model_id = "qwen36-27b"
 provider = "ollama_local"
-provider_locator = "qwen"
+provider_locator = "qwen3.6-27b"
 runtime_options = {}
 supported_reasoning_requests = ["low", "medium", "high"]
 reasoning_mappings = { low = "low", medium = "medium", high = "high" }
@@ -113,6 +169,51 @@ qualification_references = ["codex-gpt54-mini"]
 source_profile = "gpt54-mini"
 
 [[profiles]]
+profile_id = "qwen38-27b"
+backend_id = "codex"
+model_id = "qwen38-27b"
+provider = "ollama_local"
+provider_locator = "qwen3.8-27b"
+runtime_options = {}
+supported_reasoning_requests = ["low", "medium", "high"]
+reasoning_mappings = { low = "low", medium = "medium", high = "high" }
+verbosity_support = true
+tool_support = true
+mcp_support = true
+qualification_references = ["codex-qwen38"]
+source_profile = "qwen38-27b"
+
+[[profiles]]
+profile_id = "muse-glimmer"
+backend_id = "codex"
+model_id = "muse-glimmer"
+provider = "ollama_local"
+provider_locator = "muse-glimmer:30b"
+runtime_options = {}
+supported_reasoning_requests = ["low", "medium", "high"]
+reasoning_mappings = { low = "low", medium = "medium", high = "high" }
+verbosity_support = true
+tool_support = true
+mcp_support = true
+qualification_references = ["codex-muse-glimmer"]
+source_profile = "muse-glimmer"
+
+[[profiles]]
+profile_id = "gemma4-26b"
+backend_id = "codex"
+model_id = "gemma4-26b"
+provider = "ollama_local"
+provider_locator = "gemma4-26b"
+runtime_options = {}
+supported_reasoning_requests = ["low", "medium", "high"]
+reasoning_mappings = { low = "low", medium = "medium", high = "high" }
+verbosity_support = true
+tool_support = true
+mcp_support = true
+qualification_references = ["codex-gemma4-26b"]
+source_profile = "gemma4-26b"
+
+[[profiles]]
 profile_id = "qwen36-27b"
 backend_id = "opencode"
 model_id = "qwen36-27b"
@@ -125,6 +226,48 @@ verbosity_support = false
 tool_support = true
 mcp_support = false
 qualification_references = ["opencode-qwen36"]
+
+[[profiles]]
+profile_id = "qwen38-27b"
+backend_id = "opencode"
+model_id = "qwen38-27b"
+provider = "ollama"
+provider_locator = "ollama/qwen3.8-27b:latest"
+runtime_options = {}
+supported_reasoning_requests = ["provider_default"]
+reasoning_mappings = { provider_default = "provider_default" }
+verbosity_support = false
+tool_support = true
+mcp_support = false
+qualification_references = ["opencode-qwen38"]
+
+[[profiles]]
+profile_id = "qwen38-27b-context"
+backend_id = "opencode"
+model_id = "qwen38-27b"
+provider = "ollama"
+provider_locator = "ollama/qwen3.8-27b:latest"
+runtime_options = {}
+supported_reasoning_requests = ["low", "medium", "high"]
+reasoning_mappings = { low = "low", medium = "medium", high = "high" }
+verbosity_support = false
+tool_support = true
+mcp_support = false
+qualification_references = ["opencode-qwen38-context"]
+
+[[profiles]]
+profile_id = "muse-glimmer"
+backend_id = "opencode"
+model_id = "muse-glimmer"
+provider = "ollama"
+provider_locator = "ollama/muse-glimmer:30b"
+runtime_options = {}
+supported_reasoning_requests = ["provider_default"]
+reasoning_mappings = { provider_default = "provider_default" }
+verbosity_support = false
+tool_support = true
+mcp_support = false
+qualification_references = ["opencode-muse"]
 
 [[profiles]]
 profile_id = "ornith35b"

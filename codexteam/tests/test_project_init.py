@@ -160,6 +160,10 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
         assert "- Backend:" in handoff
         assert "- Profile:" in handoff
         assert "- Reasoning:" in handoff
+        assert "- Backend: `codex`" in handoff
+        assert "- Profile: `qwen38-27b`" in handoff
+        assert "## Execution Class\n\n- `complex`" in handoff
+        assert "- Reasoning: `medium`" in handoff
     gates = (plan.project_dir / "management" / "TEST_GATES.md").read_text()
     assert "Owner: Developer" in gates
     assert "Owner: Test Engineer (`tester` protocol role)" in gates
@@ -191,6 +195,39 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
         assert "{{" not in path.read_text(encoding="utf-8"), path
 
 
+def test_initialized_project_routes_verification_and_delivery_criteria(tmp_path: Path):
+    plan = initialize_project(
+        "Criteria Project",
+        "Deliver evidence-backed criteria.",
+        root=tmp_path,
+        project_id="criteria-project",
+    )
+    project = (plan.project_dir / "PROJECT.md").read_text(encoding="utf-8")
+    compact_project = " ".join(project.split())
+    assert "| Criterion | Validation | Verifier | Expected Evidence |" in project
+    assert "| Delivery Requirement | Validation | Responsible Role | Expected Evidence |" in project
+    assert "The Project Lead maintains these criteria throughout execution" in compact_project
+    assert "the operator is not required to verify every criterion" in compact_project
+    assert "AC-01 - Dependency-safe execution" in project
+    assert "AC-02 - Independent product evidence" in project
+
+    handoffs = {
+        task_id: (
+            plan.project_dir / "management" / "tasks" / f"{task_id}.md"
+        ).read_text(encoding="utf-8")
+        for task_id in ("T001", "T003", "T004", "T005")
+    }
+    compact_handoffs = {
+        task_id: " ".join(handoff.split()) for task_id, handoff in handoffs.items()
+    }
+    assert "Lead-maintained Acceptance Criteria, Verification Plan, and Delivery Criteria" in compact_handoffs["T001"]
+    assert "report their `AC-*` references" in compact_handoffs["T003"]
+    assert "without claiming independent acceptance" in compact_handoffs["T003"]
+    assert "passed, failed, blocked, or unverified with exact evidence" in compact_handoffs["T004"]
+    assert "Verification Plan coverage, Delivery Criteria readiness" in compact_handoffs["T005"]
+    assert "applicable to the milestone under review" in compact_handoffs["T005"]
+
+
 def test_t006_is_opt_in_and_has_a_stable_documenter_owner(tmp_path: Path):
     default_plan = initialize_project(
         "Default Project",
@@ -219,7 +256,10 @@ def test_t006_is_opt_in_and_has_a_stable_documenter_owner(tmp_path: Path):
     assert "- Summary:" in handoff
     assert "- Outcome:" in handoff
     assert "- AgentSpec: none" in handoff
-    assert "- Profile: `qwen36-27b`" in handoff
+    assert "- Backend: `codex`" in handoff
+    assert "- Profile: `qwen38-27b`" in handoff
+    assert "## Execution Class\n\n- `small`" in handoff
+    assert "- Reasoning: `medium`" in handoff
 
 
 def test_custom_template_t006_handoff_is_not_overwritten(tmp_path: Path):
@@ -231,7 +271,11 @@ def test_custom_template_t006_handoff_is_not_overwritten(tmp_path: Path):
         "## Responsible AI\n\n"
         "`fibonacci-documenter-01` — project-specific documenter.\n\n"
         "## Task Write Scope\n\n"
-        "- `docs/**`\n"
+        "- `docs/**`\n\n"
+        "## Context Mode\n\n"
+        "- `bounded-mcp`\n\n"
+        "## Execution Class\n\n"
+        "- `small`\n"
     )
 
     plan = initialize_project(

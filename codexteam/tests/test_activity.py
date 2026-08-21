@@ -106,6 +106,68 @@ def test_activity_projects_execution_identity_metrics_and_context_pressure(tmp_p
     assert "prompt" not in json.dumps(item).lower()
 
 
+def test_activity_projects_safe_live_progress_without_event_content(tmp_path: Path):
+    project = _attempt(tmp_path)
+    turn = project / ".codexteam/runtime/sessions/demo/T001/att-001/turns/001-draft.jsonl"
+    secret = "API_KEY=private command /private/path"
+    events = [
+        {"type": "text", "part": {"text": secret}},
+        {"type": "tool_use", "part": {"tool": "bash", "state": {
+            "status": "completed", "input": {"command": secret}, "output": secret,
+        }}},
+        {"type": "step_finish", "part": {"reason": "tool-calls", "tokens": {}}},
+    ]
+    turn.write_text("\n".join(json.dumps(event) for event in events) + "\n")
+    observed = datetime.now(timezone.utc)
+
+    item = collect_team_activity(tmp_path, now=observed)["attempts"][0]
+
+    assert item["event_count"] == 3
+    assert item["output_bytes"] == len(turn.read_bytes())
+    assert item["last_event_type"] == "step_finish"
+    assert item["last_tool"] == "bash"
+    assert item["model_step_count"] == 1
+    assert item["activity_state"] == "active"
+    projected = json.dumps({key: item[key] for key in (
+        "last_event_at", "event_count", "output_bytes", "last_event_type",
+        "last_tool", "model_step_count", "idle_seconds", "activity_state",
+    )})
+    assert "private" not in projected
+    assert "command" not in projected
+
+
+def test_activity_retains_safe_progress_after_turn_completion(tmp_path: Path):
+    project = _attempt(tmp_path, status="finalized")
+    turn = project / ".codexteam/runtime/sessions/demo/T001/att-001/turns/001-draft.jsonl"
+    turn.write_text(
+        '{"type":"tool_use","part":{"tool":"read","state":{"status":"completed"}}}\n'
+        '{"type":"step_finish","part":{"reason":"stop","tokens":{}}}\n'
+    )
+
+    item = collect_team_activity(tmp_path)["attempts"][0]
+
+    assert item["activity_state"] is None
+    assert item["event_count"] == 2
+    assert item["model_step_count"] == 1
+    assert item["last_tool"] == "read"
+
+
+def test_activity_falls_back_to_accepted_events_after_deterministic_finalization(tmp_path: Path):
+    project = _attempt(tmp_path, status="finalized")
+    attempt = project / ".codexteam/runtime/sessions/demo/T001/att-001"
+    state = json.loads((attempt / "turn-state.json").read_text())
+    state.update({"phase": "final", "turn_number": 2})
+    (attempt / "turn-state.json").write_text(json.dumps(state))
+    turn = attempt / "turns/001-draft.jsonl"
+    turn.write_text('{"type":"tool_use","part":{"tool":"API_KEY_private"}}\n')
+
+    item = collect_team_activity(tmp_path)["attempts"][0]
+
+    assert item["event_count"] == 1
+    assert item["last_tool"] == "unknown"
+    assert "API_KEY" not in json.dumps(item)
+
+
 def test_activity_stale_classification_and_filters(tmp_path: Path):
     _attempt(tmp_path)
     activity = collect_team_activity(
@@ -250,12 +312,19 @@ def test_model_fleet_is_bounded_to_curated_ollama_models(monkeypatch):
         if path == "/api/tags":
             return {"models": [
                 {"name": "qwen3.6-27b:latest", "size": 10},
+                {"name": "qwen3.8-27b:latest", "size": 17},
                 {"name": "uncurated:latest", "size": 20},
             ]}
-        return {"models": [{
-            "name": "qwen3.6-27b:latest", "size": 10, "size_vram": 10,
-            "context_length": 262144, "expires_at": "2026-08-17T09:00:00Z",
-        }]}
+        return {"models": [
+            {
+                "name": "qwen3.6-27b:latest", "size": 10, "size_vram": 10,
+                "context_length": 262144, "expires_at": "2026-08-17T09:00:00Z",
+            },
+            {
+                "name": "qwen3.8-27b:latest", "size": 17, "size_vram": 17,
+                "context_length": 262144, "expires_at": "2026-08-17T09:00:00Z",
+            },
+        ]}
 
     monkeypatch.setattr("codexteam_tools.activity._ollama_json", fake)
     fleet = collect_model_fleet()
@@ -265,6 +334,10 @@ def test_model_fleet_is_bounded_to_curated_ollama_models(monkeypatch):
     assert qwen["loaded"] is True
     assert qwen["context_length"] == 262144
     assert qwen["processor"] == "GPU"
+    qwen38 = next(item for item in fleet["models"] if item["model_id"] == "qwen38-27b")
+    assert qwen38["loaded"] is True
+    assert qwen38["context_length"] == 262144
+    assert qwen38["processor"] == "GPU"
     assert "uncurated:latest" not in json.dumps(fleet)
 
 

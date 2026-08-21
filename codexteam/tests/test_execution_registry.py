@@ -19,8 +19,14 @@ def test_registry_contains_only_curated_backends_and_profiles():
     assert set(registry.backends) == {"codex", "opencode"}
     assert set(registry.profiles) == {
         ("codex", "qwen36-27b"),
+        ("codex", "qwen38-27b"),
+        ("codex", "muse-glimmer"),
+        ("codex", "gemma4-26b"),
         ("codex", "gpt54-mini"),
         ("opencode", "qwen36-27b"),
+        ("opencode", "qwen38-27b"),
+        ("opencode", "qwen38-27b-context"),
+        ("opencode", "muse-glimmer"),
         ("opencode", "ornith35b"),
     }
 
@@ -34,24 +40,77 @@ def test_profile_identity_is_backend_scoped():
     assert codex.provider_locator != opencode.provider_locator
 
 
+def test_default_muse_profile_uses_tuned_in_place_tag():
+    profile = load_execution_registry().resolve(
+        "opencode", "muse-glimmer", "provider_default"
+    )
+    assert profile.provider_locator == "ollama/muse-glimmer:30b"
+    assert profile.model["context_limit"] == 131072
+    assert profile.canonical_profile == "opencode/muse-glimmer"
+
+
+def test_opencode_qwen38_profile_uses_tuned_large_context_alias():
+    profile = load_execution_registry().resolve(
+        "opencode", "qwen38-27b-context", "medium"
+    )
+    assert profile.provider_locator == "ollama/qwen3.8-27b:latest"
+    assert profile.model["context_limit"] == 262144
+    assert profile.model["output_limit"] == 32768
+    assert profile.canonical_profile == "opencode/qwen38-27b-context"
+    assert profile.effective_reasoning == "medium"
+    assert profile.reasoning_support_status == "applied"
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "locator", "context"),
+    [
+        ("qwen38-27b", "qwen3.8-27b", 262144),
+        ("muse-glimmer", "muse-glimmer:30b", 131072),
+        ("gemma4-26b", "gemma4-26b", 32768),
+    ],
+)
+def test_new_codex_local_profiles_are_curated(profile_id, locator, context):
+    profile = load_execution_registry().resolve("codex", profile_id, "medium")
+    assert profile.provider == "ollama_local"
+    assert profile.provider_locator == locator
+    assert profile.model["context_limit"] == context
+    assert profile.canonical_profile == f"codex/{profile_id}"
+
+
+def test_ornith_runtime_context_matches_tuned_alias():
+    profile = load_execution_registry().resolve(
+        "opencode", "ornith35b", "provider_default"
+    )
+    assert profile.model["context_limit"] == 262144
+
+
 def test_unknown_profile_and_unsupported_reasoning_fail():
     registry = load_execution_registry()
     with pytest.raises(ExecutionRegistryError, match="unsupported execution profile"):
         registry.resolve("codex", "installed-but-unknown", "medium")
     with pytest.raises(ExecutionRegistryError, match="unsupported by"):
         registry.resolve("opencode", "qwen36-27b", "high")
+    with pytest.raises(ExecutionRegistryError, match="unsupported by"):
+        registry.resolve("opencode", "qwen38-27b-context", "provider_default")
 
 
-def test_query_cli_is_read_only_and_reports_support(tmp_path: Path, capsys):
+def test_query_cli_preserves_disabled_opencode_profiles_without_resolving_them(
+    tmp_path: Path, capsys
+):
     before = Path("execution_registry.toml").read_bytes()
+    assert main([
+        "profiles", "--backend", "opencode", "--json",
+    ]) == 0
+    profiles = json.loads(capsys.readouterr().out)
+    assert profiles
+    assert all(profile["execution_enabled"] is False for profile in profiles)
+    assert all(profile["supported"] is False for profile in profiles)
+    assert all(profile["host_available"] is False for profile in profiles)
     assert main([
         "resolve", "--backend", "opencode", "--profile", "qwen36-27b",
         "--role", "developer", "--reasoning", "provider_default", "--json",
-    ]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["profile"]["id"] == "opencode/qwen36-27b"
-    assert payload["reasoning"]["support_status"] == "provider_default"
-    assert payload["supported"] is True
+    ]) == 2
+    assert "opencode execution is disabled" in capsys.readouterr().out
     assert Path("execution_registry.toml").read_bytes() == before
 
 

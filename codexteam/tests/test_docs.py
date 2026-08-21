@@ -29,13 +29,6 @@ def test_machine_schemas_are_valid_json():
     handoff_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "handoff.json").read_text(encoding="utf-8"))
     assert set(handoff_schema["properties"]["agent_role"]["enum"]) == expected_roles
     assert set(result_schema["properties"]["agent_role"]["enum"]) == expected_roles
-    openai_schema = json.loads(
-        (CODEXTEAM_ROOT / "schemas" / "result-openai.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert set(openai_schema["properties"]["agent_role"]["enum"]) == expected_roles
-    assert openai_schema["properties"]["produced_at"]["pattern"] == "Z$"
     gate_schema = json.loads((CODEXTEAM_ROOT / "schemas" / "gate-record.json").read_text(encoding="utf-8"))
     assert "configuration_digest" in gate_schema["required"]
     assert "execution_surface" in gate_schema["properties"]
@@ -49,33 +42,25 @@ def test_machine_schemas_are_valid_json():
     assert role_schema["properties"]["mcp_tools"]["minProperties"] == 1
 
 
-def test_openai_result_schema_is_a_strict_projection():
-    stored = json.loads(
-        (CODEXTEAM_ROOT / "schemas" / "result.json").read_text(encoding="utf-8")
+def test_criteria_guidance_routes_evidence_without_operator_verification_requirement():
+    project_lead = (CODEXTEAM_ROOT / ".agents/skills/project-lead.md").read_text(
+        encoding="utf-8"
     )
-    output = json.loads(
-        (CODEXTEAM_ROOT / "schemas" / "result-openai.json").read_text(
-            encoding="utf-8"
-        )
+    integration = (
+        CODEXTEAM_ROOT / ".agents/skills/integration-testing.md"
+    ).read_text(encoding="utf-8")
+    delivery = (CODEXTEAM_ROOT / ".agents/skills/delivery.md").read_text(
+        encoding="utf-8"
     )
 
-    assert output["required"] == stored["required"]
-    assert set(output["properties"]) == set(stored["properties"])
-
-    def assert_strict_objects(node):
-        if isinstance(node, dict):
-            if node.get("type") == "object":
-                assert node.get("additionalProperties") is False
-                assert set(node.get("required", ())) == set(node.get("properties", ()))
-            if "const" in node or "enum" in node:
-                assert "type" in node
-            for value in node.values():
-                assert_strict_objects(value)
-        elif isinstance(node, list):
-            for value in node:
-                assert_strict_objects(value)
-
-    assert_strict_objects(output)
+    compact_lead = " ".join(project_lead.split())
+    compact_integration = " ".join(integration.split())
+    compact_delivery = " ".join(delivery.split())
+    assert "Maintain the Acceptance Criteria, Verification Plan, and Delivery Criteria" in compact_lead
+    assert "Do not require operator verification unless a row explicitly assigns it" in compact_lead
+    assert "passed, failed, blocked, or unverified with exact evidence" in compact_integration
+    assert "the plan itself is not evidence" in compact_integration
+    assert "Verification Plan evidence and Delivery Criteria evidence remain distinguishable" in compact_delivery
 
 
 def test_documentation_has_no_obsolete_runtime_references():
@@ -100,7 +85,7 @@ def test_active_docs_describe_one_execution_system():
     readme = (CODEXTEAM_ROOT / "README.md").read_text(encoding="utf-8")
     scripts = (CODEXTEAM_ROOT / "scripts" / "README.md").read_text(encoding="utf-8")
     assert "CodexTeam has one project execution system" in readme
-    assert "Codex and OpenCode are supported backends" in readme
+    assert "Codex is the only enabled execution backend" in readme
     assert "version selector" not in readme
     assert not (CODEXTEAM_ROOT / "scripts" / ("run-" + "project.sh")).exists()
 

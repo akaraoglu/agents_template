@@ -18,7 +18,10 @@ Use for draft review, final-result inspection, every task closure, and delivery 
 
 ## Workflow
 
-1. Identify the exact claims and acceptance criteria under review. When
+1. Identify the exact claims and current acceptance criteria under review. Read
+   the applicable Verification Plan rows to identify the named validation,
+   verifier, and expected evidence. Classify each applicable row as passed,
+   failed, blocked, or unverified; the row is a plan, not proof. When
    `codexteam-context` is available, begin with `get_task_context` if the review boundary
    is not already exact. Use `get_attempt_summary`, `validate_result_record`,
    `get_gate_status`, and `get_change_summary` only for the corresponding review question.
@@ -45,6 +48,8 @@ Bad: “Everything looks good,” or converting a planned check into completion 
 
 - An acceptance, revision request, or showstopper classification
 - Reproducible command evidence mapped to acceptance criteria
+- Criterion-level coverage that distinguishes planned validation, observed
+  evidence, and unresolved gaps
 - Clear separation between readiness, worker claims, and observed success
 
 ## Validation
