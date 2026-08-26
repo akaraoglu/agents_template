@@ -39,7 +39,7 @@ failures raise a bounded `SidecarError`. There are no retries.
 ```python
 from codexteam_tools.local_mcp import LocalMcpClient, context_server_spec
 
-spec = context_server_spec("./projects", "my-project")
+spec = context_server_spec("/home/alik/workspace/codexspace/projects", "my-project")
 with LocalMcpClient(spec) as client:
     availability = client.start()
     result = client.call("get_active_task", {})
@@ -66,7 +66,7 @@ summary without response content:
 
 ```bash
 PYTHONPATH=src python -B scripts/local-mcp-canary.py \
-  --projects-root ./projects \
+  --projects-root /home/alik/workspace/codexspace/projects \
   --project PROJECT_ID \
   --local-docs-manifest ./local-docs.toml
 ```

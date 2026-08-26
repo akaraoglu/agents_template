@@ -44,6 +44,11 @@ def compile_execution_spec(
     attempt_id: str,
     role: str,
     workspace_root: str,
+    control_root: str | None = None,
+    work_root: str | None = None,
+    git_root: str | None = None,
+    git_prefix: str | None = None,
+    repo_id: str | None = None,
     handoff_source_path: str | None,
     handoff_content_digest: str,
     role_policy_name: str,
@@ -73,8 +78,22 @@ def compile_execution_spec(
         "role": role,
         "workspace_root": workspace_root,
     }
+    split_values = (control_root, work_root, git_root, git_prefix, repo_id)
+    if any(value is not None for value in split_values):
+        if not all(isinstance(value, str) and value for value in split_values):
+            raise ExecutionSpecError(
+                "split-root identity requires control_root, work_root, git_root, git_prefix, and repo_id"
+            )
+        assert all(isinstance(value, str) for value in split_values)
+        identity.update({
+            "control_root": str(control_root),
+            "work_root": str(work_root),
+            "git_root": str(git_root),
+            "git_prefix": str(git_prefix),
+            "repo_id": str(repo_id),
+        })
     value = {
-        "schema_version": "1.0",
+        "schema_version": "1.1" if control_root is not None else "1.0",
         "execution_spec_id": f"exec-{canonical_sha256(identity)[:32]}",
         "identity": identity,
         "handoff": {
@@ -117,14 +136,17 @@ def validate_execution_spec(data: Any) -> dict[str, Any]:
     errors: list[str] = []
     if set(data) != EXECUTION_SPEC_FIELDS:
         errors.append("execution specification fields do not match execution-spec")
-    if data.get("schema_version") != "1.0":
-        errors.append("schema_version must be '1.0'")
+    if data.get("schema_version") not in {"1.0", "1.1"}:
+        errors.append("schema_version must be '1.0' or '1.1'")
     _nonempty(data.get("execution_spec_id"), "execution_spec_id", errors)
 
+    identity_fields = {"team_id", "task_id", "attempt_id", "role", "workspace_root"}
+    if data.get("schema_version") == "1.1":
+        identity_fields |= {"control_root", "work_root", "git_root", "git_prefix", "repo_id"}
     identity = _strict_object(
         data.get("identity"),
         "identity",
-        {"team_id", "task_id", "attempt_id", "role", "workspace_root"},
+        identity_fields,
         errors,
     )
     for field in ("team_id", "task_id", "attempt_id"):
@@ -134,6 +156,15 @@ def validate_execution_spec(data: Any) -> dict[str, Any]:
     workspace = identity.get("workspace_root")
     if not isinstance(workspace, str) or not PurePosixPath(workspace).is_absolute():
         errors.append("identity.workspace_root must be absolute")
+    if data.get("schema_version") == "1.1":
+        for field in ("control_root", "work_root", "git_root"):
+            value = identity.get(field)
+            if not isinstance(value, str) or not PurePosixPath(value).is_absolute():
+                errors.append(f"identity.{field} must be absolute")
+        _nonempty(identity.get("git_prefix"), "identity.git_prefix", errors)
+        _nonempty(identity.get("repo_id"), "identity.repo_id", errors)
+        if identity.get("workspace_root") != identity.get("work_root"):
+            errors.append("identity.workspace_root must equal identity.work_root")
 
     handoff = _strict_object(data.get("handoff"), "handoff", {"source_path", "content_digest"}, errors)
     if handoff.get("source_path") is not None and not isinstance(handoff.get("source_path"), str):

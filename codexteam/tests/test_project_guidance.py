@@ -25,6 +25,18 @@ def test_project_guidance_sync_previews_and_refreshes_managed_file(tmp_path: Pat
     assert not target.read_text().endswith("# stale\n")
 
 
+def test_project_guidance_sync_refreshes_managed_skill(tmp_path: Path):
+    plan = initialize_project("Example", "Goal", root=tmp_path, project_id="example")
+    target = plan.project_dir / ".codexteam" / "skills" / "project-lead.md"
+    target.write_text(target.read_text() + "# stale\n")
+
+    changes = sync_project_guidance(plan.project_dir)
+
+    assert "update .codexteam/skills/project-lead.md" in changes
+    sync_project_guidance(plan.project_dir, apply=True)
+    assert not target.read_text().endswith("# stale\n")
+
+
 def test_project_guidance_sync_refuses_unmanaged_collision(tmp_path: Path):
     plan = initialize_project("Example", "Goal", root=tmp_path, project_id="example")
     target = plan.project_dir / ".codexteam" / "roles" / "reviewer.toml"

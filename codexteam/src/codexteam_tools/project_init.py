@@ -16,28 +16,6 @@ from .tasks import TaskDocumentError, parse_task_handoff_metadata
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TEMPLATE_ROOT = CODEXTEAM_ROOT / "templates" / "project"
-SKILLS_ROOT = CODEXTEAM_ROOT / ".agents" / "skills"
-PROJECT_SKILLS = (
-    "debugging.md",
-    "delivery.md",
-    "development-testing.md",
-    "document-editing.md",
-    "architecture-design.md",
-    "codexteam-self-improvement.md",
-    "feature-planning.md",
-    "git-steward.md",
-    "implementation.md",
-    "integration-testing.md",
-    "project-doc-map.md",
-    "project-lead.md",
-    "sdd-workflow.md",
-    "subagent-orchestration.md",
-    "task-breakdown.md",
-    "team-context-mcp.md",
-    "testing.md",
-    "ux-ui-design.md",
-    "verification.md",
-)
 TASK_DEFINITIONS = {
     "T001": ("Finalize requirements and project skeleton", "project-lead-01"),
     "T002": ("Design the code and project architecture", "architect-01"),
@@ -126,6 +104,7 @@ class InitializationPlan:
     files: tuple[str, ...]
     tasks: tuple[str, ...]
     initialize_git: bool
+    control_only: bool
 
 
 def _validate_task_write_scope(handoff: str, path: str) -> None:
@@ -151,6 +130,7 @@ def initialize_project(
     template_root: str | Path = DEFAULT_TEMPLATE_ROOT,
     dry_run: bool = False,
     initialize_git: bool = True,
+    control_only: bool = True,
     now: datetime | None = None,
 ) -> InitializationPlan:
     clean_goal = goal.strip()
@@ -195,12 +175,6 @@ def initialize_project(
             raise ValueError(f"unresolved template tokens in {source}: {', '.join(unresolved)}")
         rendered[relative] = content
 
-    for skill_name in PROJECT_SKILLS:
-        source = SKILLS_ROOT / skill_name
-        if not source.is_file():
-            raise FileNotFoundError(f"required project skill is missing: {source}")
-        rendered[f".codexteam/skills/{skill_name}"] = source.read_text(encoding="utf-8")
-
     rendered.update(expected_project_guidance())
 
     for task_id in normalized_tasks:
@@ -233,14 +207,10 @@ def initialize_project(
         },
     )
 
-    for directory in (
-        "src",
-        "docs/architecture",
-        "tests/unit",
-        "tests/smoke",
-        "tests/integration",
-        "results",
-    ):
+    directories = ["design/architecture", "docs/architecture", "results"]
+    if not control_only:
+        directories.extend(("src", "tests/unit", "tests/smoke", "tests/integration"))
+    for directory in directories:
         rendered[f"{directory}/.gitkeep"] = ""
 
     plan = InitializationPlan(
@@ -249,6 +219,7 @@ def initialize_project(
         files=tuple(sorted(rendered)),
         tasks=normalized_tasks,
         initialize_git=initialize_git,
+        control_only=control_only,
     )
     if dry_run:
         return plan
@@ -271,6 +242,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--template-root", default=str(DEFAULT_TEMPLATE_ROOT), help="Project template directory")
     parser.add_argument("--dry-run", action="store_true", help="Validate and print the file plan without writing")
     parser.add_argument(
+        "--with-product-scaffold",
+        action="store_true",
+        help="Also create legacy product src/tests scaffolds inside the project root",
+    )
+    parser.add_argument(
         "--no-git",
         action="store_true",
         help="Do not initialize the new project as a standalone local Git repository",
@@ -291,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             template_root=args.template_root,
             dry_run=args.dry_run,
             initialize_git=not args.no_git,
+            control_only=not args.with_product_scaffold,
         )
     except (FileExistsError, FileNotFoundError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}")
@@ -303,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         "tasks": list(plan.tasks),
         "files": list(plan.files),
         "initialize_git": plan.initialize_git,
+        "control_only": plan.control_only,
     }
     if args.json:
         print(json.dumps(payload, indent=2))

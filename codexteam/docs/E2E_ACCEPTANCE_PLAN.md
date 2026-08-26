@@ -8,7 +8,8 @@ Start a fresh Codex session with `/home/alik/workspace/agent_template/codexteam`
 - discovers `.agents/LEAD_BOOT.md`, reads it before initialization, and avoids broad guidance discovery;
 - reuses supplied facts and asks only for material missing decisions;
 - proposes the project description and management plan before initialization;
-- previews initialization beneath `./projects` with the repository-root command;
+- previews control-only initialization beneath
+  `/home/alik/workspace/codexspace/projects` with the repository-root command;
 - treats initialized task files as scaffolding rather than approved execution;
 - waits for separate planning and execution approval; and
 - knows that approved worker work uses persistent draft → feedback → final sessions with independent closure.
@@ -40,7 +41,7 @@ Complete the final task in a disposable project. Prove `DELIVERY.md`, `DONE_REPO
 Run this combined acceptance scenario with a fresh Codex session whose working directory is exactly `/home/alik/workspace/agent_template/codexteam`. Give the agent only a small product request; do not inject the CodexTeam protocol into the prompt.
 
 1. **Proposal:** the lead identifies its role, proposes the aim, scope, description, acceptance criteria, and management phases, and creates no project files before approval.
-2. **Initialization and planning:** after approval, the lead initializes under `./projects`, preserves the exact project ID and absolute `Created:` path returned by the initializer, replaces generic scaffolding with project-specific milestones, architecture, implementation plan, and responsible-AI handoffs, and waits for a separate execution approval.
+2. **Initialization and planning:** after approval, the lead initializes a control-only project under `/home/alik/workspace/codexspace/projects`, registers product source separately, preserves the exact project ID and absolute `Created:` path returned by the initializer, replaces generic scaffolding with project-specific milestones, architecture, implementation plan, and responsible-AI handoffs, and waits for a separate execution approval.
 3. **Team execution:** after `GO` or an equivalent end-to-end authorization, the lead delegates implementation, testing, review, and documentation to the named responsible AIs. “Handle it yourself” means autonomous orchestration, not solo implementation; only an explicit “do not spawn agents” instruction selects solo work.
    Before a local worker launch, the lead checks the Ollama endpoint from the same execution surface. A reachable nested route may use `--trust-parent-sandbox`; if the parent sandbox cannot reach host Ollama, the approved host-level route omits the flag and retains the normal worker sandbox. A successful dry run alone is not connectivity evidence, and MCP is not required.
 4. **Conversation and recovery:** worker changes use persistent draft → feedback → final sessions. Corrections resume the same responsible AI, attempt, and exact stored thread unless ownership intentionally changes or the session is irrecoverable.

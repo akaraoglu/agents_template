@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from codexteam_tools.project_init import DEFAULT_TEMPLATE_ROOT, initialize_project
+from codexteam_tools.project_init import DEFAULT_TEMPLATE_ROOT, initialize_project, main
 from codexteam_tools.tasks import parse_task_document
 
 
@@ -60,6 +60,7 @@ PROJECT.md
 PROJECT_STATE.md
 RESULT.md
 TASKS.md
+design/architecture/.gitkeep
 docs/architecture/.gitkeep
 docs/decisions/README.md
 management/BACKLOG.md
@@ -87,6 +88,7 @@ def test_project_dry_run_is_complete_and_does_not_write(tmp_path: Path):
         root=tmp_path,
         project_id="example-project",
         dry_run=True,
+        control_only=False,
     )
     assert plan.tasks == ("T001", "T002", "T003", "T004", "T005")
     assert plan.files == DEFAULT_PROJECT_MANIFEST
@@ -116,9 +118,56 @@ def test_project_dry_run_is_complete_and_does_not_write(tmp_path: Path):
     assert "tests/unit/.gitkeep" in plan.files
     assert "tests/smoke/.gitkeep" in plan.files
     assert "tests/integration/.gitkeep" in plan.files
+    assert "design/architecture/.gitkeep" in plan.files
     assert ".gitignore" in plan.files
     assert not plan.project_dir.exists()
     assert plan.initialize_git is True
+    assert plan.control_only is False
+
+
+def test_control_only_initialization_omits_product_scaffolds(tmp_path: Path):
+    plan = initialize_project(
+        "Control Project",
+        "Manage external source.",
+        root=tmp_path,
+        project_id="control-project",
+        control_only=True,
+        dry_run=True,
+    )
+    assert plan.control_only is True
+    assert "design/architecture/.gitkeep" in plan.files
+    assert "docs/architecture/.gitkeep" in plan.files
+    assert "results/.gitkeep" in plan.files
+    assert not any(path == "src/.gitkeep" or path.startswith("tests/") for path in plan.files)
+
+
+def test_control_only_is_the_default(tmp_path: Path):
+    plan = initialize_project(
+        "Control Project",
+        "Manage external source.",
+        root=tmp_path,
+        project_id="control-project",
+        dry_run=True,
+    )
+    assert plan.control_only is True
+    assert not any(path == "src/.gitkeep" or path.startswith("tests/") for path in plan.files)
+
+
+def test_cli_product_scaffold_is_explicit_opt_in(tmp_path: Path, capsys):
+    code = main([
+        "Legacy Project",
+        "--goal", "Create a legacy single-root project.",
+        "--projects-root", str(tmp_path),
+        "--project-id", "legacy-project",
+        "--with-product-scaffold",
+        "--dry-run",
+        "--json",
+    ])
+
+    assert code == 0
+    payload = __import__("json").loads(capsys.readouterr().out)
+    assert payload["control_only"] is False
+    assert "src/.gitkeep" in payload["files"]
 
 
 def test_project_initialization_renders_all_tokens(tmp_path: Path):
@@ -127,6 +176,7 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
         "Deliver a verified example.",
         root=tmp_path,
         project_id="example-project",
+        control_only=False,
     )
     assert (plan.project_dir / "results").is_dir()
     assert "Deliver a verified example." in (plan.project_dir / "PROJECT.md").read_text()

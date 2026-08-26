@@ -13,9 +13,9 @@ from codexteam_tools.paths import (
 )
 
 
-def test_default_projects_root_is_the_current_codexteam_workspace():
+def test_default_projects_root_is_codexspace():
     assert DEFAULT_PROJECTS_ROOT == Path(
-        "/home/alik/workspace/agent_template/codexteam/projects"
+        "/home/alik/workspace/codexspace/projects"
     )
 
 

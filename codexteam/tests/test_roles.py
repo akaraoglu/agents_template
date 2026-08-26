@@ -272,6 +272,8 @@ def test_developer_and_test_engineer_have_distinct_testing_skills():
     ]
     assert "Test Engineer" in tester.developer_instructions
     assert "integration gate" in tester.developer_instructions
+    assert "launcher runs the configured" in developer.developer_instructions
+    assert "launcher runs the configured" in tester.developer_instructions
 
 
 def test_developer_planned_lane_is_conditional_and_same_session():

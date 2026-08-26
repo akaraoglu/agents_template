@@ -109,6 +109,25 @@ def test_execution_spec_digest_is_deterministic_and_tampering_fails():
         validate_execution_spec(tampered)
 
 
+def test_execution_spec_11_pins_complete_split_repository_identity():
+    value = _minimal_spec(
+        workspace_root="/tmp/git/component",
+        control_root="/tmp/control",
+        work_root="/tmp/git/component",
+        git_root="/tmp/git",
+        git_prefix="component",
+        repo_id="component",
+    )
+    assert value["schema_version"] == "1.1"
+    assert value["identity"]["workspace_root"] == value["identity"]["work_root"]
+    tampered = json.loads(json.dumps(value))
+    tampered["identity"]["repo_id"] = "other"
+    tampered["execution_spec_digest"] = canonical_sha256(
+        {key: item for key, item in tampered.items() if key != "execution_spec_digest"}
+    )
+    assert validate_execution_spec(tampered)["identity"]["repo_id"] == "other"
+
+
 def test_execution_spec_accepts_agent_spec_reference_and_rejects_provider_default_effort_claim():
     value = _minimal_spec()
     value["agent_spec"] = {"id": "python-developer", "version": "1.0", "digest": "e" * 64}

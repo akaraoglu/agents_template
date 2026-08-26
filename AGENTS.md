@@ -33,6 +33,12 @@ current conversation.
 - Write discovery notes only under
   `<active-project-root>/design/architecture/` using
   `YYYY-MM-DD_descriptive_title.md`.
+- In split-root work, the active project root for discovery notes is always the
+  control root under `codexspace/projects`, never the source work root.
+- Before substantial source investigation, search existing control-root
+  discovery notes with task-specific terms. Inspect relevant matches first,
+  verify important claims against current source, and record no relevant match
+  when none exists.
 - Use one coherent subject per note. Include the research scope, decision-bearing
   evidence and source locations, findings, implications, and unresolved risks or
   follow-up questions.
@@ -46,6 +52,22 @@ current conversation.
   no file changes. Explicit read-only instructions always win.
 - Never save one project's findings in a parent toolkit, another project, or a
   shared repository folder merely because that location is convenient.
+- Discovery notes are advisory research. Promote accepted product truth through
+  a separate source task into source-owned architecture or documentation; do not
+  maintain a competing product specification in control.
+
+## Control And Source Ownership
+
+- Control roots under `/home/alik/workspace/codexspace/projects` own tasks,
+  handoffs, project state, runtime, results, gate configuration, discoveries,
+  control/program architecture, and project-specific agent guidance.
+- Source repositories under `/home/alik/workspace/codexspace/repos` or explicit
+  external bindings own product source, product tests, build configuration,
+  product architecture/ADRs, and user/developer/operator documentation.
+- Split-root controls must not contain product `src/` or product test trees.
+  Source repositories must not contain CodexTeam lifecycle, runtime, result, or
+  task-board artifacts.
+- One source task targets one registered repository and one source Git history.
 
 ## Engineering Lifecycle
 
@@ -101,6 +123,15 @@ apply only when their named platform or tool is part of the task.
   risks. Do not claim verification that was not performed.
 - Commit, push, open or merge pull requests, tag, publish, or deploy only when
   explicitly requested or already authorized by the task.
+
+## Execution Discipline
+
+- Plans include only requested, necessary work.
+- Implementation includes only required code.
+- No nice-to-have features unless requested.
+- No speculative abstractions or adjacent cleanup.
+- Plans and responses stay concise and direct.
+- Optional improvements are mentioned only after required work, with your permission.
 
 ## Guidance Layout
 

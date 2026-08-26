@@ -89,6 +89,9 @@ Each task file must include:
 - Responsible AI: stable owner label, role, and default capability profile.
 - Context: concise accepted facts and the reason additional context is needed; do
   not use it as a broad reading list.
+- Prior Discoveries, for context-heavy work: relevant control-root discovery
+  note path and heading, concise finding, and exact current-source verification
+  target; explicitly state when no relevant discovery was found.
 - Context Targets, for context-heavy work: question-oriented exact files and
   headings, symbols, selectors, or test names that prevent whole-artifact rediscovery.
 - Scope: what is included and excluded.
@@ -128,6 +131,9 @@ decisions into the handoff when a short factual statement is enough. The
 Reporting field must make evidence reusable by the next role: exact commands,
 observed results, and safe project-relative artifact paths. Do not require a
 downstream role to rerun a passing check solely to recreate evidence.
+Before writing these targets, the Project Lead searches control-root discoveries;
+split-root workers receive the relevant finding in the handoff and never guess a
+control path from the source workspace.
 
 Task capsules are not default Developer context. Load
 `.agents/playbooks/task-capsule-pilot.md` only for an explicitly approved

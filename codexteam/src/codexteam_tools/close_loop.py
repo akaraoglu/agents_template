@@ -14,11 +14,13 @@ from .paths import contained_path, ensure_existing_workspace, normalize_task_id,
 from .spawn import ProcessResult, run_process
 from .tasks import TaskDocumentError, parse_task_document, update_task_document
 from .lead_tracking import set_pending_transition
+from .repository_binding import load_repository_binding
 
 
 @dataclass(frozen=True)
 class CloseLoopPlan:
     project: Path
+    work_root: Path
     task_id: str
     result_path: Path
     command: tuple[str, ...]
@@ -32,8 +34,17 @@ def prepare_close_loop(
     *,
     deliverables: list[str] | None = None,
     result_value: str | None = None,
+    work_root: str | Path | None = None,
+    repo_id: str | None = None,
 ) -> tuple[CloseLoopPlan, dict, str]:
     project = ensure_existing_workspace(project_value)
+    if (work_root is None) != (repo_id is None):
+        raise ValueError("split-root closure requires both work_root and repo_id")
+    work = (
+        load_repository_binding(project, work_root, repo_id).work_root
+        if work_root is not None and repo_id is not None
+        else project
+    )
     task_id = normalize_task_id(task_value)
     if not command:
         raise ValueError("an independent verification command is required after '--'")
@@ -60,13 +71,14 @@ def prepare_close_loop(
     requested.extend(item["artifact_ref"] for item in result["evidence"])
     for relative in dict.fromkeys(requested):
         safe_relative_path(relative, label="deliverable")
-        path = contained_path(project, relative, label="deliverable")
+        root = project if relative.startswith("results/gates/") else work
+        path = contained_path(root, relative, label="deliverable")
         if not path.exists():
             raise FileNotFoundError(f"declared deliverable does not exist: {relative}")
         paths.append(path)
 
     return (
-        CloseLoopPlan(project, task_id, result_path, tuple(command), tuple(paths)),
+        CloseLoopPlan(project, work, task_id, result_path, tuple(command), tuple(paths)),
         result,
         tasks_text,
     )
@@ -91,7 +103,7 @@ def execute_close_loop(
         prompt="",
         timeout_seconds=timeout_seconds,
         env=os.environ.copy(),
-        cwd=plan.project,
+        cwd=plan.work_root,
     )
     if process.timed_out:
         raise VerificationFailure(f"verification timed out after {timeout_seconds} seconds", process)
@@ -264,7 +276,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Verify and atomically close one CodexTeam task.",
         epilog="Place the independent verification command after '--'.",
     )
-    parser.add_argument("project", help="Project workspace")
+    parser.add_argument("project", nargs="?", help="Project workspace")
+    parser.add_argument("--control-root")
+    parser.add_argument("--work-root")
+    parser.add_argument("--repo-id")
     parser.add_argument("--task", required=True)
     parser.add_argument(
         "--result",
@@ -288,12 +303,20 @@ def main(argv: list[str] | None = None) -> int:
         command = []
     args = build_parser().parse_args(parser_arguments)
     try:
+        split_values = (args.control_root, args.work_root, args.repo_id)
+        if bool(args.project) == bool(any(split_values)) or (any(split_values) and not all(split_values)):
+            raise ValueError(
+                "close-loop requires either a project workspace or all of "
+                "--control-root, --work-root, and --repo-id"
+            )
         plan, result, tasks_text = prepare_close_loop(
-            args.project,
+            args.project or args.control_root,
             args.task,
             command,
             deliverables=args.deliverable,
             result_value=args.result,
+            work_root=args.work_root,
+            repo_id=args.repo_id,
         )
     except (FileNotFoundError, OSError, ResultValidationError, TaskDocumentError, ValueError) as exc:
         print(f"ERROR: {exc}")
@@ -302,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print(json.dumps({
             "project": str(plan.project),
+            "work_root": str(plan.work_root),
             "task_id": plan.task_id,
             "result": str(plan.result_path),
             "command": list(plan.command),

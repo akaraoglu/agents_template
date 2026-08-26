@@ -25,7 +25,17 @@ EXPECTED_ROOT_FILES = {
     "RESULT.md",
     "TASKS.md",
 }
-EXPECTED_ROOT_DIRECTORIES = {".codexteam", ".git", "docs", "golden", "management", "results", "src", "tests"}
+EXPECTED_ROOT_DIRECTORIES = {
+    ".codexteam",
+    ".git",
+    "design",
+    "docs",
+    "golden",
+    "management",
+    "results",
+    "src",
+    "tests",
+}
 EXPECTED_SOURCE_FILES = {".gitkeep", "fibonacci_tree_cli.py"}
 EXPECTED_TEST_FILES = {
     ".gitkeep",

@@ -21,19 +21,22 @@ read access as broad edit authorization.
 1. Determine task mode and whether edits or delivery operations are authorized.
 2. Locate the repository root and relevant nested `AGENTS.md` or equivalent
    project guidance.
-3. Inspect status and note pre-existing changes that must be preserved.
-4. Locate affected entry points, dependents, tests, configuration, build commands,
+3. Resolve the exact control root and source work root. Search the control root's
+   `design/architecture/*.md` with task-specific terms before deeper source
+   inspection. Read relevant matches, or record that none were found.
+4. Inspect status and note pre-existing changes that must be preserved.
+5. Locate affected entry points, dependents, tests, configuration, build commands,
    and similar implementations.
-5. State acceptance criteria, non-goals, compatibility-sensitive interfaces, and
+6. State acceptance criteria, non-goals, compatibility-sensitive interfaces, and
    material risks.
-6. Ask one targeted question only when unresolved ambiguity materially changes
+7. Ask one targeted question only when unresolved ambiguity materially changes
    behavior, scope, or risk; otherwise proceed with a stated reasonable
    assumption.
-7. Select the smallest applicable lifecycle skills and verification scope.
-8. For substantial discovery or deep research, decide whether the findings are
+8. Select the smallest applicable lifecycle skills and verification scope.
+9. For substantial discovery or deep research, decide whether the findings are
    durable enough to prevent future rediscovery. If so, confirm the exact active
    project root and write or update
-   `<active-project-root>/design/architecture/YYYY-MM-DD_descriptive_title.md`.
+   `<control-root>/design/architecture/YYYY-MM-DD_descriptive_title.md`.
    If the project root is ambiguous, ask the user before writing. Skip the note
    for routine inspection, transient diagnosis, duplicated documentation, or an
    explicitly read-only request.

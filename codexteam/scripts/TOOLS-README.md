@@ -26,10 +26,14 @@ no network, shell, indexing, or mutation tool.
 
 ```bash
 ./scripts/init-project.py "Project Name" \
-  --goal "Concrete project goal." --projects-root ./projects --dry-run
+  --goal "Concrete project goal." \
+  --projects-root /home/alik/workspace/codexspace/projects \
+  --dry-run
 ```
 
-Important options: `--project-id`, `--projects-root`, `--template-root`, `--tasks`, `--no-git`, `--json`. New projects are standalone Git roots by default; initialization does not create a commit.
+Important options: `--project-id`, `--projects-root`, `--with-product-scaffold`,
+`--template-root`, `--tasks`, `--no-git`, `--json`. New controls are standalone
+Git roots by default; initialization does not create a commit.
 
 ## Update a Task
 
@@ -158,7 +162,7 @@ Pass the matching `--execution-surface`; the runner refuses a mismatch before ru
 commands. At an accepted boundary, create an immutable record in the same invocation:
 
 ```bash
-./scripts/run-test-gate.py ./projects/<project-id> --gate integration \
+./scripts/run-test-gate.py /home/alik/workspace/codexspace/projects/<project-id> --gate integration \
   --execution-surface lead_host --snapshot-task T003 --snapshot-attempt att-001
 ```
 
@@ -168,7 +172,7 @@ should cite the returned content-addressed path under `results/gates/accepted/`.
 Rotate an expensive Lead conversation at a milestone without losing canonical state:
 
 ```bash
-./scripts/track-lead-task.py checkpoint --project ./projects/<project-id>
+./scripts/track-lead-task.py checkpoint --project /home/alik/workspace/codexspace/projects/<project-id>
 ```
 
 The printed resume prompt points to an ignored compact checkpoint. It is context only,
@@ -214,7 +218,7 @@ To check an existing implementation without initializing a team or calling a mod
 
 ```bash
 ./scripts/run-e2e-fibonacci-test.sh \
-  --product-only ./projects/<project-id> \
+  --product-only /path/to/product-source \
   --report-file /tmp/<project-id>-product-check.md
 ```
 
@@ -223,11 +227,16 @@ The product-only gate runs the unittest suite and the repository-owned black-box
 ## Read-only WebUI
 
 ```bash
-../env-python/bin/python projects/codexteam-project-management-web-ui/scripts/run-webui.py
+../env-python/bin/python \
+  /home/alik/workspace/codexspace/repos/codexteam-project-management-web-ui/scripts/run-webui.py \
+  --projects-root /home/alik/workspace/codexspace/projects
 ```
 
-The standalone `projects/codexteam-project-management-web-ui` repository owns the
-Flask application, templates, assets, launcher, and UI tests. The server binds only
+The standalone
+`/home/alik/workspace/codexspace/repos/codexteam-project-management-web-ui`
+repository owns the Flask application, templates, assets, launcher, and UI tests.
+The server reads controls from `/home/alik/workspace/codexspace/projects` and binds
+only
 to `127.0.0.1:5000` and reads existing project, session, JSONL, per-turn metrics,
 gate, milestone-commit, and `results/e2e-report.md` artifacts through the parent
 toolkit. Projects appear once in a newest-first table with current focus, status and
@@ -246,13 +255,13 @@ actions.
 Preview sidecars for existing sessions:
 
 ```bash
-./scripts/backfill-turn-metrics.py ./projects/<project-id>
+./scripts/backfill-turn-metrics.py /home/alik/workspace/codexspace/projects/<project-id>
 ```
 
 Write only the missing sidecars after reviewing the preview:
 
 ```bash
-./scripts/backfill-turn-metrics.py ./projects/<project-id> --write
+./scripts/backfill-turn-metrics.py /home/alik/workspace/codexspace/projects/<project-id> --write
 ```
 
 The default is read-only. Existing valid sidecars are preserved; replacing them requires both `--write --overwrite`. Add `--json` for machine-readable path/action records. Sidecars contain counts, byte sizes, token totals and deltas, command fingerprints, and redacted command previews, never command output content.

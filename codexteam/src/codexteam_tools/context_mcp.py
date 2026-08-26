@@ -200,7 +200,7 @@ class ContextMcpServer:
             Tool(
                 "get_gate_status",
                 "Get Test Gate Status",
-                "Return configured Development and Integration commands and validate record freshness.",
+                "Return bounded Development and Integration summaries and validate record freshness.",
                 _object_schema(
                     {"project": {"type": "string"}},
                     required=("project",),
@@ -261,7 +261,7 @@ class ContextMcpServer:
             Tool(
                 "search_team_memory",
                 "Search Team Memory",
-                "Search bounded project decisions and configured CodexTeam memory; return ranked source-backed entries.",
+                "Search bounded control-root discoveries, project decisions, and configured CodexTeam memory; return ranked source-backed entries.",
                 _object_schema(
                     {
                         "project": {"type": "string"},

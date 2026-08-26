@@ -17,15 +17,17 @@ Use for a nontrivial new project or a change to module boundaries, public APIs, 
 
 ## Workflow
 
-1. Map requirements and quality attributes to concrete architectural concerns.
-2. Inspect the current system before proposing an architecture change.
-3. Define system boundaries, components, responsibilities, and allowed dependency direction.
-4. Specify public contracts, data flow, trust boundaries, failure behavior, and observability.
-5. Define the repository layout and ownership of source, configuration, tests, fixtures, and documentation.
-6. Map unit, smoke, and integration coverage to the proposed boundaries.
-7. Record material alternatives and create an ADR only when the decision has lasting consequences.
-8. Identify migration, compatibility, rollout, and reversal requirements.
-9. Return the design for independent Project Lead approval; do not implement it.
+1. Review the handoff's Prior Discoveries. If the Lead reports no search, return
+   the context gap rather than repeating broad source discovery.
+2. Map requirements and quality attributes to concrete architectural concerns.
+3. Verify relevant prior findings against the current system before proposing an architecture change.
+4. Define system boundaries, components, responsibilities, and allowed dependency direction.
+5. Specify public contracts, data flow, trust boundaries, failure behavior, and observability.
+6. Define the repository layout and ownership of source, configuration, tests, fixtures, and documentation.
+7. Map unit, smoke, and integration coverage to the proposed boundaries.
+8. Record material alternatives and create an ADR only when the decision has lasting consequences.
+9. Identify migration, compatibility, rollout, and reversal requirements.
+10. Return the design for independent Project Lead approval; do not implement it.
 
 ## Commands To Run
 

@@ -19,7 +19,8 @@ MCP tools to infer that a mutation, test, or acceptance check occurred.
 
 ## Inputs Needed
 
-- Exact project directory name under `./projects` for an unbound Project Lead call;
+- Exact control directory name under `/home/alik/workspace/codexspace/projects`
+  for an unbound Project Lead call;
   worker servers are already bound and do not accept this argument
 - The decision being made
 - Task ID, attempt ID, role, query, or filter only when required
@@ -42,7 +43,7 @@ MCP tools to infer that a mutation, test, or acceptance check occurred.
 | Development and Integration Gate configuration and freshness | `get_gate_status` |
 | Result identity, contract, and referenced evidence | `validate_result_record` |
 | Expensive turns and tool-cycle indicators | `get_cost_hotspots` |
-| Project decisions and configured team memory | `search_team_memory` |
+| Control-root discoveries, project decisions, and configured team memory | `search_team_memory` (`scope=discoveries|project|team|all`) |
 | Ranked bounded source matches | `search_repository` |
 | Git status, diff statistics, suspicious paths, and bounded excerpts | `get_change_summary` |
 
@@ -59,6 +60,12 @@ The launcher derives each new worker attempt's project from the exact workspace,
 binds the MCP process to it, and removes `project` from every worker tool schema.
 Do not discover, guess, or supply a project value in a worker call. The Project
 Lead remains unbound so it can inspect more than one initialized project.
+
+Before substantial source investigation, the Lead calls `search_team_memory`
+with `scope=discoveries` and task-specific terms. Discovery notes are advisory
+control research, distinct from accepted `ARCHITECTURE.md`/`docs/architecture/`
+and source-owned product architecture. In split-root work, workers receive a
+bounded excerpt and exact verification targets through the handoff.
 
 For workers, context is heavy when a handoff points to multiple upstream
 artifacts, leaves dependencies or paths uncertain, needs shared-worktree

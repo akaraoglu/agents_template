@@ -1,3 +1,4 @@
 .codexteam/runtime/
+.codexteam/lead-*.md
 __pycache__/
 *.py[cod]

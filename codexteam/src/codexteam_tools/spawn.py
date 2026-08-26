@@ -80,6 +80,7 @@ from .roles import (
     load_role_policy,
     load_role_policy_snapshot,
 )
+from .repository_binding import load_repository_binding
 from . import opencode_backend
 from .run_guard import ExactFailedRepeatGuard
 from .turn_metrics import (
@@ -88,7 +89,13 @@ from .turn_metrics import (
     summarize_turn,
     write_summary,
 )
-from .test_gates import GateConfigError, gate_record_path, load_gate_config, run_gate
+from .test_gates import (
+    GateConfigError,
+    gate_record_path,
+    load_gate_config,
+    run_gate,
+    validate_current_gate_record,
+)
 from .tasks import TaskDocumentError, parse_task_handoff_metadata
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
@@ -109,6 +116,8 @@ DIRECT_VERIFICATION_EXECUTABLES = {"env", "go", "node", "python", "python3", "sh
 CONTEXT_MCP_SERVER = "codexteam-context"
 CONTEXT_PROJECT_ENV = "CODEXTEAM_CONTEXT_PROJECT"
 PROGRESS_INTERVAL_SECONDS = 30.0
+POST_EXIT_DRAIN_SECONDS = 0.5
+DESCENDANT_TERM_GRACE_SECONDS = 0.25
 SMALL_EXECUTION_ROLES = {"documenter", "git_steward"}
 DEBUG_STREAM_MODES = ("off", "assistant", "activity")
 DEBUG_PREVIEW_CHARS = 1_200
@@ -138,6 +147,11 @@ class SpawnRequest:
     role: str
     attempt_id: str
     workspace: Path
+    control_root: Path
+    work_root: Path
+    git_root: Path
+    git_prefix: str
+    repo_id: str | None
     prompt: str
     prompt_source_path: str | None
     prompt_content_digest: str
@@ -195,6 +209,16 @@ class SpawnRequest:
     def execution_codex_home(self) -> Path:
         return _execution_codex_home(self)
 
+    @property
+    def split_root(self) -> bool:
+        return self.repo_id is not None
+
+    @property
+    def worker_add_dirs(self) -> tuple[Path, ...]:
+        if not self.split_root:
+            return self.add_dirs
+        return (self.artifact_report_path.parent,)
+
 @dataclass(frozen=True)
 class TurnContext:
     number: int
@@ -237,13 +261,7 @@ def _required_complex_checkpoint(request: SpawnRequest) -> str | None:
         candidate = value.get("complex_checkpoint")
         accepted = candidate if isinstance(candidate, str) else None
     if request.role == "developer":
-        return (
-            "source_focused_tests"
-            if accepted is None
-            else "development_gate"
-            if accepted == "source_focused_tests"
-            else "development_gate"
-        )
+        return "source_focused_tests"
     if request.role == "tester":
         return "integration_evidence"
     return "final_report"
@@ -310,21 +328,50 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         _validate_reasoning_effort(reasoning_effort_value) if phase == "draft" else None
     )
 
-    workspace = ensure_existing_workspace(args.workspace)
+    workspace_value = getattr(args, "workspace", None)
+    split_values = (
+        getattr(args, "control_root", None),
+        getattr(args, "work_root", None),
+        getattr(args, "repo_id", None),
+    )
+    if workspace_value is not None and any(value is not None for value in split_values):
+        raise ValueError("--workspace cannot be mixed with split-root arguments")
+    if workspace_value is None and not all(value is not None for value in split_values):
+        raise ValueError(
+            "supply either --workspace or all of --control-root, --work-root, and --repo-id"
+        )
+    if workspace_value is not None:
+        workspace = control_root = work_root = git_root = ensure_existing_workspace(workspace_value)
+        git_prefix = "."
+        repo_id = None
+    else:
+        assert all(value is not None for value in split_values)
+        binding = load_repository_binding(
+            str(split_values[0]), str(split_values[1]), str(split_values[2])
+        )
+        control_root = binding.control_root
+        workspace = work_root = binding.work_root
+        git_root = binding.git_root
+        git_prefix = binding.git_prefix
+        repo_id = binding.repo_id
     safe_relative_path(args.result_dir, label="result directory")
-    result_dir = contained_path(workspace, args.result_dir, label="result directory")
+    result_dir = contained_path(control_root, args.result_dir, label="result directory")
     result_path = contained_path(
-        workspace,
+        control_root,
         f"{args.result_dir}/{task_id}-{attempt_id}.json",
         label="result path",
     )
     artifact_report_path = contained_path(
-        workspace,
-        f"results/reports/{task_id}-{attempt_id}.json",
+        control_root,
+        (
+            f".codexteam/runtime/sessions/{team_id}/{task_id}/{attempt_id}/exchange/report.json"
+            if repo_id is not None
+            else f"results/reports/{task_id}-{attempt_id}.json"
+        ),
         label="artifact report path",
     )
     session_dir = contained_path(
-        workspace,
+        control_root,
         f".codexteam/runtime/sessions/{team_id}/{task_id}/{attempt_id}",
         label="session directory",
     )
@@ -412,7 +459,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         raise ValueError("format-only feedback currently requires the OpenCode backend")
 
     prompt, prompt_source_path, prompt_content_digest = _read_prompt(
-        args.prompt_file, args.prompt, workspace
+        args.prompt_file, args.prompt, control_root
     )
     contract: dict[str, Any] = {}
     if phase == "draft":
@@ -461,6 +508,8 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     else:
         assert spec is not None
         add_dir_values = spec["permissions"]["additional_write_roots"]
+    if repo_id is not None and add_dir_values:
+        raise ValueError("split-root attempts allow only the private attempt exchange add-dir")
     add_dirs = tuple(ensure_existing_workspace(path) for path in add_dir_values)
     if phase != "draft" and args.skill_file:
         raise ValueError("skill guidance cannot be overridden after the draft turn")
@@ -476,7 +525,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             raise FileNotFoundError("post-cutover guidance manifest is missing or unsafe")
         skill_files = _load_pinned_skill_files(session_dir)
     guidance_digest = _guidance_bundle_digest(skill_files)
-    gate_routing = _resolve_gate_routing(workspace, args.role)
+    gate_routing = _resolve_gate_routing(control_root, args.role)
     source_codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser().resolve(
         strict=False
     )
@@ -496,7 +545,7 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
                 role_name=args.role,
                 role_instructions=effective_policy.developer_instructions,
                 project_instructions=project_instructions,
-                add_dirs=add_dirs,
+                add_dirs=(artifact_report_path.parent,) if repo_id is not None else add_dirs,
                 display_name=execution_profile.model["display_name"],
                 context_limit=execution_profile.model["context_limit"],
                 output_limit=execution_profile.model["output_limit"],
@@ -518,7 +567,8 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
                 if tool == "get_task_context"
             )
             sidecar_enabled = bool(
-                context_mode != "direct"
+                repo_id is None
+                and context_mode != "direct"
                 and
                 prompt_source_path
                 and re.fullmatch(r"management/tasks/T[0-9]{3,6}\.md", prompt_source_path)
@@ -559,6 +609,11 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
             role=args.role,
             attempt_id=attempt_id,
             workspace=workspace,
+            control_root=control_root,
+            work_root=work_root,
+            git_root=git_root,
+            git_prefix=git_prefix,
+            repo_id=repo_id,
             prompt=prompt,
             prompt_source_path=prompt_source_path,
             prompt_content_digest=prompt_content_digest,
@@ -627,6 +682,8 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     effective_mcp_servers = tuple(
         server for server in effective_policy.mcp_servers if server in configured_mcp_servers
     )
+    if repo_id is not None:
+        effective_mcp_servers = ()
     if phase == "feedback":
         effective_mcp_servers = ()
     if phase == "draft" and context_mode == "direct":
@@ -695,6 +752,11 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         role=args.role,
         attempt_id=attempt_id,
         workspace=workspace,
+        control_root=control_root,
+        work_root=work_root,
+        git_root=git_root,
+        git_prefix=git_prefix,
+        repo_id=repo_id,
         prompt=prompt,
         prompt_source_path=prompt_source_path,
         prompt_content_digest=prompt_content_digest,
@@ -772,6 +834,11 @@ def _resolve_execution_spec(
             attempt_id=request.attempt_id,
             role=request.role,
             workspace_root=str(request.workspace),
+            control_root=(str(request.control_root) if request.split_root else None),
+            work_root=(str(request.work_root) if request.split_root else None),
+            git_root=(str(request.git_root) if request.split_root else None),
+            git_prefix=(request.git_prefix if request.split_root else None),
+            repo_id=request.repo_id,
             handoff_source_path=request.prompt_source_path,
             handoff_content_digest=request.prompt_content_digest,
             role_policy_name=request.role_policy.name,
@@ -826,6 +893,15 @@ def _validate_execution_spec_request(request: SpawnRequest, spec: dict[str, Any]
         "role": request.role,
         "workspace_root": str(request.workspace),
     }
+    if request.split_root:
+        assert request.repo_id is not None
+        expected.update({
+            "control_root": str(request.control_root),
+            "work_root": str(request.work_root),
+            "git_root": str(request.git_root),
+            "git_prefix": request.git_prefix,
+            "repo_id": request.repo_id,
+        })
     if spec["identity"] != expected:
         raise ValueError("execution specification identity mismatch")
     if spec["role_policy"] != {
@@ -1000,20 +1076,32 @@ def run_spawn(
     if request.phase == "final":
         return _seal_semantic_result(request)
     executable = executable or request.backend
-    adapter = adapter_for(request.backend)
-    backend_version = adapter.preflight(request, executable)
-    if backend_version is not None:
-        request = replace(request, backend_version=backend_version)
-    if request.backend == "opencode":
-        if request.phase == "draft":
+    turn = prepare_turn(request)
+    if turn.is_initial:
+        request.session_dir.mkdir(parents=True, exist_ok=False)
+        request.session_dir.chmod(0o700)
+    _write_turn_state(request, turn, status="initializing", verify_spec=False)
+    try:
+        adapter = adapter_for(request.backend)
+        backend_version = adapter.preflight(request, executable)
+        if backend_version is not None:
+            request = replace(request, backend_version=backend_version)
+        if request.backend == "opencode" and request.phase == "draft":
             request = replace(
                 request,
                 execution_spec=_resolve_execution_spec(
                     replace(request, execution_spec=None),
                 ),
             )
-    turn = prepare_turn(request)
-    _prepare_session_storage(request, initial=turn.is_initial, session=turn.session)
+        if turn.session is not None:
+            _validate_session_scope(request, turn.session)
+        _prepare_session_storage(request, initial=turn.is_initial, session=turn.session)
+    except Exception as exc:
+        _write_turn_state(
+            request, turn, status="turn_failed",
+            errors=[f"worker setup failed: {exc}"], verify_spec=False,
+        )
+        raise
     delegation_path = request.session_dir / DELEGATION_FILENAME
     delegation_before = (
         hashlib.sha256(delegation_path.read_bytes()).hexdigest()
@@ -1022,60 +1110,62 @@ def run_spawn(
     )
     trusted_baseline: dict[str, str] | None = None
     trusted_baseline_digest: str | None = None
-    if request.backend == "opencode" or request.draft_format == ARTIFACT_REPORT:
-        expected_baseline = (
-            turn.session.get("workspace_baseline_sha256") if turn.session else None
-        )
-        trusted_baseline = _load_workspace_baseline(
-            request,
-            expected_digest=expected_baseline,
-        )
-        trusted_baseline_digest = _workspace_baseline_digest(trusted_baseline)
-    turn.message_path.parent.mkdir(parents=True, exist_ok=True)
-    turn.message_path.parent.chmod(0o700)
-    if request.backend == "opencode" and request.phase == "final":
-        _ensure_accepted_checkpoint(request, turn)
-    before_workspace = snapshot_workspace(request.workspace)
-    prior_artifact_report_bytes = (
-        request.artifact_report_path.read_bytes()
-        if request.artifact_report_path.is_file() and not request.artifact_report_path.is_symlink()
-        else None
-    )
-    before_additional = tuple(snapshot_workspace(path) for path in request.add_dirs)
-    prior_turn_state_bytes = (
-        turn.state_path.read_bytes() if turn.state_path.is_file() else None
-    )
-    _write_turn_state(request, turn, status="running")
-
-    command = build_command(request, turn, executable=executable)
-    worker_prompt = build_prompt(request, turn)
-    sidecar_provenance: dict[str, Any] | None = None
-    if (
-        request.phase == "draft"
-        and request.backend == "opencode"
-        and "codexteam-context" in request.effective_mcp_servers
-    ):
-        context, sidecar_provenance = _opencode_task_context(request)
-        if context is not None:
-            worker_prompt += (
-                "\n\n[BOUNDED LOCAL MCP CONTEXT]\n"
-                + json.dumps(context, sort_keys=True, separators=(",", ":"))
-                + "\n[/BOUNDED LOCAL MCP CONTEXT]\n"
+    try:
+        if request.backend == "opencode" or request.draft_format == ARTIFACT_REPORT:
+            expected_baseline = (
+                turn.session.get("workspace_baseline_sha256") if turn.session else None
             )
-    atomic_write_text(turn.lead_prompt_path, request.prompt)
-    turn.lead_prompt_path.chmod(0o600)
-    environment = adapter.environment(request)
-    process = run_process(
-        command,
-        prompt=worker_prompt,
-        timeout_seconds=request.timeout_seconds,
-        env=environment,
-        cwd=request.workspace,
-        events_path=turn.events_path,
-        stderr_path=turn.stderr_path,
-        run_guard=request.run_guard,
-        debug_stream=request.debug_stream,
-    )
+            trusted_baseline = _load_workspace_baseline(
+                request,
+                expected_digest=expected_baseline,
+            )
+            trusted_baseline_digest = _workspace_baseline_digest(trusted_baseline)
+        turn.message_path.parent.mkdir(parents=True, exist_ok=True)
+        turn.message_path.parent.chmod(0o700)
+        before_workspace = _snapshot_request_workspace(request)
+        prior_artifact_report_bytes = (
+            request.artifact_report_path.read_bytes()
+            if request.artifact_report_path.is_file() and not request.artifact_report_path.is_symlink()
+            else None
+        )
+        before_additional = tuple(snapshot_workspace(path) for path in request.add_dirs)
+        prior_turn_state_bytes = turn.state_path.read_bytes()
+        command = build_command(request, turn, executable=executable)
+        worker_prompt = build_prompt(request, turn)
+        sidecar_provenance: dict[str, Any] | None = None
+        if (
+            request.phase == "draft"
+            and request.backend == "opencode"
+            and "codexteam-context" in request.effective_mcp_servers
+        ):
+            context, sidecar_provenance = _opencode_task_context(request)
+            if context is not None:
+                worker_prompt += (
+                    "\n\n[BOUNDED LOCAL MCP CONTEXT]\n"
+                    + json.dumps(context, sort_keys=True, separators=(",", ":"))
+                    + "\n[/BOUNDED LOCAL MCP CONTEXT]\n"
+                )
+        atomic_write_text(turn.lead_prompt_path, request.prompt)
+        turn.lead_prompt_path.chmod(0o600)
+        environment = adapter.environment(request)
+        _write_turn_state(request, turn, status="running")
+        process = run_process(
+            command,
+            prompt=worker_prompt,
+            timeout_seconds=request.timeout_seconds,
+            env=environment,
+            cwd=request.work_root,
+            events_path=turn.events_path,
+            stderr_path=turn.stderr_path,
+            run_guard=request.run_guard,
+            debug_stream=request.debug_stream,
+        )
+    except Exception as exc:
+        _write_turn_state(
+            request, turn, status="turn_failed",
+            errors=[f"worker setup failed: {exc}"], verify_spec=False,
+        )
+        raise
     if delegation_before is not None:
         if delegation_path.is_symlink() or not delegation_path.is_file():
             raise ValueError("delegation attribution changed during worker execution")
@@ -1085,7 +1175,7 @@ def run_spawn(
     _verify_execution_spec_immutable(request)
     atomic_write_text(turn.events_path, process.stdout)
     atomic_write_text(turn.stderr_path, process.stderr)
-    after_workspace = snapshot_workspace(request.workspace)
+    after_workspace = _snapshot_request_workspace(request)
     after_additional = tuple(snapshot_workspace(path) for path in request.add_dirs)
     changed_paths = changed_workspace_paths(before_workspace, after_workspace)
     change_actions = _workspace_change_actions(
@@ -1098,11 +1188,12 @@ def run_spawn(
         changed_paths,
         task_write_scope=request.task_write_scope,
     )
-    report_relative = request.artifact_report_path.relative_to(request.workspace).as_posix()
-    boundary_errors = [
-        error for error in boundary_errors
-        if not error.endswith(f"changing {report_relative}")
-    ]
+    report_relative = _artifact_report_reference(request)
+    if not request.split_root:
+        boundary_errors = [
+            error for error in boundary_errors
+            if not error.endswith(f"changing {report_relative}")
+        ]
     if request.feedback_mode == "format-only":
         boundary_errors.extend(
             f"format-only feedback does not allow changing {path}"
@@ -1382,6 +1473,24 @@ def run_spawn(
                 request, turn, status="correction_needed", thread_id=thread_id,
                 errors=[checkpoint_error],
             ), 1
+        if request.context_mode != "direct":
+            gate_error = _run_launcher_gate(request)
+            if gate_error is not None:
+                session = _session_record(
+                    request, turn, thread_id=thread_id, status="correction_needed",
+                    process=process, change_actions=change_actions,
+                    workspace_snapshot=after_workspace, trusted_baseline=trusted_baseline,
+                    trusted_baseline_digest=trusted_baseline_digest,
+                )
+                _write_session(request.session_path, session)
+                _write_turn_state(
+                    request, turn, status="correction_needed", process=process,
+                    changed_paths=changed_paths, errors=[gate_error], thread_id=thread_id,
+                )
+                return _turn_outcome(
+                    request, turn, status="correction_needed", thread_id=thread_id,
+                    errors=[gate_error],
+                ), 1
         _write_turn_state(
             request,
             turn,
@@ -1461,7 +1570,7 @@ def run_spawn(
             workspace_snapshot=after_workspace,
             trusted_baseline=trusted_baseline,
             trusted_baseline_digest=trusted_baseline_digest,
-            final_result_path=request.result_path.relative_to(request.workspace).as_posix(),
+            final_result_path=request.result_path.relative_to(request.control_root).as_posix(),
         )
         _write_session(request.session_path, session)
         _verify_execution_spec_immutable(request)
@@ -1536,16 +1645,24 @@ def _seal_semantic_result_locked(request: SpawnRequest) -> tuple[dict[str, Any],
     assert turn.session is not None
     checkpoint = turn.session["accepted_checkpoint"]
     if request.execution_class == "complex":
-        required = "development_gate" if request.role == "developer" else "integration_evidence" if request.role == "tester" else "final_report"
-        if turn.session.get("complex_checkpoint") != required:
+        required = "source_focused_tests" if request.role == "developer" else "integration_evidence" if request.role == "tester" else "final_report"
+        accepted_checkpoint = turn.session.get("complex_checkpoint")
+        if accepted_checkpoint not in ({required, "development_gate"} if request.role == "developer" else {required}):
             raise ValueError(
                 f"finalization requires accepted complex checkpoint {required!r}"
             )
+    if request.gate_routing is not None:
+        validate_current_gate_record(
+            request.control_root,
+            request.gate_routing["gate"],
+            work_root=request.work_root if request.split_root else None,
+            repo_id=request.repo_id,
+        )
     baseline = _load_workspace_baseline(
         request,
         expected_digest=turn.session["workspace_baseline_sha256"],
     )
-    current_snapshot = snapshot_workspace(request.workspace)
+    current_snapshot = _snapshot_request_workspace(request)
     current_changed = changed_workspace_paths(baseline, current_snapshot)
     current_manifest = _accepted_product_paths(_merge_worker_change_manifest(
         baseline,
@@ -1600,7 +1717,14 @@ def _seal_semantic_result_locked(request: SpawnRequest) -> tuple[dict[str, Any],
                 "summary": "Worker-reported evidence artifact.",
             }
             for relative in semantic["evidence"]
-        ],
+        ] + ([{
+            "type": "test_output",
+            "artifact_ref": f"results/gates/{request.gate_routing['gate']}.json",
+            "summary": f"Launcher-owned {request.gate_routing['gate']} gate record.",
+        }] if (
+            request.gate_routing is not None
+            and f"results/gates/{request.gate_routing['gate']}.json" not in semantic["evidence"]
+        ) else []),
         "requested_followups": [],
         "errors": [],
         "warnings": [],
@@ -1641,7 +1765,7 @@ def _seal_semantic_result_locked(request: SpawnRequest) -> tuple[dict[str, Any],
             trusted_baseline=baseline,
             trusted_baseline_digest=turn.session["workspace_baseline_sha256"],
             workspace_snapshot=current_snapshot,
-            final_result_path=request.result_path.relative_to(request.workspace).as_posix(),
+            final_result_path=request.result_path.relative_to(request.control_root).as_posix(),
         )
         _write_session(request.session_path, session)
         _write_turn_state(
@@ -1805,7 +1929,7 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
             f"Task: {request.task_id}/{request.attempt_id}\n"
             f"Correction: {request.prompt.strip()}\n"
             "Preserve: accepted workspace changes.\n"
-            f"Output: update {request.artifact_report_path.relative_to(request.workspace).as_posix()}.\n"
+            f"Output: update {_artifact_report_reference(request)}.\n"
             + (
                 "Use only edit or write on the artifact report; no other tools or file changes are allowed.\n"
                 if request.feedback_mode == "format-only"
@@ -1817,10 +1941,7 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
 
     skills = []
     prompt_skill_files = request.skill_files
-    if (
-        request.backend == "opencode"
-        and (request.session_dir / GUIDANCE_MANIFEST_FILENAME).is_file()
-    ):
+    if (request.session_dir / GUIDANCE_MANIFEST_FILENAME).is_file():
         prompt_skill_files = _load_pinned_skill_files(request.session_dir)
     for path in prompt_skill_files:
         if request.backend == "opencode":
@@ -1840,17 +1961,11 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
     gate_routing = _gate_routing(request)
     gate_note = ""
     if gate_routing is not None:
-        if gate_routing["worker_may_execute"]:
-            gate_note = (
-                f"Configured {gate_routing['gate']} gate execution surface: worker. "
-                "Run it only when the task handoff requires it.\n"
-            )
-        else:
-            gate_note = (
-                f"Configured {gate_routing['gate']} gate execution surface: lead_host. "
-                "Do not launch it from this worker; request one same-digest host record from "
-                "the Project Lead and independently classify that evidence.\n"
-            )
+        gate_note = (
+            f"The launcher owns the configured {gate_routing['gate']} gate on the "
+            f"{gate_routing['execution_surface']} surface after validating this draft. "
+            "Run only focused task checks; do not launch the configured gate.\n"
+        )
     direct_context_note = _direct_context_instruction(request)
     return (
         "[CODEXTEAM HANDOFF]\n"
@@ -1867,6 +1982,12 @@ def build_prompt(request: SpawnRequest, turn: TurnContext) -> str:
         + "Do not emit result and do not close canonical project state; the Project Lead will review this draft.\n"
         + "".join(skills)
     )
+
+
+def _artifact_report_reference(request: SpawnRequest) -> str:
+    if request.split_root:
+        return str(request.artifact_report_path)
+    return request.artifact_report_path.relative_to(request.work_root).as_posix()
 
 
 def _direct_context_instruction(request: SpawnRequest) -> str:
@@ -1915,7 +2036,7 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
         },
         "constraints": {
             "workspace_write": str(request.workspace),
-            "additional_writable_directories": [str(path) for path in request.add_dirs],
+            "additional_writable_directories": [str(path) for path in request.worker_add_dirs],
             "trust_parent_sandbox": request.trust_parent_sandbox,
             "timeout_seconds": request.timeout_seconds,
             "execution_class": request.execution_class,
@@ -1944,7 +2065,7 @@ def _draft_response_instruction(request: SpawnRequest, *, feedback: bool) -> str
         if checkpoint is not None else ""
     )
     return (
-        f"Write the artifact report at {request.artifact_report_path.relative_to(request.workspace).as_posix()} "
+        f"Write the artifact report at {_artifact_report_reference(request)} "
         "as one JSON object with version=1, non-empty summary, evidence path strings, and limitations strings. "
         "Unknown fields are allowed. Terminal output is diagnostic only."
         + checkpoint_text + "\n"
@@ -1956,7 +2077,7 @@ def _gate_routing(request: SpawnRequest) -> dict[str, Any] | None:
         return None
     return {
         **request.gate_routing,
-        "worker_may_execute": request.gate_routing["execution_surface"] == "worker",
+        "worker_may_execute": False,
     }
 
 
@@ -2011,6 +2132,47 @@ def snapshot_workspace(workspace: Path) -> dict[str, str]:
     return snapshot
 
 
+def _snapshot_request_workspace(request: SpawnRequest) -> dict[str, str]:
+    if not request.split_root:
+        return snapshot_workspace(request.workspace)
+    completed = subprocess.run(
+        [
+            "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard",
+            "--", request.git_prefix,
+        ],
+        cwd=request.git_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise ValueError(f"Git-visible workspace scan failed: {detail}")
+    snapshot: dict[str, str] = {}
+    prefix = "" if request.git_prefix == "." else request.git_prefix + "/"
+    for git_relative in completed.stdout.split("\0"):
+        if not git_relative:
+            continue
+        if prefix and not git_relative.startswith(prefix):
+            continue
+        relative = git_relative[len(prefix):]
+        path = request.work_root / relative
+        if path.is_dir():
+            continue
+        if path.is_symlink():
+            snapshot[relative] = "symlink:" + os.readlink(path)
+            continue
+        digest = hashlib.sha256()
+        try:
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except FileNotFoundError:
+            continue
+        snapshot[relative] = digest.hexdigest()
+    return snapshot
+
+
 def changed_workspace_paths(
     before: dict[str, str],
     after: dict[str, str],
@@ -2059,6 +2221,25 @@ def role_boundary_errors(
     return errors
 
 
+def _run_launcher_gate(request: SpawnRequest) -> str | None:
+    if request.gate_routing is None:
+        return None
+    gate = request.gate_routing["gate"]
+    try:
+        record = run_gate(
+            request.control_root,
+            gate,
+            execution_surface=request.gate_routing["execution_surface"],
+            work_root=request.work_root if request.split_root else None,
+            repo_id=request.repo_id,
+        )
+    except (GateConfigError, OSError, ValueError) as exc:
+        return f"launcher-owned {gate} gate failed to run: {exc}"
+    if record.get("status") != "passed":
+        return f"launcher-owned {gate} gate failed; see results/gates/{gate}.json"
+    return None
+
+
 def _run_direct_verification(request: SpawnRequest) -> tuple[list[dict[str, Any]], list[str]]:
     records: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -2074,11 +2255,13 @@ def _run_direct_verification(request: SpawnRequest) -> tuple[list[dict[str, Any]
         gate = request.gate_routing["gate"]
         prefix = tuple(_direct_verification_command(request.workspace, ()))
         gate_record = run_gate(
-            request.workspace,
+            request.control_root,
             gate,
             execution_surface="worker",
             command_prefix=prefix,
             environment=environment,
+            work_root=(request.work_root if request.split_root else None),
+            repo_id=request.repo_id,
         )
         records = list(gate_record["commands"])
         if gate_record.get("status") != "passed":
@@ -2100,8 +2283,8 @@ def _run_direct_verification(request: SpawnRequest) -> tuple[list[dict[str, Any]
             {
                 "name": request.gate_routing["gate"],
                 "artifact_ref": gate_record_path(
-                    request.workspace, request.gate_routing["gate"]
-                ).relative_to(request.workspace).as_posix(),
+                    request.control_root, request.gate_routing["gate"]
+                ).relative_to(request.control_root).as_posix(),
                 "status": gate_record.get("status") if gate_record else "not_run",
             }
             if request.gate_routing and request.gate_routing["execution_surface"] == "worker"
@@ -2145,8 +2328,8 @@ def _direct_semantic_result(request: SpawnRequest) -> dict[str, Any]:
     }]
     if request.gate_routing and request.gate_routing["execution_surface"] == "worker":
         gate_ref = gate_record_path(
-            request.workspace, request.gate_routing["gate"]
-        ).relative_to(request.workspace).as_posix()
+            request.control_root, request.gate_routing["gate"]
+        ).relative_to(request.control_root).as_posix()
         evidence.append({
             "type": "test_output",
             "artifact_ref": gate_ref,
@@ -2288,6 +2471,9 @@ def _run_streaming_process(
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
     completed_streams: set[str] = set()
+    descendants: set[int] = set()
+    process_exit_at: float | None = None
+    descendants_killed = False
     event_count = 0
     model_step_count = 0
     last_tool: str | None = None
@@ -2297,6 +2483,22 @@ def _run_streaming_process(
     try:
         while len(completed_streams) < 2:
             now = time.monotonic()
+            descendants.update(_process_descendants(process.pid))
+            if process.poll() is not None and process_exit_at is None:
+                process_exit_at = now
+                _signal_process_group(process, signal.SIGTERM)
+                _signal_processes(descendants, signal.SIGTERM)
+            if process_exit_at is not None:
+                elapsed_after_exit = now - process_exit_at
+                if (
+                    not descendants_killed
+                    and elapsed_after_exit >= DESCENDANT_TERM_GRACE_SECONDS
+                ):
+                    _signal_process_group(process, signal.SIGKILL)
+                    _signal_processes(descendants, signal.SIGKILL)
+                    descendants_killed = True
+                if elapsed_after_exit >= POST_EXIT_DRAIN_SECONDS:
+                    break
             if now - last_progress_at >= PROGRESS_INTERVAL_SECONDS:
                 print(
                     "Worker progress: "
@@ -2357,6 +2559,7 @@ def _run_streaming_process(
             error_handle.close()
         if process.poll() is None:
             _signal_process_group(process, signal.SIGKILL)
+        _signal_processes(descendants, signal.SIGKILL)
         process.wait()
         for reader in readers:
             reader.join(timeout=1.0)
@@ -2741,12 +2944,42 @@ def _debug_terminal_text(value: str) -> str:
 
 
 def _signal_process_group(process: subprocess.Popen[str], target_signal: int) -> None:
-    if process.poll() is not None:
-        return
     try:
         os.killpg(process.pid, target_signal)
     except ProcessLookupError:
         return
+
+
+def _signal_processes(process_ids: set[int], target_signal: int) -> None:
+    for process_id in process_ids:
+        try:
+            os.kill(process_id, target_signal)
+        except ProcessLookupError:
+            continue
+
+
+def _process_descendants(process_id: int) -> set[int]:
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return set()
+    children: dict[int, set[int]] = {}
+    for status_path in proc.glob("[0-9]*/status"):
+        try:
+            status = status_path.read_text(encoding="utf-8")
+            child_id = int(status_path.parent.name)
+            match = re.search(r"^PPid:\s+(\d+)$", status, re.MULTILINE)
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        if match is not None:
+            children.setdefault(int(match.group(1)), set()).add(child_id)
+    descendants: set[int] = set()
+    pending = [process_id]
+    while pending:
+        for child_id in children.get(pending.pop(), set()):
+            if child_id not in descendants:
+                descendants.add(child_id)
+                pending.append(child_id)
+    return descendants
 
 
 def parse_codex_events(text: str) -> BackendEventSummary:
@@ -2792,7 +3025,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task", required=True)
     parser.add_argument("--attempt", required=True)
     parser.add_argument("--role", required=True, choices=tuple(sorted(AGENT_ROLES)))
-    parser.add_argument("--workspace", required=True)
+    parser.add_argument("--workspace")
+    parser.add_argument("--control-root")
+    parser.add_argument("--work-root")
+    parser.add_argument("--repo-id")
     prompt_group = parser.add_mutually_exclusive_group(required=True)
     prompt_group.add_argument("--prompt-file")
     prompt_group.add_argument("--prompt")
@@ -2896,6 +3132,14 @@ def main(argv: list[str] | None = None) -> int:
                 "result_status": request.result_status,
                 "skills": [str(path) for path in request.skill_files],
             }
+            if request.split_root:
+                details.update({
+                    "control_root": str(request.control_root),
+                    "work_root": str(request.work_root),
+                    "git_root": str(request.git_root),
+                    "git_prefix": request.git_prefix,
+                    "repo_id": request.repo_id,
+                })
             if request.backend == "opencode":
                 details.update(
                     {
@@ -2947,7 +3191,10 @@ def _require_canonical_draft_handoff(args: argparse.Namespace) -> None:
         raise ValueError(
             "live drafts require the canonical management/tasks/<task>.md handoff"
         )
-    workspace = ensure_existing_workspace(args.workspace)
+    root_value = args.workspace or args.control_root
+    if root_value is None:
+        raise ValueError("live drafts require a workspace or control root")
+    workspace = ensure_existing_workspace(root_value)
     task_id = normalize_task_id(args.task)
     expected = contained_path(
         workspace,
@@ -3084,7 +3331,7 @@ def _build_handoff_contract(request: SpawnRequest) -> dict[str, Any]:
                 raise ValueError(
                     f"direct verification executable is not allowed: {command[0]}"
                 )
-        gate_config = load_gate_config(request.workspace)
+        gate_config = load_gate_config(request.control_root)
         approved_commands = list(gate_config.development_commands)
         if request.role == "tester":
             approved_commands.extend(gate_config.integration_commands)
@@ -3094,8 +3341,8 @@ def _build_handoff_contract(request: SpawnRequest) -> dict[str, Any]:
             )
         if request.gate_routing and request.gate_routing["execution_surface"] == "worker":
             gate = request.gate_routing["gate"]
-            record_relative = gate_record_path(request.workspace, gate).relative_to(
-                request.workspace
+            record_relative = gate_record_path(request.control_root, gate).relative_to(
+                request.control_root
             ).as_posix()
             if request.task_write_scope and any(
                 fnmatchcase(record_relative, pattern) for pattern in request.task_write_scope
@@ -3358,9 +3605,11 @@ def _prepare_session_storage(
     session: dict[str, Any] | None,
 ) -> None:
     if initial:
-        request.session_dir.mkdir(parents=True, exist_ok=False)
+        request.session_dir.mkdir(parents=True, exist_ok=True)
         request.session_dir.chmod(0o700)
         try:
+            if request.split_root:
+                request.artifact_report_path.parent.mkdir(mode=0o700)
             if request.delegation is None:
                 raise ValueError("new attempts require delegation attribution")
             write_delegation(request.session_dir / DELEGATION_FILENAME, request.delegation)
@@ -3417,7 +3666,6 @@ def _prepare_session_storage(
                 shutil.copytree(catalogs, request.codex_home / "model_catalogs")
             return
         except Exception:
-            shutil.rmtree(request.session_dir, ignore_errors=True)
             raise
     delegation_path = request.session_dir / DELEGATION_FILENAME
     if delegation_path.exists() or delegation_path.is_symlink():
@@ -3536,6 +3784,15 @@ def _validate_session_scope(request: SpawnRequest, session: dict[str, Any]) -> N
             _handoff_contract_path(request.session_dir).read_bytes()
         ).hexdigest(),
     }
+    if request.split_root:
+        assert request.repo_id is not None
+        expected.update({
+            "control_root": str(request.control_root),
+            "work_root": str(request.work_root),
+            "git_root": str(request.git_root),
+            "git_prefix": request.git_prefix,
+            "repo_id": request.repo_id,
+        })
     mismatches = [
         f"{field}: expected {value!r}, found {session.get(field)!r}"
         for field, value in expected.items()
@@ -3573,12 +3830,19 @@ def _session_record(
     })
     record = dict(turn.session or {})
     record.update({
-        "schema_version": SESSION_SCHEMA_VERSION,
+        "schema_version": "1.1" if request.split_root else SESSION_SCHEMA_VERSION,
         "team_id": request.team_id,
         "task_id": request.task_id,
         "attempt_id": request.attempt_id,
         "agent_role": request.role,
         "workspace_root": str(request.workspace),
+        **({
+            "control_root": str(request.control_root),
+            "work_root": str(request.work_root),
+            "git_root": str(request.git_root),
+            "git_prefix": request.git_prefix,
+            "repo_id": request.repo_id,
+        } if request.split_root else {}),
         "handoff_contract_sha256": hashlib.sha256(
             _handoff_contract_path(request.session_dir).read_bytes()
         ).hexdigest(),
@@ -3586,7 +3850,7 @@ def _session_record(
         "turn_count": turn.number,
         "last_phase": request.phase,
         "last_status": status,
-        "last_turn_path": turn.message_path.relative_to(request.workspace).as_posix(),
+        "last_turn_path": turn.message_path.relative_to(request.control_root).as_posix(),
         "created_at": created_at,
         "updated_at": now,
         "turns": turns,
@@ -3631,7 +3895,7 @@ def _accepted_checkpoint(
     thread_id: str,
     accepted_paths: dict[str, dict[str, str | None]],
 ) -> dict[str, Any]:
-    report_relative = request.artifact_report_path.relative_to(request.workspace).as_posix()
+    report_relative = _artifact_report_reference(request)
     report_bytes = request.artifact_report_path.read_bytes()
     report_hash = hashlib.sha256(report_bytes).hexdigest()
     try:
@@ -3667,11 +3931,13 @@ def _ensure_accepted_checkpoint(request: SpawnRequest, turn: TurnContext) -> Non
     checkpoint = turn.session.get("accepted_checkpoint") if turn.session else None
     if not isinstance(checkpoint, dict):
         raise ValueError("finalization requires an accepted draft checkpoint")
-    relative = checkpoint.get("artifact_report_path")
+    reference = checkpoint.get("artifact_report_path")
     expected_hash = checkpoint.get("artifact_report_sha256")
-    if not isinstance(relative, str) or not isinstance(expected_hash, str):
+    if not isinstance(reference, str) or not isinstance(expected_hash, str):
         raise ValueError("accepted draft checkpoint is incomplete")
-    path = contained_path(request.workspace, relative, label="accepted artifact report path")
+    if reference != _artifact_report_reference(request):
+        raise ValueError("accepted artifact report path does not match this attempt")
+    path = request.artifact_report_path
     if path.is_symlink() or not path.is_file():
         raise ValueError(f"accepted artifact report is missing or unsafe: {path}")
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
@@ -3794,7 +4060,7 @@ def _write_workspace_baseline(request: SpawnRequest) -> None:
     path = _workspace_baseline_path(request)
     if path.exists() or path.is_symlink():
         raise FileExistsError(f"workspace baseline already exists: {path}")
-    atomic_write_json(path, snapshot_workspace(request.workspace))
+    atomic_write_json(path, _snapshot_request_workspace(request))
     path.chmod(0o600)
 
 
@@ -3899,8 +4165,10 @@ def _write_turn_state(
     change_actions: dict[str, str] | None = None,
     errors: list[str] | None = None,
     thread_id: str | None = None,
+    verify_spec: bool = True,
 ) -> None:
-    _verify_execution_spec_immutable(request)
+    if verify_spec:
+        _verify_execution_spec_immutable(request)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     existing: dict[str, Any] = {}
     if turn.state_path.is_file():
@@ -4150,7 +4418,7 @@ def _artifact_report_from_file(
 ) -> tuple[dict[str, Any] | None, list[str]]:
     path = request.artifact_report_path
     if path.is_symlink() or not path.is_file():
-        return None, [f"artifact report is missing or unsafe: {path.relative_to(request.workspace)}"]
+        return None, [f"artifact report is missing or unsafe: {_artifact_report_reference(request)}"]
     try:
         raw = path.read_bytes()
         if not raw or len(raw) > 64 * 1024:
@@ -4212,8 +4480,13 @@ def _result_artifact_errors(request: SpawnRequest, result: dict[str, Any]) -> li
             )
 
     for index, evidence in enumerate(result["evidence"]):
+        root = (
+            request.control_root
+            if request.split_root and evidence["artifact_ref"].startswith("results/gates/")
+            else request.workspace
+        )
         path = contained_path(
-            request.workspace,
+            root,
             evidence["artifact_ref"],
             label=f"evidence[{index}].artifact_ref",
         )

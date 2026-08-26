@@ -24,7 +24,7 @@ from .test_gates import (
 )
 
 PROJECT_MEMORY_FILES = ("DECISIONS.md", "OPEN_QUESTIONS.md")
-MEMORY_SCOPES = ("project", "team", "all")
+MEMORY_SCOPES = ("project", "discoveries", "team", "all")
 MAX_QUERY_LENGTH = 200
 MAX_MEMORY_RESULTS = 10
 MAX_MEMORY_BLOCK_CHARS = 600
@@ -186,6 +186,23 @@ class TeamContextReader:
                 path = self._optional_file(root, relative)
                 if path is not None:
                     files.append(("project", path))
+            architecture = self._optional_file(root, "ARCHITECTURE.md")
+            if architecture is not None:
+                files.append(("project", architecture))
+            for directory in (
+                root / "docs" / "architecture",
+                root / "docs" / "decisions",
+            ):
+                if directory.is_dir() and not directory.is_symlink():
+                    for path in sorted(directory.glob("*.md")):
+                        if path.is_file() and not path.is_symlink():
+                            files.append(("project", path))
+        if scope in {"discoveries", "all"}:
+            discoveries = root / "design" / "architecture"
+            if discoveries.is_dir() and not discoveries.is_symlink():
+                for path in sorted(discoveries.glob("*.md")):
+                    if path.is_file() and not path.is_symlink():
+                        files.append(("discoveries", path))
         if scope in {"team", "all"}:
             if self.team_memory_root is None:
                 if scope == "team":
@@ -203,6 +220,7 @@ class TeamContextReader:
         for source_scope, path in files:
             source_hash = _sha256(path)
             source_name = self._memory_source_name(root, source_scope, path)
+            source_type = _memory_source_type(source_scope, source_name)
             source_hashes[source_name] = source_hash
             for line, block in _memory_blocks(path.read_text(encoding="utf-8")):
                 score, matched_terms = _memory_score(
@@ -215,6 +233,7 @@ class TeamContextReader:
                 matches.append(
                     {
                         "scope": source_scope,
+                        "source_type": source_type,
                         "source": source_name,
                         "line": line,
                         "_score": score,
@@ -223,6 +242,9 @@ class TeamContextReader:
                             matched_terms,
                             MAX_MEMORY_BLOCK_CHARS,
                         ),
+                        "status": _memory_status(source_type, block),
+                        "date": _memory_date(source_type, path, block),
+                        "truncated": len(block) > MAX_MEMORY_BLOCK_CHARS,
                     }
                 )
         matches.sort(
@@ -323,7 +345,7 @@ class TeamContextReader:
         scope: str,
         path: Path,
     ) -> str:
-        if scope == "project":
+        if scope in {"project", "discoveries"}:
             return path.relative_to(project_root).as_posix()
         assert self.team_memory_root is not None
         return f"team-memory/{path.relative_to(self.team_memory_root).as_posix()}"
@@ -444,9 +466,13 @@ def _compact_gate_record(record: dict[str, Any] | None) -> dict[str, Any] | None
     failures = [
         {
             "gate": command.get("gate"),
-            "argv": command.get("argv"),
+            "command": (
+                str(command.get("argv", ["unknown"])[0])
+                if isinstance(command.get("argv"), list) and command.get("argv")
+                else "unknown"
+            ),
             "exit_code": command.get("exit_code"),
-            "stderr_tail": _truncate(str(command.get("stderr_tail") or ""), 500),
+            "error": _truncate(str(command.get("stderr_tail") or ""), 500),
         }
         for command in record.get("commands", [])
         if isinstance(command, dict) and command.get("exit_code") != 0
@@ -458,6 +484,7 @@ def _compact_gate_record(record: dict[str, Any] | None) -> dict[str, Any] | None
         "configuration_digest": record.get("configuration_digest"),
         "workspace_digest": record.get("workspace_digest"),
         "execution_surface": record.get("execution_surface", "worker"),
+        "command_count": len(record.get("commands", [])),
         "failures": failures,
     }
 
@@ -478,6 +505,43 @@ def _memory_blocks(text: str) -> list[tuple[int, str]]:
         index for index, line in enumerate(lines) if line.startswith("## ")
     ]
     return _heading_blocks(lines, heading_indexes)
+
+
+def _memory_source_type(scope: str, source: str) -> str:
+    if scope == "discoveries":
+        return "project_discovery"
+    if scope == "team":
+        return "team_memory"
+    if source == "OPEN_QUESTIONS.md":
+        return "project_open_question"
+    if source == "ARCHITECTURE.md" or source.startswith("docs/architecture/"):
+        return "project_architecture"
+    return "project_decision"
+
+
+def _memory_status(source_type: str, block: str) -> str | None:
+    if source_type not in {
+        "project_decision",
+        "project_open_question",
+        "team_memory",
+    }:
+        return None
+    for line in block.splitlines():
+        match = re.match(r"^\s*-?\s*Status:\s*(.+)$", line)
+        if match:
+            return match.group(1).strip() or None
+    return None
+
+
+def _memory_date(source_type: str, path: Path, block: str) -> str | None:
+    if source_type == "project_discovery":
+        match = re.match(r"^(\d{4}-\d{2}-\d{2})", path.stem)
+        return match.group(1) if match else None
+    for line in block.splitlines():
+        match = re.match(r"^\s*-?\s*Date:\s*(\d{4}-\d{2}-\d{2})", line)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _heading_blocks(lines: list[str], indexes: list[int]) -> list[tuple[int, str]]:

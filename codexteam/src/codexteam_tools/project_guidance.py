@@ -9,6 +9,28 @@ from .paths import ensure_existing_workspace
 from .roles import DEFAULT_ROLES_ROOT, RolePolicyError, load_all_role_policies
 
 MANAGED_MARKER = "# Managed by CodexTeam role policy. Do not edit."
+DEFAULT_SKILLS_ROOT = Path(__file__).resolve().parents[2] / ".agents" / "skills"
+PROJECT_SKILLS = (
+    "debugging.md",
+    "delivery.md",
+    "development-testing.md",
+    "document-editing.md",
+    "architecture-design.md",
+    "codexteam-self-improvement.md",
+    "feature-planning.md",
+    "git-steward.md",
+    "implementation.md",
+    "integration-testing.md",
+    "project-doc-map.md",
+    "project-lead.md",
+    "sdd-workflow.md",
+    "subagent-orchestration.md",
+    "task-breakdown.md",
+    "team-context-mcp.md",
+    "testing.md",
+    "ux-ui-design.md",
+    "verification.md",
+)
 GUIDANCE_README = """# Managed CodexTeam Role Guidance
 
 These files are discoverable project references generated from the CodexTeam role policy manifests.
@@ -23,7 +45,9 @@ Refresh these managed references with `scripts/sync-project-guidance.py`. Do not
 
 
 def expected_project_guidance(
-    *, roles_root: str | Path = DEFAULT_ROLES_ROOT
+    *,
+    roles_root: str | Path = DEFAULT_ROLES_ROOT,
+    skills_root: str | Path = DEFAULT_SKILLS_ROOT,
 ) -> dict[str, str]:
     policies = load_all_role_policies(roles_root=roles_root)
     files = {
@@ -41,6 +65,12 @@ def expected_project_guidance(
         }
     )
     files[".codexteam/README.md"] = GUIDANCE_README
+    skill_root = Path(skills_root).expanduser().resolve(strict=True)
+    for skill_name in PROJECT_SKILLS:
+        source = skill_root / skill_name
+        if not source.is_file() or source.is_symlink():
+            raise FileNotFoundError(f"required project skill is missing or unsafe: {source}")
+        files[f".codexteam/skills/{skill_name}"] = source.read_text(encoding="utf-8")
     return files
 
 
@@ -48,13 +78,17 @@ def sync_project_guidance(
     project: str | Path,
     *,
     roles_root: str | Path = DEFAULT_ROLES_ROOT,
+    skills_root: str | Path = DEFAULT_SKILLS_ROOT,
     apply: bool = False,
 ) -> tuple[str, ...]:
     project_root = ensure_existing_workspace(project)
     if not (project_root / "PROJECT.md").is_file():
         raise ValueError(f"not an initialized CodexTeam project: {project_root}")
     changes: list[str] = []
-    for relative, content in expected_project_guidance(roles_root=roles_root).items():
+    for relative, content in expected_project_guidance(
+        roles_root=roles_root,
+        skills_root=skills_root,
+    ).items():
         target = project_root / relative
         if target.is_symlink():
             raise RolePolicyError(f"refusing to replace symlink: {target}")
@@ -77,6 +111,8 @@ def sync_project_guidance(
 def _managed_content(relative: str, content: str) -> bool:
     if relative == ".codexteam/README.md":
         return content == GUIDANCE_README or content.startswith("# Managed CodexTeam Role Guidance")
+    if relative.startswith(".codexteam/skills/"):
+        return True
     return content.startswith(MANAGED_MARKER) or content.startswith(GENERATED_MARKER)
 
 
@@ -86,6 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("project")
     parser.add_argument("--roles-root", default=str(DEFAULT_ROLES_ROOT))
+    parser.add_argument("--skills-root", default=str(DEFAULT_SKILLS_ROOT))
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--check", action="store_true", help="Exit 1 when managed guidance is stale")
     return parser
@@ -97,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         changes = sync_project_guidance(
             args.project,
             roles_root=args.roles_root,
+            skills_root=args.skills_root,
             apply=args.apply,
         )
     except (FileNotFoundError, OSError, RolePolicyError, ValueError) as exc:

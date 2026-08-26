@@ -20,11 +20,12 @@ Prefer fewer concepts and maintenance obligations—not merely fewer lines.
 Contain necessary complexity behind a clear boundary and keep verification
 proportional to the requested outcome and relevant regressions.
 
-- Keep all writes inside this project root.
+- Keep control writes inside this project root. Source workers may write only
+  inside the registered repository and exact handoff scope.
 - Treat `BRIEF.md` as orientation; authoritative scope, handoff, evidence, and state files win on conflict.
 - Do not start implementation until the project specification is approved.
 - Do not claim completion without independent verification evidence.
-- Developers own the configured Development Gate and normally `tests/unit/` plus `tests/smoke/`; Test Engineers use the `tester` protocol role and own the configured Integration Gate plus handoff-scoped integration/regression expectations.
+- Developers own focused unit/smoke evidence; Test Engineers use the `tester` protocol role and own handoff-scoped integration/regression expectations. The launcher executes the configured Development or Integration Gate after validating the responsible worker's draft.
 - Test Engineer product defects return to the same Developer session before finalization. Test Engineers may change scoped tests but never production source or expectations merely to obtain a pass.
 - Architects define requirement-traceable system and repository structure without changing source or approving their own design.
 - Feature Planners may turn accepted architecture into advisory subtasks under `results/`; they do not implement, create canonical task IDs, change lifecycle state, spawn workers, or approve their own plans.
@@ -44,3 +45,10 @@ proportional to the requested outcome and relevant regressions.
   If this project's exact root is unclear, ask the user or Project Lead before
   writing. Skip notes for routine inspection, transient diagnostics, duplicated
   documentation, or explicitly read-only work.
+- Before substantial source investigation, search this control project's
+  `design/architecture/*.md`. Verify relevant prior findings against current
+  source. For split-root workers, the Project Lead supplies the relevant excerpt
+  and exact source targets in the handoff.
+- This control root owns management, runtime, results, discoveries, and agent
+  guidance. Product source, tests, build files, and product architecture belong
+  in the registered source repository.

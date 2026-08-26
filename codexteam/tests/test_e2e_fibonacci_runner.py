@@ -112,6 +112,7 @@ def test_controlled_fixture_initializes_five_specific_tasks(tmp_path: Path):
         project_id="fibonacci-fixture",
         tasks=("T001", "T002", "T003", "T004", "T005"),
         template_root=FIXTURE / "template",
+        control_only=False,
     )
     project = plan.project_dir
 
@@ -354,6 +355,7 @@ def test_manifest_acceptance_detects_exploratory_helper(tmp_path: Path):
         project_id="dirty-manifest",
         tasks=("T001", "T002", "T003", "T004", "T005"),
         template_root=FIXTURE / "template",
+        control_only=False,
     )
     project = plan.project_dir
     write_valid_product(project)

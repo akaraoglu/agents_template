@@ -14,9 +14,9 @@ commands before inventing new ones.
   `../env-python/bin/python`
 - Standard CodexTeam test command:
   `PYTHONDONTWRITEBYTECODE=1 ../env-python/bin/python -m pytest -q tests`
-  Target `tests/` explicitly so pytest does not collect independent generated projects beneath `./projects`.
+  Target `tests/` explicitly to keep collection bounded to the toolkit suite.
 - Project initialization preview:
-  `./scripts/init-project.py "Name" --goal "Goal" --projects-root ./projects --dry-run`
+  `./scripts/init-project.py "Name" --goal "Goal" --projects-root /home/alik/workspace/codexspace/projects --dry-run`
 - Test gates:
   `./scripts/run-test-gate.py <project> --gate development --execution-surface worker`
   or the Integration Gate with its configured `worker`/`lead_host` surface; commands

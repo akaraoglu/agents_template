@@ -5,9 +5,13 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
+import signal
 import subprocess
+import threading
 import time
 import tomllib
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +24,7 @@ from .paths import (
     normalize_task_id,
     validate_identifier,
 )
+from .repository_binding import RepositoryBinding, load_repository_binding
 
 GATES = ("development", "integration")
 CONFIG_PATH = "management/TEST_GATES.toml"
@@ -30,10 +35,54 @@ GATE_RECORD_FIELDS = {
     "schema_version", "gate", "status", "project_root", "execution_surface",
     "started_at", "completed_at", "duration_seconds", "verification_paths",
     "configuration_digest", "workspace_digest", "commands",
+    "control_root", "work_root", "git_root", "git_prefix", "repo_id",
 }
 GATE_COMMAND_FIELDS = {
     "gate", "argv", "exit_code", "duration_seconds", "stdout_tail", "stderr_tail",
 }
+_INHERITED_GATE_ENVIRONMENT = frozenset(
+    {
+        "COMSPEC",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "PATHEXT",
+        "PATH",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "TZ",
+        "USERPROFILE",
+        "WINDIR",
+        "PYTHONDONTWRITEBYTECODE",
+    }
+)
+_SENSITIVE_GATE_ENVIRONMENT_MARKERS = (
+    "ACCESS_KEY",
+    "API_KEY",
+    "AUTH",
+    "CREDENTIAL",
+    "PASSWORD",
+    "PASSWD",
+    "PRIVATE_KEY",
+    "SECRET",
+    "TOKEN",
+)
+_SENSITIVE_GATE_ENVIRONMENT_NAMES = frozenset(
+    {
+        "GIT_ASKPASS",
+        "GIT_CONFIG",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_SSH",
+        "GIT_SSH_COMMAND",
+        "GIT_TERMINAL_PROMPT",
+        "SSH_ASKPASS",
+        "SSH_AUTH_SOCK",
+    }
+)
 
 
 class GateConfigError(ValueError):
@@ -49,6 +98,30 @@ class GateConfig:
     integration_timeout: int
     development_surface: str
     integration_surface: str
+
+
+def _gate_roots(
+    project: str | Path,
+    work_root: str | Path | None,
+    repo_id: str | None,
+) -> tuple[Path, Path, RepositoryBinding | None]:
+    control = ensure_existing_workspace(project)
+    if work_root is None and repo_id is None:
+        return control, control, None
+    if work_root is None or repo_id is None:
+        raise GateConfigError("split-root gates require both work_root and repo_id")
+    binding = load_repository_binding(control, work_root, repo_id)
+    return control, binding.work_root, binding
+
+
+def _binding_fields(binding: RepositoryBinding) -> dict[str, str]:
+    return {
+        "control_root": str(binding.control_root),
+        "work_root": str(binding.work_root),
+        "git_root": str(binding.git_root),
+        "git_prefix": binding.git_prefix,
+        "repo_id": binding.repo_id,
+    }
 
 
 def load_gate_config(project: str | Path) -> GateConfig:
@@ -87,11 +160,18 @@ def run_gate(
     execution_surface: str = "worker",
     command_prefix: tuple[str, ...] = (),
     environment: dict[str, str] | None = None,
+    work_root: str | Path | None = None,
+    repo_id: str | None = None,
 ) -> dict[str, Any]:
     if gate not in GATES:
         raise GateConfigError(f"unsupported gate: {gate}")
-    root = ensure_existing_workspace(project)
-    config = load_gate_config(root)
+    control_root, work, binding = _gate_roots(project, work_root, repo_id)
+    config = load_gate_config(control_root)
+    initial_manifest = verification_manifest(work, config.verification_paths)
+    if not initial_manifest:
+        raise GateConfigError(
+            f"verification_paths matched no files in work root: {work}"
+        )
     expected_surface = _configured_surface(config, gate)
     if execution_surface not in EXECUTION_SURFACES:
         raise GateConfigError(
@@ -117,10 +197,11 @@ def run_gate(
             "schema_version": "1.0",
             "gate": gate,
             "status": "dry_run",
-            "project_root": str(root),
+            "project_root": str(work),
             "execution_surface": execution_surface,
             "verification_paths": list(config.verification_paths),
             "commands": planned,
+            **(_binding_fields(binding) if binding else {}),
         }
 
     started_wall = _utc_now()
@@ -132,23 +213,12 @@ def run_gate(
             elapsed = time.monotonic() - started
             remaining = max(1, int(timeout - elapsed))
             command_started = time.monotonic()
-            try:
-                completed = subprocess.run(
-                    [*command_prefix, *argv],
-                    cwd=root,
-                    text=True,
-                    capture_output=True,
-                    timeout=remaining,
-                    check=False,
-                    env=environment,
-                )
-                exit_code = completed.returncode
-                stdout = completed.stdout
-                stderr = completed.stderr
-            except subprocess.TimeoutExpired as exc:
-                exit_code = 124
-                stdout = _timeout_text(exc.stdout)
-                stderr = _timeout_text(exc.stderr) or f"gate command timed out after {remaining} seconds"
+            exit_code, stdout, stderr = _run_gate_command(
+                [*command_prefix, *argv],
+                cwd=work,
+                timeout_seconds=remaining,
+                environment=environment,
+            )
             records.append(
                 {
                     "gate": stage,
@@ -164,12 +234,16 @@ def run_gate(
                 break
         if status == "failed":
             break
-    manifest = verification_manifest(root, config.verification_paths)
+    manifest = verification_manifest(work, config.verification_paths)
+    if not manifest:
+        raise GateConfigError(
+            f"verification_paths matched no files after gate execution: {work}"
+        )
     record = {
         "schema_version": "1.0",
         "gate": gate,
         "status": status,
-        "project_root": str(root),
+        "project_root": str(work),
         "execution_surface": execution_surface,
         "started_at": started_wall,
         "completed_at": _utc_now(),
@@ -178,11 +252,220 @@ def run_gate(
         "configuration_digest": _config_digest(config),
         "workspace_digest": _manifest_digest(manifest),
         "commands": records,
+        **(_binding_fields(binding) if binding else {}),
     }
     validate_gate_record(record)
-    record_path = gate_record_path(root, gate)
+    record_path = gate_record_path(control_root, gate)
     atomic_write_json(record_path, record)
     return record
+
+
+def _run_gate_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    timeout_seconds: int,
+    environment: dict[str, str] | None,
+) -> tuple[int, str, str]:
+    env = _sanitized_gate_environment(environment)
+    run_id = uuid.uuid4().hex
+    env["CODEXTEAM_GATE_RUN_ID"] = run_id
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=True,
+    )
+    assert process.stdout is not None
+    assert process.stderr is not None
+    stdout_tail = bytearray()
+    stderr_tail = bytearray()
+    readers = (
+        threading.Thread(
+            target=_read_bounded_tail,
+            args=(process.stdout, stdout_tail),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_read_bounded_tail,
+            args=(process.stderr, stderr_tail),
+            daemon=True,
+        ),
+    )
+    for reader in readers:
+        reader.start()
+    descendants: set[int] = set()
+    deadline = time.monotonic() + timeout_seconds
+    timed_out = False
+    try:
+        while process.poll() is None:
+            descendants.update(_process_descendants(process.pid))
+            descendants.update(_gate_run_processes(run_id))
+            if time.monotonic() >= deadline:
+                timed_out = True
+                _terminate_gate_processes(process, descendants, include_group=True)
+                break
+            time.sleep(0.02)
+        process.wait()
+        descendants.update(_gate_run_processes(run_id))
+        descendants.discard(process.pid)
+        if not timed_out:
+            _terminate_gate_processes(process, descendants, include_group=True)
+    except BaseException:
+        descendants.update(_process_descendants(process.pid))
+        descendants.update(_gate_run_processes(run_id))
+        descendants.discard(process.pid)
+        _terminate_gate_processes(process, descendants, include_group=True)
+        raise
+    finally:
+        process.stdout.close()
+        process.stderr.close()
+        for reader in readers:
+            reader.join(timeout=0.5)
+    stdout = stdout_tail.decode("utf-8", errors="replace")
+    stderr = stderr_tail.decode("utf-8", errors="replace")
+    if timed_out:
+        return 124, stdout, stderr or f"gate command timed out after {timeout_seconds} seconds"
+    return process.returncode, stdout, stderr
+
+
+def _sanitized_gate_environment(
+    overrides: dict[str, str] | None,
+) -> dict[str, str]:
+    inherited = os.environ if overrides is None else {}
+    env = {
+        name: value
+        for name, value in inherited.items()
+        if name.upper() in _INHERITED_GATE_ENVIRONMENT
+        and not _sensitive_gate_environment_name(name)
+    }
+    if overrides is not None:
+        env.update(
+            {
+                name: value
+                for name, value in overrides.items()
+                if not _sensitive_gate_environment_name(name)
+            }
+        )
+    env.pop("CODEXTEAM_LAUNCHED_WORKER", None)
+    return env
+
+
+def _sensitive_gate_environment_name(name: str) -> bool:
+    upper = name.upper()
+    return (
+        upper in _SENSITIVE_GATE_ENVIRONMENT_NAMES
+        or upper == "NO_PROXY"
+        or "PROXY" in upper
+        or upper.startswith("GIT_CONFIG")
+        or upper.startswith("GIT_SSH")
+        or any(marker in upper for marker in _SENSITIVE_GATE_ENVIRONMENT_MARKERS)
+    )
+
+
+def _terminate_gate_processes(
+    process: subprocess.Popen[bytes],
+    descendants: set[int],
+    *,
+    include_group: bool,
+) -> None:
+    if include_group:
+        _signal_process_group(process.pid, signal.SIGTERM)
+    _signal_processes(descendants, signal.SIGTERM)
+    deadline = time.monotonic() + 0.25
+    while time.monotonic() < deadline and any(_process_exists(pid) for pid in descendants):
+        _reap_processes(descendants)
+        time.sleep(0.01)
+    if include_group:
+        _signal_process_group(process.pid, signal.SIGKILL)
+    _signal_processes(descendants, signal.SIGKILL)
+    if process.poll() is None:
+        process.kill()
+        process.wait()
+    deadline = time.monotonic() + 0.25
+    while time.monotonic() < deadline and any(_process_exists(pid) for pid in descendants):
+        _reap_processes(descendants)
+        time.sleep(0.01)
+
+
+def _process_descendants(process_id: int) -> set[int]:
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return set()
+    children: dict[int, set[int]] = {}
+    for status_path in proc.glob("[0-9]*/status"):
+        try:
+            status = status_path.read_text(encoding="utf-8")
+            child_id = int(status_path.parent.name)
+            match = re.search(r"^PPid:\s+(\d+)$", status, re.MULTILINE)
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        if match is not None:
+            children.setdefault(int(match.group(1)), set()).add(child_id)
+    descendants: set[int] = set()
+    pending = [process_id]
+    while pending:
+        for child_id in children.get(pending.pop(), set()):
+            if child_id not in descendants:
+                descendants.add(child_id)
+                pending.append(child_id)
+    return descendants
+
+
+def _signal_process_group(process_id: int, target_signal: int) -> None:
+    try:
+        os.killpg(process_id, target_signal)
+    except ProcessLookupError:
+        pass
+
+
+def _signal_processes(process_ids: set[int], target_signal: int) -> None:
+    for process_id in process_ids:
+        try:
+            os.kill(process_id, target_signal)
+        except ProcessLookupError:
+            pass
+
+
+def _process_exists(process_id: int) -> bool:
+    return Path(f"/proc/{process_id}").exists()
+
+
+def _reap_processes(process_ids: set[int]) -> None:
+    for process_id in process_ids:
+        try:
+            os.waitpid(process_id, os.WNOHANG)
+        except (ChildProcessError, ProcessLookupError):
+            pass
+
+
+def _gate_run_processes(run_id: str) -> set[int]:
+    marker = f"CODEXTEAM_GATE_RUN_ID={run_id}".encode()
+    process_ids: set[int] = set()
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return process_ids
+    for environ_path in proc.glob("[0-9]*/environ"):
+        try:
+            environment = environ_path.read_bytes().split(b"\0")
+            process_id = int(environ_path.parent.name)
+        except (OSError, ValueError):
+            continue
+        if marker in environment:
+            process_ids.add(process_id)
+    return process_ids
+
+
+def _read_bounded_tail(stream: Any, output: bytearray, limit: int = 4_000) -> None:
+    try:
+        while chunk := stream.read(8_192):
+            output.extend(chunk)
+            if len(output) > limit:
+                del output[:-limit]
+    except (OSError, ValueError):
+        pass
 
 
 def gate_record_path(project: str | Path, gate: str) -> Path:
@@ -192,10 +475,16 @@ def gate_record_path(project: str | Path, gate: str) -> Path:
     return contained_path(root, f"{RECORD_ROOT}/{gate}.json", label="gate record")
 
 
-def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, Any]:
-    root = ensure_existing_workspace(project)
-    config = load_gate_config(root)
-    path = gate_record_path(root, gate)
+def validate_current_gate_record(
+    project: str | Path,
+    gate: str,
+    *,
+    work_root: str | Path | None = None,
+    repo_id: str | None = None,
+) -> dict[str, Any]:
+    control_root = ensure_existing_workspace(project)
+    config = load_gate_config(control_root)
+    path = gate_record_path(control_root, gate)
     if path.is_symlink() or not path.is_file():
         raise GateConfigError(f"gate record is missing or unsafe: {path}")
     try:
@@ -203,10 +492,22 @@ def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, An
     except json.JSONDecodeError as exc:
         raise GateConfigError(f"invalid gate record JSON: {exc}") from exc
     record = validate_gate_record(record)
+    if work_root is None and repo_id is None and "work_root" in record:
+        work_root = record["work_root"]
+        repo_id = record["repo_id"]
+    control_root, work, binding = _gate_roots(control_root, work_root, repo_id)
     if record.get("gate") != gate or record.get("status") != "passed":
         raise GateConfigError(f"{gate} gate record is not a passing record")
-    if record.get("project_root") != str(root):
+    if record.get("project_root") != str(work):
         raise GateConfigError("gate record project root does not match")
+    expected_binding = _binding_fields(binding) if binding is not None else {}
+    observed_binding = {
+        field: record[field]
+        for field in ("control_root", "work_root", "git_root", "git_prefix", "repo_id")
+        if field in record
+    }
+    if observed_binding != expected_binding:
+        raise GateConfigError("gate record repository binding does not match")
     expected_surface = _configured_surface(config, gate)
     if record.get("execution_surface", "worker") != expected_surface:
         raise GateConfigError(f"{gate} gate record has the wrong execution surface")
@@ -226,7 +527,10 @@ def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, An
     ]
     if observed_commands != expected_commands:
         raise GateConfigError(f"{gate} gate record command observations do not match configuration")
-    current = _manifest_digest(verification_manifest(root, tuple(patterns)))
+    manifest = verification_manifest(work, tuple(patterns))
+    if not manifest:
+        raise GateConfigError("gate verification_paths currently match no files")
+    current = _manifest_digest(manifest)
     if current != record.get("workspace_digest"):
         raise GateConfigError(f"{gate} gate record is stale for the current workspace")
     return record
@@ -235,7 +539,9 @@ def validate_current_gate_record(project: str | Path, gate: str) -> dict[str, An
 def validate_gate_record(record: Any) -> dict[str, Any]:
     if not isinstance(record, dict):
         raise GateConfigError("gate record must be a JSON object")
-    required = GATE_RECORD_FIELDS - {"execution_surface"}
+    required = GATE_RECORD_FIELDS - {
+        "execution_surface", "control_root", "work_root", "git_root", "git_prefix", "repo_id"
+    }
     missing = sorted(required - set(record))
     unknown = sorted(set(record) - GATE_RECORD_FIELDS)
     errors: list[str] = []
@@ -251,6 +557,19 @@ def validate_gate_record(record: Any) -> dict[str, Any]:
         errors.append("status must be passed or failed")
     if not isinstance(record.get("project_root"), str) or not Path(record.get("project_root", "")).is_absolute():
         errors.append("project_root must be an absolute path")
+    split_fields = ("control_root", "work_root", "git_root", "git_prefix", "repo_id")
+    present_split = [field for field in split_fields if field in record]
+    if present_split and len(present_split) != len(split_fields):
+        errors.append("split-root binding fields must be supplied together")
+    if present_split:
+        for field in ("control_root", "work_root", "git_root"):
+            if not isinstance(record.get(field), str) or not Path(record[field]).is_absolute():
+                errors.append(f"{field} must be an absolute path")
+        for field in ("git_prefix", "repo_id"):
+            if not isinstance(record.get(field), str) or not record[field]:
+                errors.append(f"{field} must be a non-empty string")
+        if record.get("project_root") != record.get("work_root"):
+            errors.append("project_root must equal work_root")
     if record.get("execution_surface", "worker") not in EXECUTION_SURFACES:
         errors.append("execution_surface must be worker or lead_host")
     for field in ("started_at", "completed_at"):
@@ -320,12 +639,16 @@ def snapshot_current_gate_record(
     *,
     task_id: str,
     attempt_id: str,
+    work_root: str | Path | None = None,
+    repo_id: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Persist one content-addressed snapshot of a current passing gate."""
     root = ensure_existing_workspace(project)
     normalized_task = normalize_task_id(task_id)
     normalized_attempt = validate_identifier(attempt_id, label="attempt ID")
-    record = validate_current_gate_record(root, gate)
+    record = validate_current_gate_record(
+        root, gate, work_root=work_root, repo_id=repo_id
+    )
     record_bytes = json.dumps(
         record,
         sort_keys=True,
@@ -384,7 +707,10 @@ def verification_manifest(project: Path, patterns: tuple[str, ...]) -> dict[str,
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a configured CodexTeam test gate without a shell.")
-    parser.add_argument("project")
+    parser.add_argument("project", nargs="?")
+    parser.add_argument("--control-root")
+    parser.add_argument("--work-root")
+    parser.add_argument("--repo-id")
     parser.add_argument("--gate", required=True, choices=GATES)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-record", action="store_true")
@@ -406,27 +732,39 @@ def main(argv: list[str] | None = None) -> int:
             raise GateConfigError(
                 "--snapshot-task and --snapshot-attempt must be supplied together"
             )
+        split_values = (args.control_root, args.work_root, args.repo_id)
+        if bool(args.project) == bool(any(split_values)) or (any(split_values) and not all(split_values)):
+            raise GateConfigError(
+                "supply either project or all of --control-root, --work-root, and --repo-id"
+            )
+        project = args.project or args.control_root
         if args.check_record:
-            result = validate_current_gate_record(args.project, args.gate)
+            result = validate_current_gate_record(
+                project, args.gate, work_root=args.work_root, repo_id=args.repo_id
+            )
         else:
             result = run_gate(
-                args.project,
+                project,
                 args.gate,
                 dry_run=args.dry_run,
                 execution_surface=args.execution_surface,
+                work_root=args.work_root,
+                repo_id=args.repo_id,
             )
         if args.snapshot_task:
             if args.dry_run:
                 raise GateConfigError("cannot snapshot a dry-run gate")
             path, snapshot = snapshot_current_gate_record(
-                args.project,
+                project,
                 args.gate,
                 task_id=args.snapshot_task,
                 attempt_id=args.snapshot_attempt,
+                work_root=args.work_root,
+                repo_id=args.repo_id,
             )
             result = dict(result)
             result["accepted_snapshot"] = {
-                "artifact_ref": path.relative_to(Path(args.project).resolve()).as_posix(),
+                "artifact_ref": path.relative_to(Path(project).resolve()).as_posix(),
                 "record_sha256": snapshot["record_sha256"],
             }
     except (FileNotFoundError, GateConfigError, OSError, ValueError) as exc:
@@ -553,12 +891,6 @@ def _configured_surface(config: GateConfig, gate: str) -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _timeout_text(value: bytes | str | None) -> str:
-    if value is None:
-        return ""
-    return value.decode(errors="replace") if isinstance(value, bytes) else value
 
 
 if __name__ == "__main__":

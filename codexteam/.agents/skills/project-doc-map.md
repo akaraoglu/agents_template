@@ -17,6 +17,10 @@ Use whenever the operator mentions a document indirectly, such as "project descr
 - `IMPLEMENTATION_PLAN.md`: implementation phases, gates, and sequence.
 - `DECISIONS.md`: durable project decisions and accepted tradeoffs.
 - `ARCHITECTURE.md`: accepted system, code, dependency, repository, data-flow, security, and test architecture.
+- `design/architecture/`: dated, non-normative control-root discovery notes that
+  preserve substantial research for reuse before deeper source investigation.
+- `docs/architecture/`: accepted control/program architecture; product
+  architecture belongs in the registered source repository.
 - `docs/decisions/`: material architecture decision records.
 - `OPEN_QUESTIONS.md`: unresolved questions that need operator input.
 - `PROJECT_STATE.md`: current project status, phase, active task, and readiness.
@@ -48,13 +52,17 @@ Use whenever the operator mentions a document indirectly, such as "project descr
 - "development tests", "smoke gate", "integration tests", or "CI gate" means `management/TEST_GATES.toml` plus the active Developer or Test Engineer handoff.
 - "task five", "T005", or "review task" means `management/tasks/T005.md`.
 - "architecture" or "system design" means `ARCHITECTURE.md` plus material ADRs under `docs/decisions/`.
+- "prior research", "discovery", or "investigation" means search
+  `design/architecture/` first; do not treat it as accepted architecture.
 - "commit boundary" or "milestone commit" means `management/GIT_POLICY.md` and the Local Git Steward playbook.
 - "plan" usually means `IMPLEMENTATION_PLAN.md`; if the request is about team execution order, use `management/PLAN.md`.
 - "status" or "state" means `PROJECT_STATE.md`.
 - "current task" means `CURRENT_TASK.md`.
 - "questions" means `OPEN_QUESTIONS.md`.
 - "decisions" means `DECISIONS.md`.
-- "results" or "test output" means `RESULT.md`.
+- "results" means `RESULT.md`. "gate status" or "test status" means the
+  bounded `get_gate_status` summary; raw gate JSON is failure-diagnostic evidence,
+  not default agent context.
 - "done report" means `DONE_REPORT.md`.
 - "blocked" means `BLOCKED_REPORT.md`.
 

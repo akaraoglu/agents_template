@@ -11,6 +11,7 @@ from .contract_registry import ARTIFACT_REPORT, DRAFT_FORMATS
 from .execution_spec import EXECUTION_SPEC_FILENAME, load_execution_spec, ExecutionSpecError
 from .execution_spec import execution_spec_reference
 from .live_progress import collect_live_progress
+from .repository_binding import load_repository_binding
 
 DRAFT_FORMAT_FILENAME = "draft-format.json"
 
@@ -44,7 +45,7 @@ def collect_subagent_status(
                 else "absent"
             )
             execution_spec_error = str(exc) if execution_spec_status == "invalid" else None
-        expected_spec = session.get("execution_spec")
+        expected_spec = session.get("execution_spec") or turn_state.get("execution_spec")
         if execution_spec_status == "absent" and isinstance(expected_spec, dict):
             execution_spec_status = "invalid"
             execution_spec_error = "session references a missing execution specification"
@@ -142,7 +143,10 @@ def _parse_utc(value: Any) -> datetime | None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Show project-local CodexTeam subagent state.")
-    parser.add_argument("project", help="Initialized CodexTeam project root")
+    parser.add_argument("project", nargs="?", help="Initialized CodexTeam project root")
+    parser.add_argument("--control-root")
+    parser.add_argument("--work-root")
+    parser.add_argument("--repo-id")
     parser.add_argument("--role")
     parser.add_argument("--status")
     parser.add_argument("--active-only", action="store_true")
@@ -153,7 +157,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        records = collect_subagent_status(args.project)
+        split_values = (args.control_root, args.work_root, args.repo_id)
+        if bool(args.project) == bool(any(split_values)) or (any(split_values) and not all(split_values)):
+            raise ValueError(
+                "subagent-status requires either a project root or all of "
+                "--control-root, --work-root, and --repo-id"
+            )
+        project = args.project
+        if project is None:
+            binding = load_repository_binding(args.control_root, args.work_root, args.repo_id)
+            project = binding.control_root
+        records = collect_subagent_status(project)
     except (FileNotFoundError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}")
         return 2

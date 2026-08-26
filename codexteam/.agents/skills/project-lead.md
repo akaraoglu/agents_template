@@ -54,7 +54,7 @@ For a small project or one approved thin slice, keep all responsibilities bounde
 1. The Project Lead defines the slice, assignments, and evidence chain.
 2. The Architect defines requirement-traceable code, project, dependency, data-flow, and test architecture without implementation or self-approval.
 3. One functional Developer owns the coherent implementation slice, algorithm/unit and smoke tests, and the Development Gate.
-4. The Test Engineer uses the wire-compatible tester role to engineer scoped integration/regression tests, run the CI-equivalent Integration Gate, and record commands, observations, changed-expectation rationale, and artifacts without repairing source.
+4. The Test Engineer uses the wire-compatible tester role to engineer scoped integration/regression tests and record focused commands, observations, changed-expectation rationale, and artifacts without repairing source. The launcher runs the CI-equivalent Integration Gate after validating the draft.
 5. Product defects return through the Project Lead to the same Developer session before finalization. The Test Engineer reruns both gates after correction.
 6. The Reviewer compares the approved criteria and architecture with both gate results, audits source and test changes, and inspects only the named files needed to resolve a concrete concern.
 7. The optional Documenter reuses accepted evidence and review disposition to prepare accurate delivery material; the Local Git Steward runs only at a verified boundary to propose and create one authorized local commit.
@@ -99,7 +99,11 @@ canonical task IDs and handoffs.
 13. Before delivery, check each current Delivery Criteria row, run an acceptance-level product check, and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
 14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
 15. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
-16. After substantial discovery or deep research, preserve durable reusable
+16. Before substantial source investigation, search the exact control project's
+    `design/architecture/*.md` with task-specific terms. Verify relevant prior
+    findings against current source and carry concise findings plus exact source
+    targets into split-root handoffs. Record when no relevant note exists.
+17. After substantial discovery or deep research, preserve durable reusable
     findings in the active project at
     `design/architecture/YYYY-MM-DD_descriptive_title.md`. Use the exact project
     path returned by initialization or otherwise confirmed by the operator; do
@@ -118,17 +122,17 @@ only after the worker reaches a terminal state, unless a concrete stall or failu
 requires diagnosis.
 
 After activating or resuming a project task, bind the top-level Lead session once with
-`./scripts/track-lead-task.py bind --project ./projects/<project-id> --task <task-id>`. Never run
+`./scripts/track-lead-task.py bind --project /home/alik/workspace/codexspace/projects/<project-id> --task <task-id>`. Never run
 this bind command from a spawned worker or nested Codex process. Normal close-loop
 transitions checkpoint the live rollout immediately, so several task closures in one
 Lead turn retain separate baselines. A cross-task bind also checkpoints the existing
 task; use `--reset` only to discard an explicitly diagnosed stale binding. Final
 delivery removes the binding automatically. For a project delivered by an older run,
-`./scripts/track-lead-task.py clear-delivered --project ./projects/<project-id>` removes
+`./scripts/track-lead-task.py clear-delivered --project /home/alik/workspace/codexspace/projects/<project-id>` removes
 only bindings for that exact project and refuses active project state.
 
 At a milestone boundary or before the Lead conversation becomes expensive, run
-`./scripts/track-lead-task.py checkpoint --project ./projects/<project-id>` and start a
+`./scripts/track-lead-task.py checkpoint --project /home/alik/workspace/codexspace/projects/<project-id>` and start a
 fresh Lead session from the printed resume prompt. The ignored checkpoint contains a
 compact state summary and exact canonical references; it is orientation, not worker
 output or acceptance evidence. Do not reset an active binding merely to rotate the

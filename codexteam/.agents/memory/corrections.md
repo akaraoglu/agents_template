@@ -3,7 +3,7 @@
 ## Entries
 
 - Do not infer current functionality from obsolete archives or old application-oriented documents.
-- Do not create cold-start projects outside the approved repository project area; from the guaranteed base folder the default root is `./projects`.
+- Do not create cold-start controls outside `/home/alik/workspace/codexspace/projects`; keep the default control-only layout and register product source separately.
 - Do not accept lowercase task IDs inside persisted contracts.
 - Do not accept a result with only `task_id`, `status`, and `summary`; enforce result contract current completely.
 - Do not mark tasks complete from worker output alone.
@@ -22,9 +22,9 @@
 - Do not finalize a session merely because its result JSON is schema-valid. Before persistence, verify that declared created and modified paths plus evidence artifact references exist, that deleted paths are absent, and leave failures resumable as `correction_needed` in the same thread.
 - Do not give only evidence enums in a final prompt. Include one complete task-specific evidence object with `type`, `artifact_ref`, `summary`, and optional metadata so communication errors are corrected before result persistence.
 - Do not assume repository-local `.agents/skills/*.md` files automatically establish a fresh root agent's role. Put the Project Lead identity and phase router in automatically discovered `AGENTS.md`, with exact links to detailed guidance.
-- Do not document commands as if Codex starts in the parent `agent_template` directory. From the guaranteed `codexteam` base, use `./scripts/`, `./.agents/scripts/`, `./projects`, and `../env-python` only for toolkit test execution.
+- Do not document commands as if Codex starts in the parent `agent_template` directory. From the guaranteed `codexteam` base, use `./scripts/`, `./.agents/scripts/`, `/home/alik/workspace/codexspace/projects`, and `../env-python` only for toolkit test execution.
 - Do not make a cold-start agent list or recursively search `.agents/`. The first proposal uses the compact root bootstrap; detailed guidance loads only when the corresponding phase begins.
-- Do not run bare repository-root `pytest` after generated projects exist beneath `./projects`; target the toolkit suite explicitly with `../env-python/bin/python -m pytest -q tests`.
+- Do not run bare repository-root `pytest`; target the toolkit suite explicitly with `../env-python/bin/python -m pytest -q tests`.
 - Do not interpret schema-valid results or canonical `DELIVERED` state as product acceptance. Exercise at least one nontrivial exact output, inspect the delivered manifest, and preserve a failed E2E verdict when either check fails.
 - Do not accept evidence by filename. Compare every Reviewer claim with the content of the named artifact; a unit-test log cannot prove extra manual determinism, rendering, range, or stderr checks it does not record.
 - Do not create a chain of similar `/tmp` feedback filenames. Use one stable ignored prompt path such as `<project>/.codexteam/lead-prompt-T002-att-001.md`.

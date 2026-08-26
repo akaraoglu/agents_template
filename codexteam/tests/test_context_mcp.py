@@ -127,6 +127,10 @@ def context_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         "# Open Questions\n\nNo question blocks the bounded reader.\n",
     )
     _write(
+        project / "design/architecture/2026-08-26_bounded_reader_findings.md",
+        "# Bounded Reader Findings\n\n## Prior failure\n\nThe reader must preserve exact source hashes.\n",
+    )
+    _write(
         memory / "decisions.md",
         (
             "# Decisions Memory\n\n## Entries\n\n"
@@ -483,6 +487,10 @@ def test_gate_status_validates_current_workspace_and_reports_staleness(
     ]
     assert current["gates"][1]["record"]["status"] == "passed"
     assert current["gates"][1]["record"]["execution_surface"] == "worker"
+    assert current["gates"][1]["record"]["command_count"] == 2
+    assert current["gates"][1]["record"]["failures"] == []
+    assert "commands" not in current["gates"][1]["record"]
+    assert "stdout_tail" not in json.dumps(current)
     assert current["gates"][1]["configured_commands"]
 
     _write(project / "src/main.py", "changed\n")
@@ -702,8 +710,112 @@ def test_memory_search_is_ranked_bounded_and_source_backed(
         scope="project",
     )
     assert project_only["matches"][0]["source"] == "DECISIONS.md"
+    discoveries = reader.search_team_memory(
+        "demo", "exact source hashes", scope="discoveries"
+    )
+    assert discoveries["matches"][0]["source"] == (
+        "design/architecture/2026-08-26_bounded_reader_findings.md"
+    )
+    assert discoveries["matches"][0]["source_type"] == "project_discovery"
+    assert discoveries["searched_sources"] == 1
     with pytest.raises(TeamContextError, match="searchable term"):
         reader.search_team_memory("demo", "x")
+
+
+def test_memory_search_covers_new_canonical_sources_and_metadata(
+    context_fixture: tuple[Path, Path, Path],
+) -> None:
+    projects, project, memory = context_fixture
+    reader = TeamContextReader(projects, team_memory_root=memory)
+
+    # Root ARCHITECTURE.md is a canonical project source (project_architecture).
+    _write(
+        project / "ARCHITECTURE.md",
+        "# Architecture\n\n## Bounded retrieval\n\n"
+        "The reader stays inside the project boundary with a gloriana sentinel.\n",
+    )
+    # docs/architecture/*.md is canonical project architecture.
+    _write(
+        project / "docs/architecture/2026-08-26_reader_contract.md",
+        "# Reader Contract\n\n## Scope\n\n"
+        "Status: Accepted\n"
+        "The falcons sentinel contract keeps retrieval bounded inside the root.\n",
+    )
+    # docs/decisions/*.md is a canonical project decision with status + date.
+    _write(
+        project / "docs/decisions/ADR-0002-bounded-memory.md",
+        "# ADR-0002\n\n## D010 - Bounded memory\n\n"
+        "- Status: Accepted\n"
+        "- Date: 2026-08-23\n"
+        "- Decision: The vulcana sentinel keeps accepted decisions bounded.\n",
+    )
+    # A block longer than MAX_MEMORY_BLOCK_CHARS (600) to exercise truncation.
+    long_para = ("The zephyra sentinel phrase repeats to exceed the excerpt bound. " * 20).strip()
+    _write(
+        project / "docs/decisions/ADR-0003-long-rationale.md",
+        "# ADR-0003\n\n## Rationale\n\n" + long_para + "\n",
+    )
+
+    arch = reader.search_team_memory("demo", "gloriana", scope="project")
+    arch_match = next(m for m in arch["matches"] if m["source"] == "ARCHITECTURE.md")
+    assert arch_match["source_type"] == "project_architecture"
+    assert arch_match["status"] is None
+    assert arch_match["date"] is None
+    assert arch_match["truncated"] is False
+
+    contract = reader.search_team_memory("demo", "falcons", scope="project")
+    contract_match = next(
+        m for m in contract["matches"] if m["source"].startswith("docs/architecture/")
+    )
+    assert contract_match["source_type"] == "project_architecture"
+    assert contract_match["status"] is None
+
+    decision = reader.search_team_memory("demo", "vulcana", scope="project")
+    decision_match = next(
+        m for m in decision["matches"] if m["source"].startswith("docs/decisions/")
+    )
+    assert decision_match["source_type"] == "project_decision"
+    assert decision_match["status"] == "Accepted"
+    assert decision_match["date"] == "2026-08-23"
+    assert decision_match["truncated"] is False
+
+    long = reader.search_team_memory("demo", "zephyra", scope="project")
+    long_match = next(
+        m for m in long["matches"] if m["source"].startswith("docs/decisions/")
+    )
+    assert long_match["truncated"] is True
+    assert len(long_match["text"]) <= 600 + 3
+    assert long_match["text"].endswith("...")
+
+    other = projects / "other"
+    other.mkdir(parents=True, exist_ok=True)
+    _write(
+        other / "DECISIONS.md",
+        "# Decisions\n\n## D001 - Other\n\n"
+        "- Status: Accepted\n"
+        "- Decision: The quetzal isolation sentinel decision.\n",
+    )
+    iso_reader = TeamContextReader(projects, team_memory_root=memory)
+    no_leak = iso_reader.search_team_memory("demo", "quetzal", scope="all")
+    assert no_leak["matches"] == []
+    found = iso_reader.search_team_memory("other", "quetzal", scope="all")
+    assert found["matches"][0]["source"] == "DECISIONS.md"
+    assert found["matches"][0]["status"] == "Accepted"
+
+    _write(
+        project / "results/T900-att-900.json",
+        '{\"note\":\"zanzibar transcript sentinel must not be searched\"}',
+    )
+    _write(
+        project / "management/tasks/T900.md",
+        "# T900\n\n## Objective\n\nzanzibar transcript sentinel must not be searched\n",
+    )
+    _write(
+        project / ".codexteam/runtime/sessions/x/T900/att-900/session.json",
+        '{\"status\":\"zanzibar transcript sentinel must not be searched\"}',
+    )
+    excluded = reader.search_team_memory("demo", "zanzibar", scope="all")
+    assert excluded["matches"] == []
 
 
 def test_reader_rejects_project_traversal_and_symlink_escape(

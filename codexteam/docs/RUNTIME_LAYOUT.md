@@ -1,9 +1,9 @@
 # Runtime Layout
 
-The default projects root for a cold-start Project Lead is `/home/alik/workspace/agent_template/codexteam/projects`.
+The default projects root is `/home/alik/workspace/codexspace/projects`.
 
 ```text
-/home/alik/workspace/agent_template/codexteam/projects/<project-id>/
+/home/alik/workspace/codexspace/projects/<project-id>/
   AGENTS.md
   PROJECT.md
   BRIEF.md
@@ -30,12 +30,14 @@ The default projects root for a cold-start Project Lead is `/home/alik/workspace
     tasks/T001.md ... T005.md
   docs/architecture/
   docs/decisions/
-  src/
-  tests/unit/                # Developer-owned algorithm and component tests
-  tests/smoke/               # Developer-owned basic executable paths
-  tests/integration/         # Test Engineer-owned CI-equivalent checks
+  design/architecture/       # dated advisory discoveries searched before source work
   results/
 ```
+
+Split-root controls contain no product source or product test trees. Product
+source, tests, build configuration, and product architecture live in the
+registered source repository. Legacy single-root projects may still colocate
+those paths when explicitly initialized with `--with-product-scaffold`.
 
 Each logical task attempt stores a private Codex home, exact thread ID, replayable
 model settings, pinned `role-policy.json`, role-specific `result-schema.json`, pinned

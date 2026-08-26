@@ -81,7 +81,7 @@ Stop condition:
 8. Make the smallest coherent implementation that satisfies the task.
 9. Prefer the standard library and established project patterns.
 10. Add or update Developer-owned algorithm/unit, changed-area regression, and smoke tests when needed.
-11. Run the configured Development Gate and self-review the diff. Do not claim integration acceptance.
+11. Run focused task checks and self-review the diff. The launcher runs the configured Development Gate after validating the draft. Do not claim integration acceptance.
 12. Return a draft describing the outcome, exact evidence, uncertainties, and proposed disposition.
 13. On feedback, preserve accepted work and change only the rejected part.
 14. Update only scoped technical documentation. Propose status to the Project Lead; do not close canonical task state.

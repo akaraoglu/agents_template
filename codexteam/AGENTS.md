@@ -33,7 +33,9 @@ This file is sufficient for the first new-project proposal. Before initializatio
 1. Reuse facts already supplied and clarify only material missing decisions.
 2. Propose the project aim, users, scope, non-goals, constraints, acceptance criteria, and project-management plan.
 3. Wait for approval before initialization.
-4. Preview and initialize a standalone local Git repository under `./projects`; initialization is not authorization to implement, execute tasks, or create a commit.
+4. Preview and initialize a control-only standalone local Git repository under
+   `/home/alik/workspace/codexspace/projects`; register product source separately.
+   Initialization is not authorization to implement, execute tasks, or create a commit.
 5. Prepare project-specific milestones, Architect-owned system design, optional UX Designer-owned interface design, optional post-architecture Feature Planner decomposition for materially multi-part work, implementation plan, and assignments with one responsible AI per task attempt or evidence stage. Configure separate Development and Integration Gate commands in `management/TEST_GATES.toml`. Treat initializer task files as scaffolding until this plan is approved.
 6. Wait for an explicit execution instruction such as `GO` before spawning workers.
 7. During execution, manage persistent draft → feedback → final sessions, verify independently, and close canonical state. Ask the operator only for a material decision or genuine showstopper.
@@ -73,13 +75,22 @@ changes:
 The default decision is no new mechanism when the existing system can satisfy
 the requirement safely and clearly.
 
+## Execution Discipline
+
+- Plans include only requested, necessary work.
+- Implementation includes only required code.
+- No nice-to-have features unless requested.
+- No speculative abstractions or adjacent cleanup.
+- Plans and responses stay concise and direct.
+- Optional improvements are mentioned only after required work, with your permission.
+
 ## Lead Operating Semantics
 
 - Reuse the exact project ID and absolute `Created:` path returned by initialization. Never reconstruct, abbreviate, or retype a generated project path from memory. Before delegation, confirm that `PROJECT.md` and the selected handoff exist at that exact path.
 - Do not create project evidence with shell redirection, `tee`, heredocs, or command substitution. Use the file-editing tool for planned files and CodexTeam commands for captured worker and verification evidence.
 - “Handle it yourself,” “do it end to end,” and “do not ask me routine questions” mean autonomously manage the CodexTeam as Project Lead. They do not authorize silently collapsing Architect, Feature Planner, UX Designer, Developer, Test Engineer, Reviewer, Documenter, or Git Steward responsibilities into the lead. Only an explicit instruction such as “do not spawn agents” authorizes solo execution.
 - Dedicated team roles need not run simultaneously. Parallelize only genuinely independent work; preserve sequential evidence dependencies for implementation, testing, review, and documentation.
-- Developers own algorithm/unit and smoke evidence through the configured Development Gate. Test Engineers use the wire-compatible `tester` role, may change scoped integration/regression tests, never production source, and own the CI-equivalent Integration Gate. Return their product defects to the same Developer session before finalizing either role.
+- Developers own algorithm/unit and smoke evidence; Test Engineers use the wire-compatible `tester` role and own scoped integration/regression tests without modifying production source. The launcher executes each role's configured gate after validating its draft. Return Test Engineer product defects to the same Developer session before finalizing either role.
 - Architects own requirement-traceable project and code structure in `ARCHITECTURE.md` and `docs/decisions/`; they do not implement source or approve their own design.
 - After architecture acceptance, use `feature_planner` only when multiple implementation owners, acceptance areas, verification surfaces, or sequencing risks make one coherent Developer task unsuitable. It writes advisory plans under `results/`; the Project Lead owns acceptance and canonical task creation. Send unresolved architecture back to the Architect.
 - For a new or materially redesigned interface, assign `ux_designer` after requirements and system constraints are known. It owns handoff-ready UX/UI design and design QA, not production implementation or product acceptance. Skip it for non-UI work and routine changes with an approved design.
@@ -92,10 +103,15 @@ the requirement safely and clearly.
   under the exact active project's
   `design/architecture/YYYY-MM-DD_descriptive_title.md` path. When CodexTeam
   itself is the active project, use this repository's `design/architecture/`.
-  When an initialized project under `./projects` is active, write inside that
+  When an initialized control under `/home/alik/workspace/codexspace/projects`
+  is active, write inside that
   project's root instead, never in the CodexTeam toolkit root. If the selected
   project or exact created path is unclear, ask the operator before writing.
   Reuse or update an existing same-subject note, and do not create notes for
   routine orchestration or transient worker diagnostics.
+- Before substantial source investigation, the Project Lead searches the exact
+  control project's `design/architecture/` notes first. In split-root work, the
+  Lead carries relevant findings and current-source verification targets into
+  the handoff; workers do not guess or read control paths from the source root.
 
 Repository-wide skill, tool, safety, and self-improvement rules are inherited from `../AGENTS.md` and remain fully applicable; they are not duplicated here to reduce cold-start context.

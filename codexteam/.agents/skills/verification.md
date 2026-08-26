@@ -37,6 +37,8 @@ Use for draft review, final-result inspection, every task closure, and delivery 
 9. Treat `results/gates/<gate>.json` as rolling status. At an accepted task boundary,
    require the content-addressed task-attempt snapshot under
    `results/gates/accepted/` and verify its embedded record matches the claim.
+   Use `get_gate_status` for normal freshness/status context; inspect a raw record
+   or command log only to diagnose a named failure.
 
 ## Communication Example
 

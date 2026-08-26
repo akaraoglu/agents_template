@@ -22,7 +22,9 @@ Use after a Developer draft and development-gate evidence exist, before the Deve
    exact evidence, use `get_task_context` for the assignment boundary, `get_change_summary`
    to identify the changed surface, and `get_gate_status` for gate configuration or
    freshness. Do not repeat a sufficient result with a broad repository scan. Open the
-   returned exact source, tests, and artifacts before making an acceptance claim.
+    returned exact source, tests, and artifacts before making an acceptance claim.
+   Gate status is a bounded semantic summary. Do not open or print the full gate
+   JSON or successful command output unless a named failure diagnostic requires it.
 2. Read the current Verification Plan in `PROJECT.md`. Map each applicable row
    assigned to the Test Engineer, plus affected existing behavior, to integration,
    regression, negative, lifecycle, concurrency, security, browser, or environment
@@ -31,25 +33,17 @@ Use after a Developer draft and development-gate evidence exist, before the Deve
 3. Inspect existing tests before editing. Add or modify Test Engineer-owned tests and controlled fixtures only when the handoff authorizes the paths. When a browser is necessary, use the role-allowed Playwright inspection tools for a bounded observation and prefer `browser_find` over a full snapshot when one text target is sufficient. Do not use screenshots, form input, clicks, uploads, keyboard input, page evaluation, or arbitrary browser code in the inspection-only pilot.
 4. For every changed assertion or golden value, record the requirement, accepted decision, or confirmed test defect that justifies the change.
 5. Demonstrate a relevant failure before the product fix when practical, then preserve the passing rerun after correction.
-6. Inspect the configured Integration Gate execution surface. Run it only when the
-   surface is `worker`. For `lead_host`, return the exact command to the Project Lead,
-   who runs it without changing the command arrays. It must include the Development
-   Gate before broader checks.
+6. Inspect the configured Integration Gate and run focused checks needed to prove the
+   handoff. The launcher executes the configured gate on its declared surface after
+   validating the draft. It must include the Development Gate before broader checks.
 7. Classify every failure as product defect, test defect, environment defect, or unresolved evidence.
 8. Return product defects to the same Developer session through the Project Lead. Never modify production source while acting as Test Engineer.
 9. After the final Developer revision, rerun the affected checks and complete integration gate before either role claims acceptance.
 
 ## Commands To Run
 
-Run `run-test-gate.py <project-root> --gate integration --execution-surface worker`
-only for a worker-routed gate. For a host-routed gate, the Project Lead runs:
-
-```bash
-./scripts/run-test-gate.py <project-root> --gate integration \
-  --execution-surface lead_host --snapshot-task <TASK> --snapshot-attempt <ATTEMPT>
-```
-
-The executor loads `management/TEST_GATES.toml`, always runs the Development Gate
+Do not launch the configured gate from the worker. The launcher loads
+`management/TEST_GATES.toml`, runs the gate on its declared execution surface, always runs the Development Gate
 first, executes integration arrays without a shell, writes the rolling
 `results/gates/integration.json`, and optionally creates one immutable accepted
 snapshot. External CI must invoke the same gate or an exact wrapper around it so local

@@ -1,4 +1,5 @@
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -74,6 +75,32 @@ def test_old_running_turn_is_reported_stale(tmp_path: Path):
     )
     assert records[0]["status"] == "stale"
     assert records[0]["profile"] == "unknown"
+
+
+def test_status_cli_accepts_split_root_binding(tmp_path: Path, capsys):
+    control = tmp_path / "control"
+    work = tmp_path / "checkout" / "component"
+    control.mkdir()
+    work.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=work.parent, check=True)
+    (control / "REPOSITORIES.json").write_text(json.dumps({
+        "schema_version": "1.0",
+        "repositories": [{
+            "id": "component", "work_root": str(work),
+            "git_root": str(work.parent), "git_prefix": "component",
+            "remote_url": None, "write_policy": "task-owned",
+        }],
+    }))
+    write_json(
+        control / ".codexteam/runtime/sessions/team-1/T003/att-001/turn-state.json",
+        {"status": "running", "task_id": "T003", "attempt_id": "att-001"},
+    )
+
+    assert main([
+        "--control-root", str(control), "--work-root", str(work),
+        "--repo-id", "component", "--json",
+    ]) == 0
+    assert json.loads(capsys.readouterr().out)[0]["attempt"] == "att-001"
 
 
 def test_running_status_projects_quiet_live_progress(tmp_path: Path):

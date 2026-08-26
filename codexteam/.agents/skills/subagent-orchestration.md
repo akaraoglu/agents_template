@@ -72,9 +72,8 @@ Handoffs classify execution as `small` or `complex`. Small work defaults to 600
 seconds; complex work defaults to 1200 seconds. An explicit `--timeout` overrides
 the default and the effective timeout is pinned for continuation turns.
 
-Complex Developers return `checkpoint: source_focused_tests` before running the
-Development Gate. After Lead acceptance, the same session returns
-`checkpoint: development_gate`. Complex Test Engineers return
+Complex Developers return `checkpoint: source_focused_tests`; the launcher then runs
+the configured Development Gate after validating the draft. Complex Test Engineers return
 `checkpoint: integration_evidence` with browser/integration evidence and their
 completed report. Other complex roles return `checkpoint: final_report`. Do not
 start a new attempt for these stage boundaries.
@@ -211,7 +210,7 @@ Ordinary feedback is delta-only and does not replay MCP, handoff, guidance, or
 direct context. Use `--feedback-mode format-only` only to repair the artifact
 JSON; that mode has no tools and may modify only the derived report path.
 
-For implementation work, require the configured Development Gate before accepting the Developer draft. Then start the Test Engineer against that draft before Developer finalization. The Test Engineer may add or modify handoff-scoped integration/regression tests and controlled expectations but never production source or Developer-owned unit/smoke tests. Return classified product defects to the same Developer session, rerun the Development Gate after correction, then resume the same Test Engineer session for affected checks and the final Integration Gate. Do not finalize either role from evidence produced before the last source revision. Finalization fails unless the latest worker turn and complete change manifest are the accepted checkpoint.
+For implementation work, the launcher runs the configured Development Gate after validating the Developer draft. Then start the Test Engineer against that draft before Developer finalization. The Test Engineer may add or modify handoff-scoped integration/regression tests and controlled expectations but never production source or Developer-owned unit/smoke tests. Return classified product defects to the same Developer session; after correction the launcher reruns the Development Gate, then resume the same Test Engineer session for affected focused checks before its launcher-owned Integration Gate. Do not finalize either role from evidence produced before the last source revision. Finalization fails unless the latest worker turn and complete change manifest are the accepted checkpoint.
 
 5. Return one consolidated review decision. For revision:
 
@@ -274,9 +273,8 @@ Use `jq '{status, summary, file_changes, evidence, errors, warnings, limitations
 
 Pass evidence forward instead of recreating it: the Architect records requirement-linked design; an optional Feature Planner records accepted decomposition boundaries; the Developer records Development Gate evidence; the Test Engineer records test changes, exact Integration Gate commands, observations, classifications, and artifact paths; the Reviewer evaluates architecture, source, test changes, both gates, and expectation integrity; the optional Documenter cites accepted evidence and review disposition. A downstream role runs another command only when independence requires it or an observable evidence gap exists.
 
-Honor the gate `execution_surface` from the handoff. Workers run only `worker` gates.
-When Integration is `lead_host`, the Test Engineer prepares and classifies the checks
-but requests the Project Lead to run the exact configured gate. At acceptance, create
+Honor the gate `execution_surface` from the handoff. The launcher runs configured gates;
+workers run only focused task checks. At acceptance, create
 the content-addressed gate snapshot with `--snapshot-task` and `--snapshot-attempt`;
 downstream roles cite that immutable path instead of the rolling gate file.
 

@@ -28,7 +28,7 @@ When Codex starts in `/home/alik/workspace/agent_template/codexteam`, first read
 1. Reuse facts already supplied and ask only for missing material details. Establish the aim, users, MVP scope, non-goals, constraints, acceptance criteria, verification expectation, and delivery outcome.
 2. Present the proposed project description and project-management plan for approval.
 3. Preview the canonical initializer from the guaranteed repository root:
-   `./scripts/init-project.py "<name>" --goal "<goal>" --projects-root ./projects --dry-run`
+   `./scripts/init-project.py "<name>" --goal "<goal>" --projects-root /home/alik/workspace/codexspace/projects --dry-run`
 4. After approval, run the same command without `--dry-run`.
 5. Treat initialization as structure creation only. The generated task files are scaffolding, not approved implementation assignments, and no worker may be spawned yet.
 6. Update `PROJECT.md` first with the approved project aim, scope, description, and acceptance criteria.
@@ -56,7 +56,7 @@ When Codex starts in `/home/alik/workspace/agent_template/codexteam`, first read
 ## Expected Output
 
 - Strong `PROJECT.md`
-- A project created beneath `./projects`
+- A control project created beneath `/home/alik/workspace/codexspace/projects`
 - An exact standalone local Git repository with no fabricated commit or identity
 - One-page `BRIEF.md` that a new agent can use without chat history
 - Clear open questions or an explicit statement that none remain

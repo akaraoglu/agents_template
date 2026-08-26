@@ -43,17 +43,17 @@ The Test Engineer may add or modify handoff-scoped integration/regression tests,
 
 ## Runtime
 
-The cold-start Project Lead creates projects under:
+The cold-start Project Lead creates control projects under:
 
 ```text
-./projects/<project-id>/
+/home/alik/workspace/codexspace/projects/<project-id>/
 ```
 
 The guaranteed Project Lead base folder is `/home/alik/workspace/agent_template/codexteam`. Start a fresh Codex session there; root `AGENTS.md` establishes the lead role immediately and routes approved initialization through `.agents/LEAD_BOOT.md`.
 
 ## Fresh Codex Startup
 
-When the operator asks for a new project, the root agent acts as Project Lead. It clarifies material requirements, proposes the project description and management plan, waits for initialization approval, creates structure under `./projects`, prepares project-specific milestones and responsible-AI tasks, and waits for `GO` before spawning workers.
+When the operator asks for a new project, the root agent acts as Project Lead. It clarifies material requirements, proposes the project description and management plan, waits for initialization approval, creates a control-only project under `/home/alik/workspace/codexspace/projects`, registers product source separately, prepares project-specific milestones and responsible-AI tasks, and waits for `GO` before spawning workers.
 
 The operator should not need to restate the orchestration protocol. See `.agents/LEAD_BOOT.md` for the one-page cold-start contract.
 
@@ -80,7 +80,9 @@ Initialize a project without writing:
 
 ```bash
 ./scripts/init-project.py "Example Project" \
-  --goal "Deliver a verified example." --projects-root ./projects --dry-run
+  --goal "Deliver a verified example." \
+  --projects-root /home/alik/workspace/codexspace/projects \
+  --dry-run
 ```
 
 Start a developer draft:
@@ -89,8 +91,10 @@ Start a developer draft:
 ./.agents/scripts/spawn-subagent.sh \
   --phase draft --backend codex --profile qwen38-27b --reasoning-effort medium \
   --team example --task T003 --attempt att-001 \
-  --role developer --workspace ./projects/example \
-  --prompt-file ./projects/example/management/tasks/T003.md
+  --role developer \
+  --control-root /home/alik/workspace/codexspace/projects/example \
+  --work-root /path/to/product-source --repo-id example \
+  --prompt-file /home/alik/workspace/codexspace/projects/example/management/tasks/T003.md
 ```
 
 Every attempt uses `artifact-report-v1`. The worker writes
@@ -145,7 +149,7 @@ contract instructions because their structured-output support is not assumed.
 Inspect current and stale project-local workers:
 
 ```bash
-./scripts/subagent-status.py ./projects/example
+./scripts/subagent-status.py /home/alik/workspace/codexspace/projects/example
 ```
 
 Validate role manifests and generated native projections:
@@ -168,7 +172,7 @@ Validate its result:
 
 ```bash
 ./scripts/verify-result.py \
-  ./projects/example/results/T003-att-001.json \
+  /home/alik/workspace/codexspace/projects/example/results/T003-att-001.json \
   --task T003 --team example --attempt att-001 --role developer \
   --expected-status completed
 ```
@@ -176,18 +180,28 @@ Validate its result:
 Close the task after independent verification:
 
 ```bash
-./scripts/close-loop.sh ./projects/example \
-  --task T003 -- ../../scripts/run-test-gate.py . --gate integration \
-  --execution-surface worker --snapshot-task T003 --snapshot-attempt att-001
+./scripts/close-loop.sh \
+  --control-root /home/alik/workspace/codexspace/projects/example \
+  --work-root /path/to/product-source --repo-id example \
+  --task T003 --result results/T003-att-001.json -- \
+  <toolkit-root>/scripts/run-test-gate.py \
+  --control-root /home/alik/workspace/codexspace/projects/example \
+  --work-root /path/to/product-source --repo-id example \
+  --gate integration --execution-surface lead_host \
+  --snapshot-task T003 --snapshot-attempt att-001
 ```
 
 Run the configured gates and preview a milestone boundary:
 
 ```bash
-./scripts/run-test-gate.py ./projects/example --gate development --execution-surface worker
-./scripts/run-test-gate.py ./projects/example --gate integration --execution-surface worker
-./scripts/git-steward.py inspect ./projects/example \
-  --boundary milestone-001 --tasks T003,T004,T005 --json
+./scripts/run-test-gate.py \
+  --control-root /home/alik/workspace/codexspace/projects/example \
+  --work-root /path/to/product-source --repo-id example \
+  --gate development --execution-surface worker
+./scripts/run-test-gate.py \
+  --control-root /home/alik/workspace/codexspace/projects/example \
+  --work-root /path/to/product-source --repo-id example \
+  --gate integration --execution-surface lead_host
 ```
 
 Git authorization and commit commands preview by default and mutate only with `--apply`. See `.agents/playbooks/milestone-commit.md`; no Git Steward command performs a remote action.
@@ -203,12 +217,16 @@ PYTHONDONTWRITEBYTECODE=1 ../env-python/bin/python -m pytest -q tests
 Start the local status UI with:
 
 ```bash
-../env-python/bin/python projects/codexteam-project-management-web-ui/scripts/run-webui.py
+../env-python/bin/python \
+  /home/alik/workspace/codexspace/repos/codexteam-project-management-web-ui/scripts/run-webui.py \
+  --projects-root /home/alik/workspace/codexspace/projects
 ```
 
 Open `http://127.0.0.1:5000`. The Web UI is owned by the standalone
-`projects/codexteam-project-management-web-ui` repository and reads the shared
-`./projects` artifacts through the parent `codexteam_tools` readers. It provides a
+`/home/alik/workspace/codexspace/repos/codexteam-project-management-web-ui`
+repository and reads control artifacts from
+`/home/alik/workspace/codexspace/projects` through the shared
+`codexteam_tools` readers. It provides a
 newest-first project status table, compact Current Focus, a deterministic six-lane
 Kanban with ten-card older-task disclosures, human-readable Agent activity,
 expandable task/attempt/turn details, and verified milestone commits. Milestones
@@ -222,7 +240,7 @@ The theme menu defaults to the operating-system theme and remembers an explicit 
 or Dark choice in the browser. The UI exposes GET views only and cannot start workers,
 retry tasks, edit project state, or modify Git.
 
-Preview historical sidecar generation with `./scripts/backfill-turn-metrics.py ./projects/<project-id>`. Add `--write` only after reviewing the count; existing sidecars are not replaced by default.
+Preview historical sidecar generation with `./scripts/backfill-turn-metrics.py /home/alik/workspace/codexspace/projects/<project-id>`. Add `--write` only after reviewing the count; existing sidecars are not replaced by default.
 
 Preview the controlled end-to-end team canary with:
 

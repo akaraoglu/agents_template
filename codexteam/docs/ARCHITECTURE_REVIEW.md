@@ -10,7 +10,9 @@ The current architecture is a small workflow-tool package plus repository-local 
 - `roles/`: strict role-policy manifests for nine accountable identities, including the optional Feature Planner and UX Designer.
 - `generated/native-agents/`: deterministic optional projections for native Codex custom agents.
 - `src/codexteam_tools/`: deterministic path, contract, task, spawn, gate, Git boundary, artifact-reader, and closure logic.
-- `projects/codexteam-project-management-web-ui/`: standalone Flask/Jinja operator UI consuming the shared artifact readers.
+- `/home/alik/workspace/codexspace/repos/codexteam-project-management-web-ui`:
+  standalone Flask/Jinja operator UI consuming the shared artifact readers and
+  controls under `/home/alik/workspace/codexspace/projects`.
 - `scripts/`: operator-facing compatibility entrypoints.
 - `schemas/`: machine-readable handoff, result, role-policy, gate, commit-plan, authorization, and commit-record contracts.
 - `templates/project/`: complete project initialization template.
@@ -18,7 +20,8 @@ The current architecture is a small workflow-tool package plus repository-local 
 
 ## Boundaries
 
-- Project work is isolated under `/home/alik/workspace/agent_template/codexteam/projects` by default.
+- Control projects are isolated under `/home/alik/workspace/codexspace/projects`
+  by default; product source uses registered work roots.
 - Workers may write only inside the assigned workspace and explicit additional roots.
 - A worker receives common `AGENTS.md` guidance plus one selected role policy; the draft pins the policy snapshot for every continuation.
 - Post-turn workspace comparison rejects changes outside the role boundary. Handoff-specific scope remains an assignment and review constraint within the broader mechanical role boundary.

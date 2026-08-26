@@ -57,7 +57,7 @@ class CodexBackendAdapter:
             f"{json.dumps(request.effective_role_policy.developer_instructions)}",
             *request.backend_mcp_args,
             "-C",
-            str(request.workspace),
+            str(request.work_root),
             "--skip-git-repo-check",
             "--json",
             "-o",
@@ -71,7 +71,7 @@ class CodexBackendAdapter:
                 "model_reasoning_effort="
                 f"{json.dumps(request.execution_profile.effective_reasoning)}",
             ))
-        for directory in request.add_dirs:
+        for directory in request.worker_add_dirs:
             command.extend(("--add-dir", str(directory)))
         command.append("-")
         return command
@@ -160,7 +160,7 @@ class CodexBackendAdapter:
 
     def _resume(self, request: Any, turn: Any, executable: str) -> list[str]:
         reasoning = request.execution_profile.effective_reasoning
-        return self._prefix(request, executable) + [
+        command = self._prefix(request, executable) + [
             "exec",
             "resume",
             "-m",
@@ -186,6 +186,15 @@ class CodexBackendAdapter:
                 if request.model_verbosity
                 else []
             ),
+            *(
+                [
+                    "-c",
+                    "sandbox_workspace_write.writable_roots="
+                    + json.dumps([str(path) for path in request.worker_add_dirs]),
+                ]
+                if request.worker_add_dirs
+                else []
+            ),
             "--skip-git-repo-check",
             "--json",
             "-o",
@@ -193,6 +202,7 @@ class CodexBackendAdapter:
             turn.session["thread_id"],
             "-",
         ]
+        return command
 
 
 class OpenCodeBackendAdapter:
@@ -247,7 +257,7 @@ class OpenCodeBackendAdapter:
     def _command(request: Any, session_id: str | None, executable: str) -> list[str]:
         return opencode_backend.build_command(
             executable=executable,
-            workspace=request.workspace,
+            workspace=request.work_root,
             model=request.model,
             phase=request.phase,
             feedback_mode=request.feedback_mode,

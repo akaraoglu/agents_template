@@ -385,7 +385,7 @@ print_dry_run_plan() {
         --goal "Deliver and verify a deterministic recursive-call-tree CLI end to end." \
         --project-id "${PROJECT_ID}" --projects-root "${PROJECTS_ROOT}" \
         --template-root "${FIXTURE_ROOT}/template" --tasks T001,T002,T003,T004,T005 \
-        --dry-run --json
+        --with-product-scaffold --dry-run --json
 
     for index in "${!tasks[@]}"; do
         task="${tasks[index]}"
@@ -710,7 +710,8 @@ main() {
     run_command "${PYTHON}" "${INIT_PROJECT}" "Fibonacci Tree CLI" \
         --goal "Deliver and verify a deterministic recursive-call-tree CLI end to end." \
         --project-id "${PROJECT_ID}" --projects-root "${PROJECTS_ROOT}" \
-        --template-root "${FIXTURE_ROOT}/template" --tasks T001,T002,T003,T004,T005
+        --template-root "${FIXTURE_ROOT}/template" --tasks T001,T002,T003,T004,T005 \
+        --with-product-scaffold
 
     run_task T001 leader
     run_task T002 developer

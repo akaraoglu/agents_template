@@ -282,12 +282,13 @@ def validate_session(data: Any) -> dict[str, Any]:
         "backend_config_digest", "opencode_session_id", "workspace_baseline_sha256",
         "worker_change_manifest", "accepted_checkpoint", "handoff_contract_sha256",
         "complex_checkpoint",
+        "control_root", "work_root", "git_root", "git_prefix", "repo_id",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
         errors.append("session contains unknown fields: " + ", ".join(unknown))
-    if data.get("schema_version") != "1.0":
-        errors.append("session schema_version must be '1.0'")
+    if data.get("schema_version") not in {"1.0", "1.1"}:
+        errors.append("session schema_version must be '1.0' or '1.1'")
     required = {
         "schema_version", "team_id", "task_id", "attempt_id", "agent_role",
         "workspace_root", "thread_id", "turn_count",
@@ -324,6 +325,19 @@ def validate_session(data: Any) -> dict[str, Any]:
         or not PurePosixPath(data["workspace_root"]).is_absolute()
     ):
         errors.append("session workspace_root must be an absolute path string")
+    split_fields = ("control_root", "work_root", "git_root", "git_prefix", "repo_id")
+    present_split = [field for field in split_fields if field in data]
+    if present_split and len(present_split) != len(split_fields):
+        errors.append("session split-root binding is incomplete")
+    if present_split:
+        for field in ("control_root", "work_root", "git_root"):
+            if not isinstance(data.get(field), str) or not PurePosixPath(data[field]).is_absolute():
+                errors.append(f"session {field} must be an absolute path string")
+        for field in ("git_prefix", "repo_id"):
+            if not isinstance(data.get(field), str) or not data[field]:
+                errors.append(f"session {field} must be a non-empty string")
+        if data.get("workspace_root") != data.get("work_root"):
+            errors.append("session workspace_root must equal work_root")
     if "last_phase" in data and data.get("last_phase") not in {"draft", "feedback", "final"}:
         errors.append("session last_phase must be draft, feedback, or final")
     if "last_status" in data and (

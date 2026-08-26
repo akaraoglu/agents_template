@@ -28,7 +28,7 @@ The Developer runs at most the targeted browser smoke required by the Developmen
    the Verification Plan as the validation route, not as evidence that a check ran.
 2. Add a regression test for the assigned defect or boundary when the behavior can be asserted at development-test scope.
 3. Run the smallest changed-area command first.
-4. Run the complete configured development gate, including one startup or happy-path smoke check.
+4. Run focused task checks, including one startup or happy-path smoke check. The launcher runs the complete configured Development Gate after validating the draft.
    Capture high-volume CLI output inside the test harness and report only the assertion result; do not dump a large successful payload into the agent transcript.
 5. Self-review failures and the implementation diff; fix only Developer-owned source and tests.
 6. Preserve exact commands and observations in a project-relative evidence artifact when the handoff requires one.
@@ -36,7 +36,7 @@ The Developer runs at most the targeted browser smoke required by the Developmen
 
 ## Commands To Run
 
-Run `run-test-gate.py <project-root> --gate development`. The executor loads the `[development].commands` arrays from `management/TEST_GATES.toml` without a shell and writes `results/gates/development.json`. The gate must cover algorithm/unit behavior and a smoke path. It may also contain project-standard build, type, lint, or static checks.
+Run only the focused commands needed by the handoff. After the draft report is valid, the launcher loads `[development].commands` from `management/TEST_GATES.toml`, executes them without a shell, and writes `results/gates/development.json`.
 
 ## Expected Output
 

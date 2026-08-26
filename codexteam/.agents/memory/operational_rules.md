@@ -3,11 +3,11 @@
 ## Source and Runtime
 
 - Start the root Project Lead in `/home/alik/workspace/agent_template/codexteam`; root `AGENTS.md` supplies the cold-start role and phase router.
-- Initialize managed projects beneath `./projects` from that base folder.
+- Initialize control-only projects beneath `/home/alik/workspace/codexspace/projects` from that base folder.
 - Current source and guidance live under `codexteam/`.
 - Historical archives are obsolete and must not be used as implementation inputs.
-- Cold-start generated projects live under `/home/alik/workspace/agent_template/codexteam/projects` (`./projects` from the guaranteed base folder).
-- `CODEXTEAM_PROJECTS_ROOT` may select another explicitly approved root.
+- Cold-start generated controls live under `/home/alik/workspace/codexspace/projects`.
+- `CODEXTEAM_PROJECTS_ROOT` may select another explicitly approved control root.
 
 ## Execution
 

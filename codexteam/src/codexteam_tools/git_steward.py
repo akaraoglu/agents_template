@@ -334,29 +334,42 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Inspect and create verified local milestone commits.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect")
-    inspect_parser.add_argument("project")
+    inspect_parser.add_argument("project", nargs="?")
     inspect_parser.add_argument("--boundary", required=True)
     inspect_parser.add_argument("--tasks", required=True)
     inspect_parser.add_argument("--verification-kind", choices=("integration", "architecture"), default="integration")
     inspect_parser.add_argument("--architecture-evidence")
     inspect_parser.add_argument("--json", action="store_true")
+    inspect_parser.add_argument("--control-root")
+    inspect_parser.add_argument("--work-root")
+    inspect_parser.add_argument("--repo-id")
     authorize_parser = subparsers.add_parser("authorize")
-    authorize_parser.add_argument("project")
+    authorize_parser.add_argument("project", nargs="?")
     authorize_parser.add_argument("--plan", required=True)
     authorize_parser.add_argument("--apply", action="store_true")
     authorize_parser.add_argument("--json", action="store_true")
+    authorize_parser.add_argument("--control-root")
+    authorize_parser.add_argument("--work-root")
+    authorize_parser.add_argument("--repo-id")
     commit_parser = subparsers.add_parser("commit")
-    commit_parser.add_argument("project")
+    commit_parser.add_argument("project", nargs="?")
     commit_parser.add_argument("--plan", required=True)
     commit_parser.add_argument("--authorization", required=True)
     commit_parser.add_argument("--apply", action="store_true")
     commit_parser.add_argument("--json", action="store_true")
+    commit_parser.add_argument("--control-root")
+    commit_parser.add_argument("--work-root")
+    commit_parser.add_argument("--repo-id")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if any((args.control_root, args.work_root, args.repo_id)):
+            raise GitStewardError("Git Steward does not support split-root operation")
+        if args.project is None:
+            raise GitStewardError("Git Steward requires a project root")
         if args.command == "inspect":
             payload = inspect_repository(
                 args.project,

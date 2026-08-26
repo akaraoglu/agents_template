@@ -104,6 +104,33 @@ def request_args(tmp_path: Path, monkeypatch, **overrides):
     return argparse.Namespace(**values)
 
 
+def split_request_args(tmp_path: Path, monkeypatch, **overrides):
+    args = request_args(tmp_path, monkeypatch)
+    control = tmp_path / "control"
+    git_root = tmp_path / "repository"
+    work = git_root / "component"
+    decoy = git_root / "decoy"
+    control.mkdir()
+    work.mkdir(parents=True)
+    decoy.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=git_root, check=True)
+    (control / "REPOSITORIES.json").write_text(json.dumps({
+        "schema_version": "1.0",
+        "repositories": [{
+            "id": "component", "work_root": str(work), "git_root": str(git_root),
+            "git_prefix": "component", "remote_url": None, "write_policy": "task-owned",
+        }],
+    }))
+    values = vars(args) | {
+        "workspace": None,
+        "control_root": str(control),
+        "work_root": str(work),
+        "repo_id": "component",
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values), control, work, git_root, decoy
+
+
 def event_stream(message: str, *, thread_id: str = THREAD_ID, completed: bool = True) -> str:
     events = [
         {"type": "thread.started", "thread_id": thread_id},
@@ -117,6 +144,161 @@ def event_stream(message: str, *, thread_id: str = THREAD_ID, completed: bool = 
 
 def successful_process(message: str, *, thread_id: str = THREAD_ID) -> spawn.ProcessResult:
     return spawn.ProcessResult(0, event_stream(message, thread_id=thread_id), "", 0.2)
+
+
+def test_split_request_routes_control_and_work_and_pins_binding(tmp_path: Path, monkeypatch):
+    args, control, work, git_root, decoy = split_request_args(tmp_path, monkeypatch)
+    handoff = control / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "Implement the task.\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+
+    request = spawn.prepare_request(args)
+    turn = spawn.prepare_turn(request)
+    command = spawn.build_command(request, turn, executable="codex")
+
+    assert request.workspace == request.work_root == work
+    assert request.control_root == control
+    assert request.git_root == git_root
+    assert request.git_prefix == "component"
+    assert command[command.index("-C") + 1] == str(work)
+    assert request.worker_add_dirs == (request.session_dir / "exchange",)
+    gated_request = replace(request, gate_routing={
+        "gate": "development", "execution_surface": "worker",
+    })
+    assert gated_request.worker_add_dirs == (request.session_dir / "exchange",)
+    assert request.result_path.is_relative_to(control)
+    assert request.session_path.is_relative_to(control)
+    assert not request.result_path.is_relative_to(work)
+    assert request.execution_spec["schema_version"] == "1.1"
+    assert request.execution_spec["identity"] == {
+        "team_id": "team-1", "task_id": "T002", "attempt_id": "att-001",
+        "role": "developer", "workspace_root": str(work),
+        "control_root": str(control), "work_root": str(work),
+        "git_root": str(git_root), "git_prefix": "component", "repo_id": "component",
+    }
+    assert request.effective_mcp_servers == ()
+    assert not (work / ".codexteam").exists()
+    assert list(decoy.iterdir()) == []
+
+    def worker(*_args, **_kwargs):
+        (work / "src").mkdir()
+        (work / "src/main.py").write_text("VALUE = 1\n")
+        write_artifact_report(request, evidence=["src/main.py"])
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", worker)
+    outcome, code = spawn.run_spawn(request)
+    assert code == 0 and outcome["status"] == "draft_ready"
+    session = json.loads(request.session_path.read_text())
+    assert "src/main.py" in session["worker_change_manifest"]
+    assert request.artifact_report_path.is_file()
+    assert not (work / "results").exists()
+    assert not (work / ".codexteam").exists()
+    assert list(decoy.iterdir()) == []
+
+
+def test_split_continuation_rejects_repository_drift(tmp_path: Path, monkeypatch):
+    args, control, work, _git_root, _decoy = split_request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+    def worker(*_args, **_kwargs):
+        write_artifact_report(request)
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", worker)
+    spawn.run_spawn(request)
+    registry = json.loads((control / "REPOSITORIES.json").read_text())
+    registry["repositories"][0]["git_prefix"] = "wrong"
+    (control / "REPOSITORIES.json").write_text(json.dumps(registry))
+    args.phase = "feedback"
+    args.backend = args.profile = args.reasoning_effort = None
+    args.prompt = "revise"
+    with pytest.raises(ValueError, match="git_prefix mismatch"):
+        spawn.prepare_request(args)
+
+
+def test_split_workspace_snapshot_uses_git_visible_subtree(tmp_path: Path, monkeypatch):
+    args, _control, work, git_root, decoy = split_request_args(tmp_path, monkeypatch)
+    (work / "tracked.py").write_text("tracked\n")
+    (work / "untracked.py").write_text("untracked\n")
+    (work / "ignored.bin").write_bytes(b"ignored")
+    (decoy / "outside.py").write_text("outside\n")
+    (git_root / ".gitignore").write_text("*.bin\n")
+    subprocess.run(
+        ["git", "add", ".gitignore", "component/tracked.py"], cwd=git_root, check=True
+    )
+    request = spawn.prepare_request(args)
+
+    snapshot = spawn._snapshot_request_workspace(request)
+
+    assert set(snapshot) == {"tracked.py", "untracked.py"}
+
+
+def test_split_workspace_snapshot_skips_nested_git_root_directory(
+    tmp_path: Path, monkeypatch
+):
+    args, _control, work, _git_root, _decoy = split_request_args(tmp_path, monkeypatch)
+    nested = work / "nested"
+    nested.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=nested, check=True)
+    (nested / "source.py").write_text("nested\n")
+    request = spawn.prepare_request(args)
+
+    snapshot = spawn._snapshot_request_workspace(request)
+
+    assert "nested" not in snapshot
+    assert not any(path.startswith("nested/") for path in snapshot)
+
+
+def test_split_feedback_resume_configures_writable_exchange(tmp_path: Path, monkeypatch):
+    args, _control, _work, _git_root, _decoy = split_request_args(tmp_path, monkeypatch)
+    draft = spawn.prepare_request(args)
+    def worker(*_args, **_kwargs):
+        write_artifact_report(draft)
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", worker)
+    spawn.run_spawn(draft)
+    args.phase = "feedback"
+    args.backend = args.profile = args.reasoning_effort = None
+    args.prompt = "revise"
+    feedback = spawn.prepare_request(args)
+
+    command = spawn.build_command(feedback, spawn.prepare_turn(feedback))
+
+    assert command[:3] == ["codex", "exec", "resume"]
+    assert "--add-dir" not in command
+    assert (
+        "sandbox_workspace_write.writable_roots="
+        f"{json.dumps([str(path) for path in feedback.worker_add_dirs])}"
+    ) in command
+
+
+def test_split_finalization_accepts_control_exchange_checkpoint(tmp_path: Path, monkeypatch):
+    args, _control, work, _git_root, _decoy = split_request_args(tmp_path, monkeypatch)
+    draft = spawn.prepare_request(args)
+    (work / "results").mkdir()
+    (work / "results/evidence.txt").write_text("passed\n")
+    def worker(*_args, **_kwargs):
+        write_artifact_report(draft)
+        return successful_process("DRAFT T002/att-001")
+
+    monkeypatch.setattr(spawn, "run_process", worker)
+    spawn.run_spawn(draft)
+    args.phase = "final"
+    args.backend = args.profile = args.reasoning_effort = None
+    args.prompt = "accept"
+    final = spawn.prepare_request(args)
+
+    result, code = spawn.run_spawn(final)
+
+    assert code == 0
+    assert result["status"] == "completed"
+    assert final.result_path.is_file()
 
 
 def opencode_stream(message: str, *, session_id: str = THREAD_ID) -> str:
@@ -344,7 +526,9 @@ def test_complex_checkpoint_sequence_is_same_session(tmp_path: Path, monkeypatch
     ) == "complex work requires checkpoint 'source_focused_tests', got 'development_gate'"
 
 
-def test_complex_developer_requires_both_checkpoints_before_final(tmp_path: Path, monkeypatch):
+def test_complex_developer_finalizes_after_focused_checkpoint_and_launcher_gate(
+    tmp_path: Path, monkeypatch
+):
     args = request_args(
         tmp_path, monkeypatch, backend="opencode", profile="qwen38-27b-context",
         reasoning_effort="medium", timeout=None
@@ -371,21 +555,21 @@ def test_complex_developer_requires_both_checkpoints_before_final(tmp_path: Path
     session = json.loads(request.session_path.read_text())
     assert session["complex_checkpoint"] == "source_focused_tests"
 
-    feedback = spawn.prepare_request(request_args(
+    final = spawn.prepare_request(request_args(
         tmp_path, monkeypatch, backend="opencode", profile="qwen36-27b",
-        phase="feedback", prompt="run gate", timeout=None,
+        phase="final", prompt="accept", timeout=None,
     ))
-    assert feedback.timeout_seconds == 1200
-    write_artifact_report(feedback, checkpoint="development_gate")
-    assert spawn.run_spawn(feedback)[1] == 0
-    session = json.loads(feedback.session_path.read_text())
-    assert session["complex_checkpoint"] == "development_gate"
+    result, code = spawn.run_spawn(final)
+    assert code == 0
+    assert result["status"] == "completed"
+    assert json.loads(final.session_path.read_text())["complex_checkpoint"] == "source_focused_tests"
 
 
 def test_artifact_result_finalization_is_provider_free_and_launcher_owned(
     tmp_path: Path, monkeypatch
 ):
     args = request_args(tmp_path, monkeypatch)
+    configure_test_gates(Path(args.workspace), integration_surface="lead_host")
     request = spawn.prepare_request(args)
     (request.workspace / "src").mkdir()
     (request.workspace / "results").mkdir(exist_ok=True)
@@ -413,6 +597,12 @@ def test_artifact_result_finalization_is_provider_free_and_launcher_owned(
         lambda backend: (_ for _ in ()).throw(AssertionError("provider accessed")),
     )
     persisted, final_code = spawn.run_spawn(final)
+
+    assert any(
+        item["artifact_ref"] == "results/gates/development.json"
+        and item["type"] == "test_output"
+        for item in persisted["evidence"]
+    )
 
     assert final_code == 0
     assert persisted["status"] == "completed"
@@ -743,8 +933,8 @@ def test_tester_handoff_carries_host_only_gate_routing(tmp_path: Path, monkeypat
         "execution_surface": "lead_host",
         "worker_may_execute": False,
     }
-    assert "Do not launch it from this worker" in prompt
-    assert "same-digest host record" in prompt
+    assert "launcher owns the configured integration gate" in prompt
+    assert "do not launch the configured gate" in prompt
 
 
 def test_direct_context_mode_disables_task_context_mcp(tmp_path: Path, monkeypatch):
@@ -853,7 +1043,9 @@ def test_direct_preflight_rejects_system_output_scope_before_launch(
     with pytest.raises(ValueError, match="literal files"):
         spawn.run_spawn(request)
 
-    assert not request.session_dir.exists()
+    state = json.loads((request.session_dir / "turn-state.json").read_text())
+    assert state["status"] == "turn_failed"
+    assert "literal files" in state["errors"][0]
 
 
 def test_direct_attempt_ignores_terminal_contract_and_runs_launcher_verification(
@@ -903,6 +1095,7 @@ def test_direct_attempt_ignores_terminal_contract_and_runs_launcher_verification
         path.write_text(json.dumps(record))
         return record
     monkeypatch.setattr(spawn, "run_gate", gate)
+    monkeypatch.setattr(spawn, "validate_current_gate_record", lambda *args, **kwargs: gate())
     draft, code = spawn.run_spawn(request)
 
     assert code == 0, draft.get("errors")
@@ -2279,6 +2472,38 @@ def test_ordinary_run_streams_without_enabling_guard(tmp_path: Path):
     assert result.stderr == stderr_path.read_text()
 
 
+def test_run_process_stops_waiting_when_detached_descendant_retains_pipes(tmp_path: Path):
+    fake = tmp_path / "fake-codex"
+    child_pid = tmp_path / "child.pid"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys, time\n"
+        "if os.fork() == 0:\n"
+        "    os.setsid()\n"
+        f"    open({str(child_pid)!r}, 'w').write(str(os.getpid()))\n"
+        "    os.execl(sys.executable, sys.executable, '-c', 'import time; time.sleep(10)')\n"
+        "print('worker complete', flush=True)\n"
+        "time.sleep(.2)\n"
+        "os._exit(0)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    started = time.monotonic()
+    result = spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5, env=spawn.os.environ.copy()
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "worker complete\n"
+    assert time.monotonic() - started < 2
+    process_id = int(child_pid.read_text())
+    deadline = time.monotonic() + 1
+    while Path(f"/proc/{process_id}").exists() and time.monotonic() < deadline:
+        time.sleep(.01)
+    assert not Path(f"/proc/{process_id}").exists()
+
+
 def test_streaming_progress_reports_only_safe_metadata(tmp_path: Path, monkeypatch, capsys):
     fake = tmp_path / "fake-codex"
     fake.write_text(
@@ -2713,6 +2938,30 @@ def test_skill_contents_are_pinned_for_attempt_continuations(tmp_path: Path, mon
     assert feedback.skill_files[0].is_relative_to(feedback.session_dir)
 
 
+def test_first_draft_prompt_uses_pinned_snapshot_not_mutable_source(
+    tmp_path: Path, monkeypatch
+):
+    custom = tmp_path / "custom-skill.md"
+    custom.write_text("original guidance\n")
+    request = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, skill_file=[str(custom)])
+    )
+    # In the real flow prepare_turn runs before session storage preparation.
+    turn = spawn.prepare_turn(request)
+    # Session storage preparation snapshots the mutable source guidance.
+    spawn._prepare_session_storage(request, initial=True, session=None)
+    pinned = next((request.session_dir / "guidance").rglob("*.md"))
+    assert pinned.read_text(encoding="utf-8") == "original guidance\n"
+
+    # Mutate the mutable source after the snapshot was taken.
+    custom.write_text("changed guidance\n")
+
+    # The first-draft model prompt must still carry the snapshot bytes.
+    prompt = spawn.build_prompt(request, turn)
+    assert "original guidance" in prompt
+    assert "changed guidance" not in prompt
+
+
 def test_pinned_skill_tampering_is_rejected(tmp_path: Path, monkeypatch):
     draft, _ = run_draft(tmp_path, monkeypatch)
     pinned = next((draft.session_dir / "guidance").rglob("*.md"))
@@ -2804,6 +3053,57 @@ def test_running_turn_state_is_written_before_worker_execution(tmp_path: Path, m
     terminal = json.loads((request.session_dir / "turn-state.json").read_text())
     assert terminal["status"] == "draft_ready"
     assert outcome["role_policy_name"] == "codexteam_developer"
+
+
+def test_launcher_runs_configured_gate_after_valid_draft(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    configure_test_gates(Path(args.workspace), integration_surface="lead_host")
+    request = spawn.prepare_request(args)
+    request.result_dir.mkdir(exist_ok=True)
+    (request.result_dir / "evidence.txt").write_text("passed\n")
+    write_artifact_report(request)
+    monkeypatch.setattr(spawn, "run_process", lambda *args, **kwargs: successful_process("DRAFT"))
+    calls = []
+
+    def gate(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {"status": "passed", "gate": "development"}
+
+    monkeypatch.setattr(spawn, "run_gate", gate)
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 0 and outcome["status"] == "draft_ready"
+    assert calls[0][0] == (request.control_root, "development")
+    assert calls[0][1]["execution_surface"] == "worker"
+
+
+def test_launcher_does_not_run_gate_for_invalid_report(tmp_path: Path, monkeypatch):
+    args = request_args(tmp_path, monkeypatch)
+    configure_test_gates(Path(args.workspace), integration_surface="lead_host")
+    request = spawn.prepare_request(args)
+    request.artifact_report_path.write_text("{}\n")
+    monkeypatch.setattr(spawn, "run_process", lambda *args, **kwargs: successful_process("DRAFT"))
+    monkeypatch.setattr(
+        spawn, "run_gate", lambda *args, **kwargs: pytest.fail("invalid draft ran gate")
+    )
+
+    outcome, code = spawn.run_spawn(request)
+
+    assert code == 1 and outcome["status"] == "correction_needed"
+
+
+def test_setup_failure_preserves_terminal_turn_state(tmp_path: Path, monkeypatch):
+    request = spawn.prepare_request(request_args(tmp_path, monkeypatch))
+    monkeypatch.setattr(
+        spawn, "_build_handoff_contract", lambda *_args: (_ for _ in ()).throw(ValueError("setup boom"))
+    )
+
+    with pytest.raises(ValueError, match="setup boom"):
+        spawn.run_spawn(request)
+
+    state = json.loads(request.session_dir.joinpath("turn-state.json").read_text())
+    assert state["status"] == "turn_failed"
+    assert state["errors"] == ["worker setup failed: setup boom"]
 
 
 def test_parser_requires_explicit_backend_for_draft(tmp_path: Path, monkeypatch):

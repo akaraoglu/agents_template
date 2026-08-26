@@ -14,10 +14,12 @@ Preview first:
 
 ```bash
 ./scripts/init-project.py "Example" \
-  --goal "Deliver a verified example." --projects-root ./projects --dry-run --json
+  --goal "Deliver a verified example." \
+  --projects-root /home/alik/workspace/codexspace/projects \
+  --dry-run --json
 ```
 
-Run again without `--dry-run` only after approval. Use `--project-id` when a stable directory name is required. Initialization creates canonical files, task scaffolding, and an exact standalone local Git repository. It does not create a commit or authorize implementation or worker spawning. `--no-git` is available only for an intentional exception.
+Run again without `--dry-run` only after approval. Use `--project-id` when a stable directory name is required. Initialization creates canonical control files and task scaffolding without product source/test directories, plus an exact standalone local Git repository. Register product source in `REPOSITORIES.json`. It does not create a commit or authorize implementation or worker spawning. `--no-git` is available only for an intentional exception.
 
 Initialization also writes managed `.codexteam/roles/` and `.codexteam/native-agents/` references. Project `AGENTS.md` is common guidance; the launcher-selected role policy and skills form the worker-specific instruction layer. The live attempt pins the complete bundle under ignored runtime state.
 
@@ -41,6 +43,13 @@ After that approval, “handle it yourself” or “end to end” means the Proj
 
 Use `--dry-run` to inspect the exact command, profile, guidance, session path, and final result path without starting Codex. New drafts are strict semantic JSON and do not create a result; accepted finalization seals the result without another provider turn.
 
+For a registered external repository or work subtree, replace `--workspace` with all
+of `--control-root <control> --work-root <work> --repo-id <id>`. The control root's
+`REPOSITORIES.json` pins the exact work root, containing Git root, relative Git
+prefix, optional remote URL, and `task-owned` write policy. Handoffs, runtime,
+results, and gate records remain under control; worker commands and product scope
+run from work. Split-root attempts disable the legacy project-bound MCP.
+
 To run OpenCode, explicitly select a curated profile and one of its execution-
 catalog reasoning requests on draft. Feedback/final omit backend, profile, and
 reasoning and reuse the pinned ExecutionSpec.
@@ -63,7 +72,14 @@ Run gates through the repository-owned executor:
 ```bash
 ./scripts/run-test-gate.py <project-root> --gate development --execution-surface worker
 ./scripts/run-test-gate.py <project-root> --gate integration --execution-surface <worker-or-lead_host>
+./scripts/run-test-gate.py --control-root <control> --work-root <work> --repo-id <id> --gate integration
 ```
+
+Gate subprocesses receive a sanitized environment: only a small inherited
+runtime allowlist is retained, and explicitly supplied values are accepted only
+when they are not proxy, credential, helper, token, secret, or password data.
+Gate completion and timeout paths terminate the command process group and known
+descendants.
 
 Run `curl -fsS http://127.0.0.1:11434/api/version` from the same execution surface before the live draft. For the default Codex backend, a reachable already-sandboxed route may add `--trust-parent-sandbox`; otherwise use the approved host-level launcher without it. OpenCode attempts always use the approved host-level route and reject `--trust-parent-sandbox`; they do not provide an equivalent OS sandbox. A successful `--dry-run` does not test model connectivity. See `.agents/playbooks/nested-worker-sandbox.md` for Codex app-server and `bwrap` recovery.
 
@@ -107,9 +123,15 @@ Validation does not prove the work is correct. It proves the result envelope is 
 ./scripts/close-loop.sh <project-root> --task T003 -- \
   ../../scripts/run-test-gate.py . --gate integration \
   --execution-surface worker --snapshot-task T003 --snapshot-attempt att-001
+
+./scripts/close-loop.sh --control-root <control> --work-root <work> --repo-id <id> \
+  --task T003 --result results/T003-att-001.json -- \
+  <toolkit-root>/scripts/run-test-gate.py --control-root <control> \
+  --work-root <work> --repo-id <id> --gate integration \
+  --snapshot-task T003 --snapshot-attempt att-001
 ```
 
-The command validates artifacts, runs verification without a shell, records output under `results/`, updates project state, and advances to the next incomplete task. For implemented product behavior, use the configured Integration Gate or an exact wrapper as the closure command. Repeating the same successful close is idempotent.
+The command validates artifacts, runs verification without a shell, records output under control-root `results/`, updates control state, and advances to the next incomplete task. In split-root mode the verification command and product deliverables resolve from the registered work root. For implemented product behavior, use the configured Integration Gate or an exact wrapper as the closure command. Repeating the same successful close is idempotent.
 
 ## 7. Deliver
 

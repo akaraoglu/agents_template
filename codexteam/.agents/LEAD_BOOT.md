@@ -48,11 +48,11 @@ Preview from the repository root:
 ```bash
 ./scripts/init-project.py "<project name>" \
   --goal "<concrete goal>" \
-  --projects-root ./projects \
+  --projects-root /home/alik/workspace/codexspace/projects \
   --dry-run
 ```
 
-After approval, remove `--dry-run`. Report the created project path. Initialization creates the canonical file structure and task scaffolding, and makes the project a standalone local Git repository; it does not authorize implementation, worker spawning, or a commit.
+After approval, remove `--dry-run`. Report the created control path. Initialization creates canonical control, task, runtime, result, discovery, and guidance structure without product source/test scaffolds, and makes the control an exact standalone local Git repository. Register product repositories separately in `REPOSITORIES.json`; initialization does not authorize implementation, worker spawning, or a commit.
 
 Copy the exact project ID and absolute `Created:` path from initializer output into subsequent commands and project truth. Never rebuild the path from memory. Before a worker handoff, confirm that `<created-path>/PROJECT.md` and the selected `management/tasks/T*.md` file exist.
 
@@ -77,15 +77,16 @@ Start a worker draft with the approved handoff:
 ./.agents/scripts/spawn-subagent.sh \
   --phase draft --backend codex --profile <profile> --reasoning-effort medium \
   --team <project-id> --task T002 --attempt att-001 --role architect \
-  --workspace ./projects/<project-id> \
-  --prompt-file ./projects/<project-id>/management/tasks/T002.md
+  --control-root /home/alik/workspace/codexspace/projects/<project-id> \
+  --work-root <registered-source-root> --repo-id <repository-id> \
+  --prompt-file /home/alik/workspace/codexspace/projects/<project-id>/management/tasks/T002.md
 ```
 
 Omit `--timeout` to use the handoff pin: 600 seconds for `small`, 1200 seconds
-for `complex`. Explicit overrides are pinned for continuation turns. For complex
-Developer work, accept `source_focused_tests` before requesting
-`development_gate` in the same session; complex Test Engineers return
-`integration_evidence` before finalization.
+for `complex`. Explicit overrides are pinned for continuation turns. Complex
+Developers return `source_focused_tests` and complex Test Engineers return
+`integration_evidence`; the launcher executes the configured gate after validating
+the draft.
 
 Before launching, test `http://127.0.0.1:11434/api/version` from the same execution surface. If it is reachable from this already-sandboxed lead, add `--trust-parent-sandbox` on every turn to skip redundant `bwrap`; otherwise launch at the approved host level without that flag and retain the normal Codex worker sandbox. A dry run validates command construction but does not test model connectivity. MCP is not required. Follow `.agents/playbooks/nested-worker-sandbox.md` for Codex recovery rules.
 
@@ -105,7 +106,7 @@ Before launching, test `http://127.0.0.1:11434/api/version` from the same execut
 Validate a final result:
 
 ```bash
-./scripts/verify-result.py ./projects/<project-id>/results/T003-att-001.json \
+./scripts/verify-result.py /home/alik/workspace/codexspace/projects/<project-id>/results/T003-att-001.json \
   --task T003 --team <project-id> --attempt att-001 --role developer \
   --expected-status completed
 ```
@@ -114,7 +115,7 @@ After validation, inspect only the decision-bearing fields, not captured process
 
 ```bash
 jq '{status, summary, file_changes, evidence, errors, warnings, limitations}' \
-  ./projects/<project-id>/results/T003-att-001.json
+  /home/alik/workspace/codexspace/projects/<project-id>/results/T003-att-001.json
 ```
 
 Open the named changed files and evidence artifacts themselves. Do not dump the complete result, JSONL, or repeated session history into the lead context.
@@ -122,10 +123,15 @@ Open the named changed files and evidence artifacts themselves. Do not dump the 
 Close only after an independent project command passes:
 
 ```bash
-./scripts/close-loop.sh ./projects/<project-id> \
+./scripts/close-loop.sh \
+  --control-root /home/alik/workspace/codexspace/projects/<project-id> \
+  --work-root <registered-source-root> --repo-id <repository-id> \
   --task T003 --result results/T003-att-001.json -- \
-  ../../scripts/run-test-gate.py . --gate integration \
-  --execution-surface worker --snapshot-task T003 --snapshot-attempt att-001
+  <toolkit-root>/scripts/run-test-gate.py \
+  --control-root /home/alik/workspace/codexspace/projects/<project-id> \
+  --work-root <registered-source-root> --repo-id <repository-id> \
+  --gate integration --execution-surface lead_host \
+  --snapshot-task T003 --snapshot-attempt att-001
 ```
 
 ### 5. Deliver
@@ -139,7 +145,7 @@ Close only after an independent project command passes:
 
 ## Default Decisions
 
-- Project root: `./projects/<project-id>`.
+- Control root: `/home/alik/workspace/codexspace/projects/<project-id>`.
 - Routine small-project reasoning effort: `medium`.
 - Small coherent projects use an Architect when system design is new or materially changing, an optional UX Designer when interface design is new or materially changing, one functional Developer, an independent Test Engineer using the `tester` protocol role, a Reviewer, optional Documenter responsibilities, and a boundary-only Local Git Steward. Add the Feature Planner only after accepted architecture when one coherent Developer assignment is no longer credible.
 - Prefer `gpt54-mini` at medium reasoning for the root Project Lead when cloud use is acceptable. Nested subprocess workers inside the lead sandbox use a task-capable local profile because authenticated OpenAI worker homes are outside that writable boundary.
@@ -159,4 +165,4 @@ Close only after an independent project command passes:
 
 ## Boot Success Criteria
 
-A fresh Codex session can receive a short request such as “create a new project,” identify itself as Project Lead, load the routed guidance, ask only material questions, preview initialization under `./projects`, preserve approval gates, create project-specific responsible-AI tasks, and manage the team without relying on previous chat history.
+A fresh Codex session can receive a short request such as “create a new project,” identify itself as Project Lead, load the routed guidance, ask only material questions, preview control-only initialization under `/home/alik/workspace/codexspace/projects`, preserve approval gates, create project-specific responsible-AI tasks, and manage the team without relying on previous chat history.

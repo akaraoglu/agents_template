@@ -153,7 +153,7 @@ def test_cold_start_project_lead_bootstrap_is_discoverable():
         "CodexTeam Project Lead",
         ".agents/LEAD_BOOT.md",
         "Default New-Project Lifecycle",
-        "./projects",
+        "/home/alik/workspace/codexspace/projects",
         "explicit execution instruction",
         "absolute `Created:` path",
         "shell redirection",
@@ -169,12 +169,12 @@ def test_cold_start_project_lead_bootstrap_is_discoverable():
 
     required_boot_markers = (
         "./scripts/init-project.py",
-        "--projects-root ./projects",
+        "--projects-root /home/alik/workspace/codexspace/projects",
         "./.agents/scripts/spawn-subagent.sh",
         "--phase feedback",
         "./scripts/verify-result.py",
         "./scripts/close-loop.sh",
-        "Initialization creates the canonical file structure and task scaffolding",
+        "Initialization creates canonical control, task, runtime, result, discovery, and guidance structure",
         "Copy the exact project ID and absolute `Created:` path",
         "autonomously manages the team",
         "--trust-parent-sandbox",
@@ -221,7 +221,7 @@ def test_root_facing_docs_use_guaranteed_base_folder_commands():
         "codexteam/scripts/",
         "codexteam/.agents/scripts/",
         "\n./env-python/bin/python",
-        "/home/alik/workspace/codexspace/projects/",
+        "/home/alik/workspace/agent_template/codexteam/projects/",
     )
     for path in paths:
         content = path.read_text(encoding="utf-8")

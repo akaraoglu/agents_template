@@ -2,7 +2,8 @@
 
 Operator commands are thin wrappers around `src/codexteam_tools/`.
 
-- `init-project.py`: preview or create a complete project workspace.
+- `init-project.py`: preview or create a split-root control project; legacy
+  in-root product scaffolds require `--with-product-scaffold`.
 - `update-tasks.py`: update one validated task row atomically.
 - `verify-result.py`: validate the result contract and expected scope.
 - `inspect-role-policies.py`: validate and display canonical role identity, defaults, and digests.

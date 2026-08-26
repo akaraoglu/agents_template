@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -27,12 +28,39 @@ def project_with_result(
         root=tmp_path,
         project_id=f"project-{task_id.lower()}",
         tasks=tasks,
+        control_only=False,
     ).project_dir
     (project / "src" / "main.py").write_text("VALUE = 1\n")
     (project / "results" / "evidence.txt").write_text("passed\n")
     result = result_factory(task_id=task_id)
     (project / "results" / f"{task_id}-20260715T000000Z.json").write_text(json.dumps(result))
     return project
+
+
+def split_project_with_result(tmp_path: Path, result_factory) -> tuple[Path, Path]:
+    control = project_with_result(tmp_path / "control-root", result_factory)
+    (control / "src/main.py").unlink()
+    (control / "results/evidence.txt").unlink()
+    git_root = tmp_path / "checkout"
+    work = git_root / "component"
+    work.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=git_root, check=True)
+    (work / "src").mkdir()
+    (work / "src/main.py").write_text("VALUE = 1\n")
+    (work / "results").mkdir()
+    (work / "results/evidence.txt").write_text("passed\n")
+    (control / "REPOSITORIES.json").write_text(json.dumps({
+        "schema_version": "1.0",
+        "repositories": [{
+            "id": "component",
+            "work_root": str(work),
+            "git_root": str(git_root),
+            "git_prefix": "component",
+            "remote_url": None,
+            "write_policy": "task-owned",
+        }],
+    }))
+    return control, work
 
 
 def test_close_loop_updates_task_and_project_state(tmp_path: Path, result_factory):
@@ -126,6 +154,58 @@ def test_close_loop_cli_accepts_documented_argument_order(tmp_path: Path, result
     ])
     assert code == 0
     assert parse_task_document((project / "TASKS.md").read_text()).row("T001").status == "In Progress"
+
+
+def test_split_close_loop_verifies_work_and_updates_control(tmp_path: Path, result_factory):
+    control, work = split_project_with_result(tmp_path, result_factory)
+    result_path = control / "results/T001-20260715T000000Z.json"
+    result = json.loads(result_path.read_text())
+    result["evidence"].append({
+        "type": "test_output",
+        "artifact_ref": "results/gates/development.json",
+        "summary": "Launcher-owned gate record.",
+    })
+    result_path.write_text(json.dumps(result))
+    (control / "results/gates").mkdir()
+    (control / "results/gates/development.json").write_text("{}\n")
+    code = main([
+        "--control-root", str(control),
+        "--work-root", str(work),
+        "--repo-id", "component",
+        "--task", "T001",
+        "--result", "results/T001-20260715T000000Z.json",
+        "--",
+        sys.executable,
+        "-c",
+        "from pathlib import Path; assert Path('src/main.py').read_text() == 'VALUE = 1\\n'",
+    ])
+
+    assert code == 0
+    assert parse_task_document((control / "TASKS.md").read_text()).row("T001").status == "Completed"
+    assert (control / "results/T001-verification.txt").is_file()
+    assert not (work / "results/T001-verification.txt").exists()
+
+
+def test_split_close_loop_rejects_repository_drift(tmp_path: Path, result_factory):
+    control, work = split_project_with_result(tmp_path, result_factory)
+    registry = json.loads((control / "REPOSITORIES.json").read_text())
+    registry["repositories"][0]["git_prefix"] = "wrong"
+    (control / "REPOSITORIES.json").write_text(json.dumps(registry))
+
+    code = main([
+        "--control-root", str(control),
+        "--work-root", str(work),
+        "--repo-id", "component",
+        "--task", "T001",
+        "--dry-run",
+        "--",
+        sys.executable,
+        "-c",
+        "print('verified')",
+    ])
+
+    assert code == 1
+    assert parse_task_document((control / "TASKS.md").read_text()).row("T001").status == "In Progress"
 
 
 def test_close_loop_can_select_explicit_result_among_multiple_attempts(tmp_path: Path, result_factory):
