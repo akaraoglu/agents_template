@@ -47,6 +47,12 @@ MCP tools to infer that a mutation, test, or acceptance check occurred.
 | Ranked bounded source matches | `search_repository` |
 | Git status, diff statistics, suspicious paths, and bounded excerpts | `get_change_summary` |
 
+Worker routing is narrower. In split-root work, control/task/gate/result tools
+remain bound to the control project. `search_repository` and
+`get_change_summary` use the validated registered source work root; they do not
+search the control root. The launcher passes the control project, source work
+root, and repository ID to the context server and rejects mismatched bindings.
+
 Worker routing is narrower:
 
 | Role | Tools |

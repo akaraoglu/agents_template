@@ -185,6 +185,53 @@ def test_split_request_routes_control_and_work_and_pins_binding(tmp_path: Path, 
     assert not (work / ".codexteam").exists()
     assert list(decoy.iterdir()) == []
 
+
+def test_split_request_enables_role_mcp_and_binds_control_and_source(
+    tmp_path: Path, monkeypatch
+):
+    args, control, work, _git_root, decoy = split_request_args(tmp_path, monkeypatch)
+    configure_mcp_servers(Path(spawn.os.environ["CODEX_HOME"]), control.parent)
+    handoff = control / "management/tasks/T002.md"
+    handoff.parent.mkdir(parents=True)
+    handoff.write_text(
+        "Implement the task.\n\n## Task Write Scope\n\n- `src/**`\n\n"
+        "## Context Mode\n\n- `bounded-mcp`\n"
+    )
+    args.prompt = None
+    args.prompt_file = str(handoff)
+
+    request = spawn.prepare_request(args)
+    command = spawn.build_command(request, spawn.prepare_turn(request), executable="codex")
+    overrides = mcp_overrides(command)
+
+    assert request.effective_mcp_servers == ("codexteam-context", "local-docs")
+    assert request.mcp_context_project == "control"
+    assert request.effective_mcp_tools == (
+        (
+            "codexteam-context",
+            ("get_task_context", "search_repository", "get_gate_status", "get_change_summary"),
+        ),
+    )
+    assert 'mcp_servers.codexteam-context.enabled=true' in overrides
+    assert 'mcp_servers.local-docs.enabled=true' in overrides
+    assert (
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="control"'
+        in overrides
+    )
+    assert (
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_WORK_ROOT='
+        + json.dumps(str(work))
+        in overrides
+    )
+    assert (
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_REPOSITORY_ID="component"'
+        in overrides
+    )
+    assert request.execution_spec["permissions"]["mcp_effective_servers"] == [
+        "codexteam-context", "local-docs"
+    ]
+    assert request.execution_spec["permissions"]["bound_mcp_project"] == "control"
+
     def worker(*_args, **_kwargs):
         (work / "src").mkdir()
         (work / "src/main.py").write_text("VALUE = 1\n")
@@ -299,6 +346,37 @@ def test_split_finalization_accepts_control_exchange_checkpoint(tmp_path: Path, 
     assert code == 0
     assert result["status"] == "completed"
     assert final.result_path.is_file()
+
+
+def test_finalization_reuses_pinned_mcp_permissions_after_config_changes(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(tmp_path, monkeypatch, role="reviewer")
+    source_home = Path(spawn.os.environ["CODEX_HOME"])
+    configure_mcp_servers(source_home, Path(args.workspace).parent)
+    draft = spawn.prepare_request(args)
+    draft.result_dir.mkdir(exist_ok=True)
+    (draft.result_dir / "evidence.txt").write_text("passed\n")
+    write_artifact_report(draft)
+    monkeypatch.setattr(
+        spawn,
+        "run_process",
+        lambda *args, **kwargs: successful_process("DRAFT T002/att-001"),
+    )
+    outcome, code = spawn.run_spawn(draft)
+    assert code == 0
+    assert outcome["status"] == "draft_ready"
+
+    config = draft.codex_home / "config.toml"
+    config.write_text(config.read_text().replace("[mcp_servers.codexteam-context]", "[mcp_servers.changed]"))
+
+    final = spawn.prepare_request(
+        request_args(tmp_path, monkeypatch, role="reviewer", phase="final", prompt="accept")
+    )
+    result, code = spawn.run_spawn(final)
+
+    assert code == 0
+    assert result["status"] == "completed"
 
 
 def opencode_stream(message: str, *, session_id: str = THREAD_ID) -> str:

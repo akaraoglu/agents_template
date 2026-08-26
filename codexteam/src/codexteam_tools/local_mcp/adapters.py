@@ -35,6 +35,8 @@ def context_server_spec(
     projects_root: str | Path,
     project: str,
     *,
+    work_root: str | Path | None = None,
+    repository_id: str | None = None,
     interpreter: str | Path = sys.executable,
     repository_root: str | Path | None = None,
     script: str | Path | None = None,
@@ -53,6 +55,16 @@ def context_server_spec(
         str(projects_root),
         *(str(value) for value in args),
     )
+    if (work_root is None) != (repository_id is None):
+        raise ValueError("work_root and repository_id must be supplied together")
+    environment = [("CODEXTEAM_CONTEXT_PROJECT", project)]
+    if work_root is not None and repository_id is not None:
+        environment.extend(
+            (
+                ("CODEXTEAM_CONTEXT_WORK_ROOT", str(work_root)),
+                ("CODEXTEAM_CONTEXT_REPOSITORY_ID", repository_id),
+            )
+        )
     return ServerSpec(
         command=command,
         expected_name="codexteam-context-pilot",
@@ -62,7 +74,7 @@ def context_server_spec(
         timeout_seconds=timeout_seconds,
         max_request_bytes=max_request_bytes,
         max_response_bytes=max_response_bytes,
-        environment=(("CODEXTEAM_CONTEXT_PROJECT", project),),
+        environment=tuple(environment),
         cwd=str(root),
     )
 

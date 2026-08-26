@@ -115,6 +115,8 @@ CHECK_RECORD_ROOT = "results/checks"
 DIRECT_VERIFICATION_EXECUTABLES = {"env", "go", "node", "python", "python3", "sh", "true"}
 CONTEXT_MCP_SERVER = "codexteam-context"
 CONTEXT_PROJECT_ENV = "CODEXTEAM_CONTEXT_PROJECT"
+CONTEXT_WORK_ROOT_ENV = "CODEXTEAM_CONTEXT_WORK_ROOT"
+CONTEXT_REPOSITORY_ID_ENV = "CODEXTEAM_CONTEXT_REPOSITORY_ID"
 PROGRESS_INTERVAL_SECONDS = 30.0
 POST_EXIT_DRAIN_SECONDS = 0.5
 DESCENDANT_TERM_GRACE_SECONDS = 0.25
@@ -679,30 +681,50 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
         else source_codex_home / "config.toml"
     )
     configured_mcp_servers = _configured_mcp_servers(codex_config_path)
-    effective_mcp_servers = tuple(
-        server for server in effective_policy.mcp_servers if server in configured_mcp_servers
-    )
-    if repo_id is not None:
+    if phase == "draft":
+        effective_mcp_servers = tuple(
+            server for server in effective_policy.mcp_servers if server in configured_mcp_servers
+        )
+        if context_mode == "direct":
+            effective_mcp_servers = ()
+        missing_mcp_servers = tuple(
+            server for server in effective_policy.mcp_servers if server not in configured_mcp_servers
+        )
+        effective_mcp_tools = tuple(
+            (server, tools)
+            for server, tools in effective_policy.mcp_tools
+            if server in effective_mcp_servers
+        )
+    elif phase == "feedback":
         effective_mcp_servers = ()
-    if phase == "feedback":
-        effective_mcp_servers = ()
-    if phase == "draft" and context_mode == "direct":
-        effective_mcp_servers = ()
-    missing_mcp_servers = tuple(
-        server for server in effective_policy.mcp_servers if server not in configured_mcp_servers
-    )
-    effective_mcp_tools = tuple(
-        (server, tools)
-        for server, tools in effective_policy.mcp_tools
-        if server in effective_mcp_servers
-    )
-    mcp_context_project = _mcp_context_project(
-        config_path=codex_config_path,
-        workspace=workspace,
-        role=args.role,
-        phase=phase,
-        effective_mcp_servers=effective_mcp_servers,
-        existing_session=existing_session,
+        missing_mcp_servers = tuple(
+            server for server in effective_policy.mcp_servers if server not in configured_mcp_servers
+        )
+        effective_mcp_tools = ()
+    else:
+        assert spec is not None
+        permissions = spec["permissions"]
+        effective_mcp_servers = tuple(permissions["mcp_effective_servers"])
+        missing_mcp_servers = tuple(permissions["mcp_missing_servers"])
+        effective_mcp_tools = tuple(
+            (server, tuple(tools))
+            for server, tools in permissions["mcp_effective_tools"].items()
+        )
+    mcp_context_project = (
+        _mcp_context_project(
+            config_path=codex_config_path,
+            control_root=control_root,
+            workspace=workspace,
+            repo_id=repo_id,
+            role=args.role,
+            phase=phase,
+            effective_mcp_servers=effective_mcp_servers,
+            existing_session=existing_session,
+        )
+        if phase == "draft"
+        else None
+        if phase == "feedback"
+        else spec["permissions"]["bound_mcp_project"]
     )
     source_profile = execution_profile.profile.get("source_profile")
     profile_root = (
@@ -1832,7 +1854,9 @@ def _configured_mcp_server_table(config_path: Path) -> dict[str, dict[str, Any]]
 def _mcp_context_project(
     *,
     config_path: Path,
+    control_root: Path,
     workspace: Path,
+    repo_id: str | None,
     role: str,
     phase: str,
     effective_mcp_servers: tuple[str, ...],
@@ -1843,16 +1867,28 @@ def _mcp_context_project(
     stored = None
 
     projects_root = _context_projects_root(config_path)
-    if workspace.parent != projects_root:
+    if repo_id is None and workspace.parent != projects_root:
         raise ValueError(
             "codexteam-context worker workspace must be a direct child of its configured "
             f"projects root: workspace={workspace}, projects_root={projects_root}"
         )
-    project = validate_identifier(workspace.name, label="MCP context project")
-    project_entry = projects_root / project
-    if project_entry.is_symlink() or project_entry.resolve(strict=True) != workspace:
+    if repo_id is not None and control_root.parent != projects_root:
         raise ValueError(
-            f"codexteam-context worker project is missing or unsafe: {project_entry}"
+            "codexteam-context control root must be a direct child of its configured "
+            f"projects root: control_root={control_root}, projects_root={projects_root}"
+        )
+    project = validate_identifier(
+        control_root.name if repo_id is not None else workspace.name,
+        label="MCP context project",
+    )
+    project_entry = projects_root / project
+    expected_root = control_root if repo_id is not None else workspace
+    if (
+        project_entry.is_symlink()
+        or project_entry.resolve(strict=True) != expected_root
+    ):
+        raise ValueError(
+            f"codexteam-context project is missing or unsafe: {project_entry}"
         )
     if stored is not None and stored != project:
         raise ValueError(

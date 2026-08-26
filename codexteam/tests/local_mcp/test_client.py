@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from dataclasses import asdict, replace
@@ -324,6 +325,49 @@ def test_real_context_binding_cannot_select_another_project(tmp_path: Path) -> N
 
     assert unavailable.available is False
     assert unavailable.provenance.error_class == "EarlyEof"
+
+
+def test_real_split_root_context_reads_control_and_searches_source(tmp_path: Path) -> None:
+    projects, control = _context_project(tmp_path)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "product.py").write_text("SPLIT_ROOT_SENTINEL = True\n")
+    subprocess.run(["git", "init", "-q"], cwd=source, check=True)
+    (control / "REPOSITORIES.json").write_text(
+        json.dumps({
+            "schema_version": "1.0",
+            "repositories": [{
+                "id": "product",
+                "work_root": str(source),
+                "git_root": str(source),
+                "git_prefix": ".",
+                "remote_url": None,
+                "write_policy": "task-owned",
+            }],
+        })
+    )
+    spec = context_server_spec(
+        projects,
+        control.name,
+        work_root=source,
+        repository_id="product",
+        interpreter=sys.executable,
+        repository_root=REPOSITORY_ROOT,
+        mode=Mode.REQUIRED,
+    )
+
+    with LocalMcpClient(spec) as client:
+        availability = client.start()
+        context = client.call("get_active_task", {})
+        search = client.call("search_repository", {"query": "SPLIT_ROOT_SENTINEL"})
+        changes = client.call("get_change_summary", {})
+
+    assert "search_repository" in availability.tools
+    assert context.content["project"] == control.name
+    assert search.content["matches"][0]["path"] == "product.py"
+    assert search.content["sources"][0]["path"] == "product.py"
+    assert changes.content["project"] == control.name
+    assert changes.content["counts"]["changed"] == 1
 
 
 def test_real_local_docs_server_catalog_and_search(tmp_path: Path) -> None:

@@ -12,6 +12,7 @@ from typing import Any, Callable, TextIO
 
 from .contracts import AGENT_ROLES
 from .paths import PathValidationError
+from .repository_binding import RepositoryBindingError, load_repository_binding
 from .repository_context import (
     CHANGE_DETAIL_LEVELS,
     MAX_CHANGE_PATHS,
@@ -41,6 +42,8 @@ LEGACY_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18")
 SERVER_NAME = "codexteam-context-pilot"
 SERVER_VERSION = "0.3.0"
 BOUND_PROJECT_ENV = "CODEXTEAM_CONTEXT_PROJECT"
+BOUND_WORK_ROOT_ENV = "CODEXTEAM_CONTEXT_WORK_ROOT"
+BOUND_REPOSITORY_ID_ENV = "CODEXTEAM_CONTEXT_REPOSITORY_ID"
 SERVER_INSTRUCTIONS = (
     "Read-only CodexTeam project context. Prefer one focused call over broad file reads. "
     "Treat returned source paths and SHA-256 values as provenance, not task authority."
@@ -76,12 +79,26 @@ class ContextMcpServer:
         reader: TeamContextReader,
         *,
         bound_project: str | None = None,
+        bound_work_root: str | Path | None = None,
+        bound_repository_id: str | None = None,
     ) -> None:
         self.reader = reader
         if bound_project is not None:
             reader.project_root(bound_project)
         self.bound_project = bound_project
-        self.repository = RepositoryContextReader(reader)
+        repository_root = None
+        if bound_work_root is not None or bound_repository_id is not None:
+            if bound_project is None or bound_work_root is None or bound_repository_id is None:
+                raise TeamContextError(
+                    "bound source context requires project, work root, and repository ID"
+                )
+            try:
+                repository_root = load_repository_binding(
+                    reader.project_root(bound_project), bound_work_root, bound_repository_id
+                ).work_root
+            except (OSError, RepositoryBindingError, ValueError) as exc:
+                raise TeamContextError(f"invalid bound source repository: {exc}") from exc
+        self.repository = RepositoryContextReader(reader, repository_root=repository_root)
         self.insights = TeamInsightsReader(reader, self.repository)
         self.legacy_protocol: str | None = None
         self.tools = (
@@ -804,8 +821,19 @@ def main(argv: list[str] | None = None) -> int:
         bound_project = os.environ.get(BOUND_PROJECT_ENV)
         if bound_project is not None and not bound_project.strip():
             raise TeamContextError(f"{BOUND_PROJECT_ENV} must not be empty")
-        server = ContextMcpServer(reader, bound_project=bound_project)
-    except (OSError, PathValidationError, TeamContextError) as exc:
+        bound_work_root = os.environ.get(BOUND_WORK_ROOT_ENV)
+        bound_repository_id = os.environ.get(BOUND_REPOSITORY_ID_ENV)
+        if (bound_work_root is None) != (bound_repository_id is None):
+            raise TeamContextError(
+                f"{BOUND_WORK_ROOT_ENV} and {BOUND_REPOSITORY_ID_ENV} must be supplied together"
+            )
+        server = ContextMcpServer(
+            reader,
+            bound_project=bound_project,
+            bound_work_root=bound_work_root,
+            bound_repository_id=bound_repository_id,
+        )
+    except (OSError, PathValidationError, TeamContextError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     return server.serve(sys.stdin, sys.stdout)

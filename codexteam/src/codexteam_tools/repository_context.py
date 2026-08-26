@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import fnmatch
+import hashlib
 import os
 import re
 import selectors
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -116,8 +119,9 @@ _SUSPICIOUS_PATTERNS = (
 
 
 class RepositoryContextReader:
-    def __init__(self, context: TeamContextReader) -> None:
+    def __init__(self, context: TeamContextReader, *, repository_root: Path | None = None) -> None:
         self.context = context
+        self.repository_root = repository_root
 
     def search_repository(
         self,
@@ -131,7 +135,7 @@ class RepositoryContextReader:
         file_glob: str | None = None,
         limit: int = 10,
     ) -> dict[str, Any]:
-        root = self.context.project_root(project)
+        root = self.repository_root or self.context.project_root(project)
         clean_query = query.strip()
         if not clean_query or len(clean_query) > 200:
             raise TeamContextError("query must contain 1-200 characters")
@@ -165,6 +169,41 @@ class RepositoryContextReader:
         if file_glob is not None:
             _validate_glob(file_glob)
 
+        scan_limit = min(MAX_REPOSITORY_RESULTS * 4, max(limit * 4, limit))
+        if shutil.which("rg") is None:
+            candidates, truncated = _python_search(
+                root,
+                clean_query,
+                mode=mode,
+                scope=scope,
+                case_sensitive=case_sensitive,
+                target=target,
+                file_glob=file_glob,
+                scan_limit=scan_limit,
+            )
+            candidates.sort(
+                key=lambda item: (
+                    -item.pop("_score"),
+                    item["path"],
+                    item["line"],
+                    item["column"],
+                )
+            )
+            matches = candidates[:limit]
+            return {
+                "project": project,
+                "query": clean_query,
+                "mode": mode,
+                "scope": scope,
+                "case_sensitive": case_sensitive,
+                "path": path,
+                "file_glob": file_glob,
+                "matches": matches,
+                "matches_considered": len(candidates),
+                "truncated": truncated or len(candidates) > limit,
+                "sources": [self._source(root, contained_path(root, relative)) for relative in sorted({match["path"] for match in matches})],
+            }
+
         command = [
             "rg",
             "--json",
@@ -186,7 +225,6 @@ class RepositoryContextReader:
             command.extend(("--glob", file_glob))
         command.extend(("--", clean_query, target_argument))
 
-        scan_limit = min(MAX_REPOSITORY_RESULTS * 4, max(limit * 4, limit))
         candidates: list[dict[str, Any]] = []
         process = subprocess.Popen(
             command,
@@ -255,7 +293,7 @@ class RepositoryContextReader:
         matches = candidates[:limit]
         source_paths = sorted({match["path"] for match in matches})
         sources = [
-            self.context.source(root, contained_path(root, relative))
+            self._source(root, contained_path(root, relative))
             for relative in source_paths
         ]
         return {
@@ -279,7 +317,7 @@ class RepositoryContextReader:
         detail: str = "summary",
         limit: int = 40,
     ) -> dict[str, Any]:
-        root = self.context.project_root(project)
+        root = self.repository_root or self.context.project_root(project)
         if detail not in CHANGE_DETAIL_LEVELS:
             raise TeamContextError(
                 f"detail must be one of: {', '.join(CHANGE_DETAIL_LEVELS)}"
@@ -290,9 +328,14 @@ class RepositoryContextReader:
             or not 1 <= limit <= MAX_CHANGE_PATHS
         ):
             raise TeamContextError(f"limit must be between 1 and {MAX_CHANGE_PATHS}")
-        git_dir = root / ".git"
-        if git_dir.is_symlink() or not git_dir.exists():
-            raise TeamContextError("project is not a Git repository")
+        try:
+            git_root = Path(_git_text(root, "rev-parse", "--show-toplevel"))
+        except TeamContextError as exc:
+            raise TeamContextError("project is not a Git repository") from exc
+        try:
+            root.relative_to(git_root)
+        except ValueError as exc:
+            raise TeamContextError("repository search root is outside its Git root") from exc
 
         status_output = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
         changes = _parse_porcelain(status_output)
@@ -375,6 +418,14 @@ class RepositoryContextReader:
             }
         return result
 
+    def _source(self, root: Path, path: Path) -> dict[str, str | int]:
+        source_root = self.repository_root or root
+        return {
+            "path": path.relative_to(source_root).as_posix(),
+            "sha256": _sha256(path),
+            "bytes": path.stat().st_size,
+        }
+
     def project_git_state(self, project: str) -> dict[str, Any]:
         try:
             summary = self.get_change_summary(project, limit=10)
@@ -388,6 +439,10 @@ class RepositoryContextReader:
             "counts": summary["counts"],
             "suspicious_paths": summary["suspicious_paths"],
         }
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _search_match(data: Any, query: str) -> dict[str, Any] | None:
@@ -426,6 +481,93 @@ def _search_match(data: Any, query: str) -> dict[str, Any] | None:
         "text": _truncate(clean_text.strip(), MAX_MATCH_CHARS),
         "_score": score,
     }
+
+
+def _python_search(
+    root: Path,
+    query: str,
+    *,
+    mode: str,
+    scope: str,
+    case_sensitive: bool,
+    target: Path,
+    file_glob: str | None,
+    scan_limit: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    try:
+        matcher = re.compile(query if mode == "regex" else re.escape(query), 0 if case_sensitive else re.IGNORECASE)
+    except re.error as exc:
+        raise TeamContextError(f"invalid repository search pattern: {exc}") from exc
+    candidates: list[dict[str, Any]] = []
+    truncated = False
+    for current_root, directory_names, file_names in os.walk(target, topdown=True):
+        current = Path(current_root)
+        directory_names[:] = [
+            name for name in directory_names
+            if not (current / name).is_symlink()
+            and not _python_search_excluded((current / name).relative_to(root).as_posix())
+        ]
+        for name in sorted(file_names):
+            path = current / name
+            relative = path.relative_to(root).as_posix()
+            if path.is_symlink() or _python_search_excluded(relative):
+                continue
+            if not _python_search_file_allowed(relative, scope, file_glob):
+                continue
+            try:
+                content = path.read_bytes()
+            except OSError:
+                continue
+            if b"\0" in content:
+                continue
+            text = content.decode("utf-8", errors="replace")
+            for line_number, line in enumerate(text.splitlines(), 1):
+                match = matcher.search(line)
+                if match is None:
+                    continue
+                candidates.append({
+                    "path": relative,
+                    "line": line_number,
+                    "column": match.start() + 1,
+                    "text": _truncate(line.strip(), MAX_MATCH_CHARS),
+                    "_score": 6 + (2 if query.casefold() in name.casefold() else 0),
+                })
+                if len(candidates) >= scan_limit:
+                    truncated = True
+                    return candidates, truncated
+    return candidates, truncated
+
+
+def _python_search_excluded(relative: str) -> bool:
+    return any(
+        relative == prefix or relative.startswith(prefix + "/")
+        for prefix in (".git", "results", ".playwright-cli", "dist", "build", "node_modules")
+    )
+
+
+def _python_search_file_allowed(relative: str, scope: str, file_glob: str | None) -> bool:
+    if file_glob is not None and not fnmatch.fnmatchcase(relative, file_glob):
+        return False
+    name = Path(relative).name
+    is_test = (
+        relative.startswith(("tests/", "test/"))
+        or name.endswith(("_test.py", "_test.go", ".test.js", ".spec.js"))
+        or ".test." in name
+        or ".spec." in name
+    )
+    if scope == "tests":
+        return is_test
+    if scope == "source" and is_test:
+        return False
+    if scope == "config":
+        return Path(relative).suffix in {".toml", ".json", ".yaml", ".yml", ".ini", ".cfg", ".conf"} or name in {"Makefile", "Dockerfile"}
+    if scope == "source":
+        return Path(relative).suffix in {
+            ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs",
+            ".c", ".cc", ".cpp", ".h", ".hpp", ".java", ".kt", ".swift", ".rb",
+            ".php", ".sh", ".css", ".html", ".vue", ".svelte",
+        }
+    return True
 
 
 def _validate_glob(value: str) -> None:

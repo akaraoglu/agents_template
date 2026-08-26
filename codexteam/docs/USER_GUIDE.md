@@ -48,7 +48,9 @@ of `--control-root <control> --work-root <work> --repo-id <id>`. The control roo
 `REPOSITORIES.json` pins the exact work root, containing Git root, relative Git
 prefix, optional remote URL, and `task-owned` write policy. Handoffs, runtime,
 results, and gate records remain under control; worker commands and product scope
-run from work. Split-root attempts disable the legacy project-bound MCP.
+run from work. Split-root attempts enable the role-approved context MCP and
+bind control reads to the control root while source search and Git status reads
+use the registered work root.
 
 To run OpenCode, explicitly select a curated profile and one of its execution-
 catalog reasoning requests on draft. Feedback/final omit backend, profile, and
