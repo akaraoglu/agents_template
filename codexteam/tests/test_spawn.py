@@ -1094,6 +1094,109 @@ def test_bounded_mcp_context_mode_enables_only_pinned_task_context(
     assert request.effective_mcp_tools == (("codexteam-context", ("get_task_context",)),)
 
 
+def test_task_context_change_summary_is_bounded_and_checkpoint_aware(
+    tmp_path: Path, monkeypatch
+):
+    args = request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+    session_dir = request.session_dir
+    session_dir.mkdir(parents=True, exist_ok=True)
+    baseline_manifest = {"src/main.py": hashlib.sha256(b"original\n").hexdigest()}
+    baseline_digest = hashlib.sha256(
+        json.dumps(
+            baseline_manifest,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    (session_dir / "workspace-baseline.json").write_text(json.dumps(baseline_manifest))
+    session_dir.joinpath("session.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "team_id": request.team_id,
+                "task_id": request.task_id,
+                "attempt_id": request.attempt_id,
+                "agent_role": request.role,
+                "workspace_root": str(request.workspace),
+                "thread_id": "thread-1",
+                "turn_count": 1,
+                "last_phase": "draft",
+                "last_status": "draft_ready",
+                "last_turn_path": "turns/001-draft.json",
+                "created_at": "2099-01-01T00:00:00Z",
+                "updated_at": "2099-01-01T00:00:01Z",
+                "turns": [
+                    {
+                        "number": 1,
+                        "phase": "draft",
+                        "status": "draft_ready",
+                        "duration_seconds": 1.0,
+                    }
+                ],
+                "execution_spec": execution_spec_reference(request.execution_spec),
+                "workspace_baseline_sha256": baseline_digest,
+                "worker_change_manifest": {
+                    "src/main.py": {
+                        "action": "modified",
+                        "sha256": hashlib.sha256(b"updated\n").hexdigest(),
+                    },
+                    "results/gates/development.json": {
+                        "action": "created",
+                        "sha256": "b" * 64,
+                    },
+                },
+                "accepted_checkpoint": {
+                    "turn_number": 1,
+                    "phase": "draft",
+                    "artifact_report_path": "results/reports/T002-att-001.json",
+                    "artifact_report_sha256": "a" * 64,
+                    "evidence_sha256": {
+                        "src/main.py": hashlib.sha256(b"updated\n").hexdigest(),
+                    },
+                    "workspace_sha256": hashlib.sha256(
+                        json.dumps(
+                            {
+                                "src/main.py": {
+                                    "action": "modified",
+                                    "sha256": hashlib.sha256(b"updated\n").hexdigest(),
+                                }
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                    "changed_paths": ["src/main.py"],
+                    "accepted_paths": {
+                        "src/main.py": {
+                            "action": "modified",
+                            "sha256": hashlib.sha256(b"updated\n").hexdigest(),
+                        }
+                    },
+                    "session_id": "thread-1",
+                },
+            }
+        )
+    )
+
+    handoff = spawn.build_handoff(request)
+    change_summary = handoff["task_context"]["change_summary"]
+
+    assert change_summary["workspace_baseline_sha256"] == baseline_digest
+    assert change_summary["pre_existing_changes"] == {
+        "workspace_baseline_sha256": baseline_digest,
+    }
+    assert change_summary["accepted_checkpoint"]["changed_paths"] == ["src/main.py"]
+    assert change_summary["task_owned_paths"] == [
+        {
+            "path": "src/main.py",
+            "action": "modified",
+            "sha256": hashlib.sha256(b"updated\n").hexdigest(),
+        }
+    ]
+    assert change_summary["excluded_paths"] == {"count": 1}
+
+
 def test_direct_preflight_rejects_system_output_scope_before_launch(
     tmp_path: Path, monkeypatch
 ):

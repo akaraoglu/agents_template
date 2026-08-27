@@ -26,6 +26,7 @@ from .contracts import (
     validate_handoff,
     validate_result,
     validate_session,
+    summarize_change_projection,
 )
 from .delegation import (
     DELEGATION_FILENAME,
@@ -2061,6 +2062,7 @@ def _direct_context_instruction(request: SpawnRequest) -> str:
 def build_handoff(request: SpawnRequest) -> dict[str, Any]:
     if request.execution_spec is None:
         raise ValueError("handoff requires an execution specification")
+    change_summary = _task_change_summary(request)
     handoff = {
         "schema_version": "1.0",
         "handoff_id": f"handoff-{request.task_id.lower()}-{request.attempt_id}",
@@ -2105,6 +2107,8 @@ def build_handoff(request: SpawnRequest) -> dict[str, Any]:
             "Do not emit a final result or close project state in the draft turn.",
         ],
     }
+    if change_summary:
+        handoff["task_context"]["change_summary"] = change_summary
     validate_handoff(handoff)
     return handoff
 
@@ -2130,6 +2134,35 @@ def _gate_routing(request: SpawnRequest) -> dict[str, Any] | None:
         **request.gate_routing,
         "worker_may_execute": False,
     }
+
+
+def _task_change_summary(request: SpawnRequest) -> dict[str, Any] | None:
+    session = _load_session(request.session_path) if request.session_path.is_file() else None
+    baseline_digest = None
+    baseline_path = _workspace_baseline_path(request)
+    baseline = None
+    if baseline_path.is_file() and not baseline_path.is_symlink():
+        expected_digest = session.get("workspace_baseline_sha256") if session else None
+        baseline = _load_workspace_baseline(
+            request,
+            expected_digest=expected_digest if isinstance(expected_digest, str) else None,
+        )
+        baseline_digest = (
+            expected_digest
+            if isinstance(expected_digest, str) and expected_digest
+            else _workspace_baseline_digest(baseline)
+        )
+    elif session and isinstance(session.get("workspace_baseline_sha256"), str):
+        baseline_digest = session["workspace_baseline_sha256"]
+
+    accepted_checkpoint = session.get("accepted_checkpoint") if isinstance(session, dict) else None
+    worker_change_manifest = session.get("worker_change_manifest") if isinstance(session, dict) else None
+    summary = summarize_change_projection(
+        workspace_baseline_sha256=baseline_digest,
+        accepted_checkpoint=accepted_checkpoint,
+        worker_change_manifest=worker_change_manifest,
+    )
+    return summary or None
 
 
 def _resolve_gate_routing(workspace: Path, role: str) -> dict[str, str] | None:

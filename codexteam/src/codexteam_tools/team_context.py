@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .contracts import summarize_change_projection
 from .paths import (
     PathValidationError,
     contained_path,
@@ -158,6 +159,69 @@ class TeamContextReader:
             "verification_paths": list(config.verification_paths),
             "gates": gates,
             "sources": [self._source(root, path) for path in source_paths],
+        }
+
+    def get_change_summary(
+        self,
+        project: str,
+        task_id: str,
+    ) -> dict[str, Any]:
+        root = self._project(project)
+        normalized = normalize_task_id(task_id)
+        attempt_record = next(
+            (
+                record
+                for record in collect_subagent_status(root)
+                if record["task"] == normalized
+            ),
+            None,
+        )
+        if attempt_record is None:
+            return {
+                "project": project,
+                "task_id": normalized,
+                "attempt_id": None,
+                "change_summary": summarize_change_projection(),
+                "sources": [],
+            }
+        attempt_dir = _find_attempt_dir(root, normalized, attempt_record["attempt"])
+        if attempt_dir is None:
+            return {
+                "project": project,
+                "task_id": normalized,
+                "attempt_id": attempt_record["attempt"],
+                "change_summary": summarize_change_projection(),
+                "sources": [],
+            }
+        session_path = attempt_dir / "session.json"
+        turn_state_path = attempt_dir / "turn-state.json"
+        baseline_path = attempt_dir / "workspace-baseline.json"
+        session = _read_json_object(session_path)
+        turn_state = _read_json_object(turn_state_path)
+        baseline = _read_json_object(baseline_path)
+        workspace_baseline_sha256 = session.get("workspace_baseline_sha256")
+        if not isinstance(workspace_baseline_sha256, str) or not workspace_baseline_sha256:
+            workspace_baseline_sha256 = _workspace_baseline_digest(baseline) if baseline else None
+        accepted_checkpoint = session.get("accepted_checkpoint")
+        worker_change_manifest = session.get("worker_change_manifest")
+        change_summary = summarize_change_projection(
+            workspace_baseline_sha256=workspace_baseline_sha256,
+            accepted_checkpoint=accepted_checkpoint,
+            worker_change_manifest=worker_change_manifest,
+        )
+        source_paths = [session_path, turn_state_path, baseline_path]
+        return {
+            "project": project,
+            "task_id": normalized,
+            "attempt_id": attempt_record["attempt"],
+            "status": attempt_record.get("status"),
+            "workspace_baseline_sha256": workspace_baseline_sha256,
+            "change_summary": change_summary,
+            "sources": [
+                self._source(root, path)
+                for path in source_paths
+                if path.is_file() and not path.is_symlink()
+            ],
         }
 
     def search_team_memory(
@@ -598,6 +662,38 @@ def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 3].rstrip() + "..."
+
+
+def _find_attempt_dir(root: Path, task_id: str, attempt_id: str) -> Path | None:
+    sessions = root / ".codexteam" / "runtime" / "sessions"
+    if not sessions.is_dir() or sessions.is_symlink():
+        return None
+    matches = [
+        path
+        for path in sessions.glob(f"*/{task_id}/{attempt_id}")
+        if path.is_dir() and not path.is_symlink()
+    ]
+    if len(matches) > 1:
+        raise TeamContextError(
+            f"multiple runtime attempts match {task_id}/{attempt_id}"
+        )
+    return matches[0] if matches else None
+
+
+def _read_json_object(path: Path | None) -> dict[str, Any]:
+    if path is None or path.is_symlink() or not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _workspace_baseline_digest(baseline: dict[str, str]) -> str:
+    return hashlib.sha256(
+        json.dumps(baseline, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _memory_excerpt(

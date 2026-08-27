@@ -24,6 +24,7 @@ AGENT_ROLES = {
 FILE_ACTIONS = {"created", "modified", "deleted"}
 EVIDENCE_TYPES = {"test_output", "artifact", "file_manifest", "cli_invocation", "spec_compliance", "code_review"}
 FOLLOWUP_ACTIONS = {"request_review", "delegate_task", "request_approval"}
+CHANGE_SUMMARY_PATH_LIMIT = 20
 
 REQUIRED_RESULT_FIELDS = {
     "schema_version",
@@ -386,6 +387,55 @@ def validate_session(data: Any) -> dict[str, Any]:
     return data
 
 
+def summarize_change_projection(
+    *,
+    workspace_baseline_sha256: str | None = None,
+    accepted_checkpoint: Any = None,
+    worker_change_manifest: Any = None,
+    path_limit: int = CHANGE_SUMMARY_PATH_LIMIT,
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    if isinstance(workspace_baseline_sha256, str) and workspace_baseline_sha256:
+        summary["workspace_baseline_sha256"] = workspace_baseline_sha256
+        summary["pre_existing_changes"] = {
+            "workspace_baseline_sha256": workspace_baseline_sha256,
+        }
+
+    checkpoint = _compact_checkpoint(accepted_checkpoint, path_limit=path_limit)
+    if checkpoint is not None:
+        summary["accepted_checkpoint"] = checkpoint
+
+    task_owned_paths: list[dict[str, Any]] = []
+    accepted_count = 0
+    accepted_truncated = False
+    if checkpoint is not None:
+        task_owned_paths = list(checkpoint.get("accepted_paths", []))
+        accepted_count = int(checkpoint.get("accepted_paths_count", 0) or 0)
+        accepted_truncated = bool(checkpoint.get("accepted_paths_truncated", False))
+        if task_owned_paths:
+            summary["task_owned_paths"] = task_owned_paths
+            summary["task_owned_paths_truncated"] = accepted_truncated
+            summary["excluded_paths"] = {"count": 0}
+
+    if isinstance(worker_change_manifest, dict):
+        manifest_paths, manifest_count, _ = _compact_change_paths(
+            worker_change_manifest,
+            path_limit=path_limit,
+        )
+        if task_owned_paths:
+            summary["excluded_paths"] = {
+                "count": max(0, manifest_count - accepted_count),
+            }
+        elif manifest_paths:
+            summary["task_owned_paths"] = manifest_paths
+            summary["task_owned_paths_truncated"] = manifest_count > len(manifest_paths)
+            summary["excluded_paths"] = {"count": 0}
+
+    if not summary:
+        return {}
+    return summary
+
+
 def synthetic_result(
     *,
     team_id: str,
@@ -548,6 +598,71 @@ def _validate_string_list(value: Any, field: str, errors: list[str]) -> None:
         not isinstance(item, str) or not item.strip() for item in value
     ):
         errors.append(f"{field} must be a list of strings")
+
+
+def _compact_checkpoint(
+    checkpoint: Any,
+    *,
+    path_limit: int,
+) -> dict[str, Any] | None:
+    if not isinstance(checkpoint, dict):
+        return None
+    result: dict[str, Any] = {}
+    for field in ("turn_number", "phase", "artifact_report_path", "artifact_report_sha256", "workspace_sha256", "session_id"):
+        value = checkpoint.get(field)
+        if isinstance(value, int) and not isinstance(value, bool):
+            result[field] = value
+        elif isinstance(value, str) and value:
+            result[field] = value
+    evidence_hashes = checkpoint.get("evidence_sha256")
+    if isinstance(evidence_hashes, dict):
+        result["evidence_sha256"] = {
+            key: value
+            for key, value in sorted(evidence_hashes.items())
+            if isinstance(key, str) and key and isinstance(value, str) and value
+        }
+    execution_spec = checkpoint.get("execution_spec")
+    if isinstance(execution_spec, dict) and set(execution_spec) == {"contract", "path", "digest"}:
+        result["execution_spec"] = {
+            key: value
+            for key, value in execution_spec.items()
+            if isinstance(value, str) and value
+        }
+    accepted_paths, total_paths, truncated = _compact_change_paths(
+        checkpoint.get("accepted_paths"),
+        path_limit=path_limit,
+    )
+    if accepted_paths:
+        result["accepted_paths"] = accepted_paths
+        result["accepted_paths_count"] = total_paths
+        result["accepted_paths_truncated"] = truncated
+        result["changed_paths"] = [item["path"] for item in accepted_paths]
+    return result or None
+
+
+def _compact_change_paths(
+    change_paths: Any,
+    *,
+    path_limit: int,
+) -> tuple[list[dict[str, Any]], int, bool]:
+    if not isinstance(change_paths, dict):
+        return [], 0, False
+    entries: list[dict[str, Any]] = []
+    for path, item in sorted(change_paths.items()):
+        if not isinstance(path, str) or not path:
+            continue
+        if not isinstance(item, dict):
+            continue
+        entry: dict[str, Any] = {"path": path}
+        action = item.get("action")
+        if action in FILE_ACTIONS:
+            entry["action"] = action
+        sha256 = item.get("sha256")
+        if isinstance(sha256, str) and sha256:
+            entry["sha256"] = sha256
+        entries.append(entry)
+    total = len(entries)
+    return entries[:path_limit], total, total > path_limit
 
 
 

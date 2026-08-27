@@ -301,6 +301,7 @@ class TeamInsightsReader:
             architecture_sources,
             [policy_source] if policy_source else [],
         )
+        change_summary = self.context.get_change_summary(project, normalized)
         warnings = [
             warning
             for warning in (ledger_warning, policy_warning)
@@ -335,6 +336,7 @@ class TeamInsightsReader:
                     for command in gate_config.integration_commands
                 ],
             },
+            "change_summary": change_summary.get("change_summary", {}),
             "warnings": warnings,
             "sources": sources,
         }

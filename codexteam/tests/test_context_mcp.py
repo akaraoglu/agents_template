@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import subprocess
@@ -176,8 +177,58 @@ def context_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "created_at": "2099-01-01T00:00:00Z",
                 "updated_at": "2099-01-01T00:00:01Z",
                 "final_result_path": "results/T002-att-001.json",
+                "workspace_baseline_sha256": hashlib.sha256(
+                    json.dumps(
+                        {"src/main.py": hashlib.sha256(b"ok\n").hexdigest()},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "worker_change_manifest": {
+                    "src/main.py": {
+                        "action": "modified",
+                        "sha256": hashlib.sha256(b"ok\n").hexdigest(),
+                    },
+                    "results/gates/development.json": {
+                        "action": "created",
+                        "sha256": "c" * 64,
+                    },
+                },
+                "accepted_checkpoint": {
+                    "turn_number": 1,
+                    "phase": "draft",
+                    "artifact_report_path": "results/T002-att-001.json",
+                    "artifact_report_sha256": "a" * 64,
+                    "evidence_sha256": {
+                        "src/main.py": hashlib.sha256(b"ok\n").hexdigest(),
+                    },
+                    "workspace_sha256": hashlib.sha256(
+                        json.dumps(
+                            {
+                                "src/main.py": {
+                                    "action": "modified",
+                                    "sha256": hashlib.sha256(b"ok\n").hexdigest(),
+                                }
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                    "changed_paths": ["src/main.py"],
+                    "accepted_paths": {
+                        "src/main.py": {
+                            "action": "modified",
+                            "sha256": hashlib.sha256(b"ok\n").hexdigest(),
+                        }
+                    },
+                    "session_id": "thread-1",
+                },
             }
         ),
+    )
+    _write(
+        project / ".codexteam/runtime/sessions/team-demo/T002/att-001/workspace-baseline.json",
+        json.dumps({"src/main.py": hashlib.sha256(b"ok\n").hexdigest()}),
     )
     _write(
         project
@@ -542,6 +593,15 @@ def test_project_task_and_handoff_insights_are_bounded(
         "DECISIONS.md",
     ]
     assert context["stale_attempts"] == []
+    assert context["change_summary"]["workspace_baseline_sha256"]
+    assert context["change_summary"]["task_owned_paths"] == [
+        {
+            "path": "src/main.py",
+            "action": "modified",
+            "sha256": hashlib.sha256(b"ok\n").hexdigest(),
+        }
+    ]
+    assert context["change_summary"]["excluded_paths"] == {"count": 1}
     parallel = next(
         attempt
         for attempt in context["concurrent_attempts"]
@@ -550,6 +610,32 @@ def test_project_task_and_handoff_insights_are_bounded(
     assert parallel["possible_path_conflicts"] == [
         {"requested": "src/main.py", "active": "src/main.py"}
     ]
+
+
+def test_reader_change_summary_is_bounded_and_checkpoint_aware(
+    context_fixture: tuple[Path, Path, Path],
+) -> None:
+    projects, _, _memory = context_fixture
+    reader = TeamContextReader(projects)
+
+    summary = reader.get_change_summary("demo", "T002")
+    change_summary = summary["change_summary"]
+
+    assert summary["attempt_id"] == "att-001"
+    assert summary["workspace_baseline_sha256"]
+    assert change_summary["workspace_baseline_sha256"] == summary["workspace_baseline_sha256"]
+    assert change_summary["pre_existing_changes"] == {
+        "workspace_baseline_sha256": summary["workspace_baseline_sha256"],
+    }
+    assert change_summary["accepted_checkpoint"]["changed_paths"] == ["src/main.py"]
+    assert change_summary["task_owned_paths"] == [
+        {
+            "path": "src/main.py",
+            "action": "modified",
+            "sha256": hashlib.sha256(b"ok\n").hexdigest(),
+        }
+    ]
+    assert change_summary["excluded_paths"] == {"count": 1}
 
 
 def test_attempt_result_and_cost_insights_avoid_raw_transcripts(
