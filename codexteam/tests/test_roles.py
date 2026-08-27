@@ -41,7 +41,10 @@ def test_all_canonical_role_policies_are_unique_and_complete():
         "codexteam-context",
         "playwright",
     )
-    assert load_role_policy("architect").mcp_servers == ("local-docs",)
+    assert load_role_policy("architect").mcp_servers == (
+        "codexteam-context",
+        "local-docs",
+    )
     assert load_role_policy("developer").mcp_servers == (
         "codexteam-context",
         "local-docs",

@@ -413,10 +413,10 @@ def prepare_request(args: argparse.Namespace) -> SpawnRequest:
     debug_stream = str(
         debug_stream_value
         if debug_stream_value is not None
-        else ("activity" if backend == "opencode" else "off")
+        else ("activity" if backend in ("opencode", "codex") else "off")
     )
-    if debug_stream != "off" and backend != "opencode":
-        raise ValueError("--debug-stream is supported only by the OpenCode backend")
+    if debug_stream != "off" and backend not in ("opencode", "codex"):
+        raise ValueError("--debug-stream is supported only by the OpenCode or Codex backend")
     draft_format_path = session_dir / DRAFT_FORMAT_FILENAME
     if phase == "draft":
         draft_format = ARTIFACT_REPORT
@@ -1955,6 +1955,21 @@ def _mcp_override_args(request: SpawnRequest) -> list[str]:
                 ),
             )
         )
+    if request.split_root and request.mcp_context_project is not None:
+        arguments.extend(
+            (
+                "-c",
+                (
+                    f"mcp_servers.{CONTEXT_MCP_SERVER}.env.{CONTEXT_WORK_ROOT_ENV}="
+                    + json.dumps(str(request.work_root))
+                ),
+                "-c",
+                (
+                    f"mcp_servers.{CONTEXT_MCP_SERVER}.env.{CONTEXT_REPOSITORY_ID_ENV}="
+                    + json.dumps(request.repo_id)
+                ),
+            )
+        )
     return arguments
 
 
@@ -2701,7 +2716,28 @@ def _print_debug_event(
     if event_type == "error":
         print("[worker error] provider error reported; see private JSONL", file=sys.stderr, flush=True)
         return
-    if mode != "activity" or not isinstance(part, dict):
+    if mode != "activity":
+        return
+    if event_type in ("item.started", "item.completed"):
+        item = event.get("item")
+        if isinstance(item, dict):
+            item_type = _debug_label(item.get("type"))
+            status_str = "started" if event_type == "item.started" else "completed"
+            lines = [f"[worker item] {item_type} {status_str}"]
+            if item_type == "command_execution":
+                cmd = item.get("command")
+                if isinstance(cmd, str) and cmd:
+                    lines.append(f"  command: {_debug_preview(cmd)}")
+            if event_type == "item.completed":
+                exit_code = item.get("exit_code")
+                if isinstance(exit_code, int):
+                    lines.append(f"  exit: {exit_code}")
+                status_item = item.get("status")
+                if isinstance(status_item, str):
+                    lines.append(f"  status: {_debug_label(status_item)}")
+            print("\n".join(lines), file=sys.stderr, flush=True)
+        return
+    if not isinstance(part, dict):
         return
     if event_type == "tool_use":
         print(
@@ -2715,7 +2751,6 @@ def _print_debug_event(
             file=sys.stderr,
             flush=True,
         )
-
 
 def _activity_tool_lines(part: dict[str, Any], workspace: Path | None) -> list[str]:
     tool_name = _debug_label(part.get("tool"))
@@ -4469,15 +4504,21 @@ def _artifact_report_from_file(
         return None, list(exc.errors[:10])
     errors: list[str] = []
     for index, relative in enumerate(candidate["evidence"]):
+        # Validate evidence against the correct root for split-root attempts.
+        root = (
+            request.control_root
+            if request.split_root and relative.startswith("results/gates/")
+            else request.workspace
+        )
         try:
             evidence_path = contained_path(
-                request.workspace, relative, label=f"evidence[{index}]"
+                root, relative, label=f"evidence[{index}]"
             )
         except ValueError as exc:
             errors.append(str(exc))
             continue
         if evidence_path.is_symlink() or not evidence_path.is_file():
-            errors.append(f"evidence[{index}] does not name an existing regular file: {relative}")
+            errors.append(f"evidence[{index}] does not name an existing regular file under {root.name}: {relative}")
     if errors:
         return None, errors
     return candidate, []
@@ -4516,11 +4557,19 @@ def _result_artifact_errors(request: SpawnRequest, result: dict[str, Any]) -> li
             )
 
     for index, evidence in enumerate(result["evidence"]):
-        root = (
-            request.control_root
-            if request.split_root and evidence["artifact_ref"].startswith("results/gates/")
-            else request.workspace
-        )
+        # Determine root from metadata hint if present, else fallback to path heuristic.
+        metadata = evidence.get("metadata", {}) if isinstance(evidence, dict) else {}
+        root_hint = metadata.get("root") if isinstance(metadata, dict) else None
+        if root_hint == "control":
+            root = request.control_root if request.split_root else request.workspace
+        elif root_hint == "work":
+            root = request.work_root if request.split_root else request.workspace
+        else:
+            root = (
+                request.control_root
+                if request.split_root and evidence["artifact_ref"].startswith("results/gates/")
+                else request.workspace
+            )
         path = contained_path(
             root,
             evidence["artifact_ref"],
@@ -4528,8 +4577,7 @@ def _result_artifact_errors(request: SpawnRequest, result: dict[str, Any]) -> li
         )
         if not path.exists():
             errors.append(
-                "evidence["
-                f"{index}].artifact_ref does not exist: {evidence['artifact_ref']}"
+                f"evidence[{index}].artifact_ref does not exist under {root.name}: {evidence['artifact_ref']}"
             )
     return errors
 

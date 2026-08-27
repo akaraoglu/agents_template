@@ -25,6 +25,8 @@ Use for draft review, final-result inspection, every task closure, and delivery 
    `codexteam-context` is available, begin with `get_task_context` if the review boundary
    is not already exact. Use `get_attempt_summary`, `validate_result_record`,
    `get_gate_status`, and `get_change_summary` only for the corresponding review question.
+    Do not use Bash, `find`, recursive `ls`, broad `grep`, or
+    `read_mcp_resource` to rediscover context that the bound MCP tools provide.
    Do not repeat a sufficient MCP response with broad shell discovery. Treat every summary
    as an orientation aid, then inspect the named source and evidence required for the claim.
 2. Inspect declared files and artifacts rather than trusting summaries.

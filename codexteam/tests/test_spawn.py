@@ -1407,9 +1407,11 @@ def test_role_policy_enforces_mcp_servers_with_per_process_overrides(
         request_args(tmp_path, monkeypatch, role="architect")
     )
     architect_command = spawn.build_command(architect, spawn.prepare_turn(architect))
-    assert architect.effective_mcp_servers == ("local-docs",)
+    assert architect.effective_mcp_servers == ("codexteam-context", "local-docs")
     assert mcp_overrides(architect_command) == {
-        "mcp_servers.codexteam-context.enabled=false",
+        "mcp_servers.codexteam-context.enabled=true",
+        'mcp_servers.codexteam-context.enabled_tools=["get_task_context","search_team_memory","search_repository","get_change_summary"]',
+        'mcp_servers.codexteam-context.env.CODEXTEAM_CONTEXT_PROJECT="workspace"',
         "mcp_servers.github-readonly.enabled=false",
         "mcp_servers.playwright.enabled=false",
         "mcp_servers.local-docs.enabled=true",
@@ -2889,12 +2891,47 @@ def test_debug_stream_neutralizes_terminal_controls_in_assistant_and_labels(
     assert "\r" not in debug
 
 
-def test_debug_stream_rejects_codex_backend(tmp_path: Path, monkeypatch):
+def test_debug_stream_allows_codex_backend(tmp_path: Path, monkeypatch):
     args = request_args(tmp_path, monkeypatch)
     args.debug_stream = "assistant"
-    with pytest.raises(ValueError, match="supported only by the OpenCode backend"):
-        spawn.prepare_request(args)
+    req = spawn.prepare_request(args)
+    assert req.debug_stream == "assistant"
+    args2 = request_args(tmp_path, monkeypatch)
+    req2 = spawn.prepare_request(args2)
+    assert req2.debug_stream == "activity"
+    args3 = request_args(tmp_path, monkeypatch)
+    args3.debug_stream = "off"
+    req3 = spawn.prepare_request(args3)
+    assert req3.debug_stream == "off"
 
+
+
+def test_debug_stream_activity_codex_item_events(tmp_path: Path, capsys):
+    fake = tmp_path / "fake-codex"
+    events = [
+        {"type": "item.started", "item": {"type": "command_execution", "command": "API_KEY=secret pytest -q"}},
+        {"type": "item.completed", "item": {"type": "command_execution", "command": "API_KEY=secret pytest -q", "exit_code": 0, "status": "completed"}},
+        {"type": "item.started", "item": {"type": "agent_message"}},
+    ]
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        f"events = {events!r}\n"
+        "for event in events: print(json.dumps(event), flush=True)\n"
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    spawn.run_process(
+        [str(fake)], prompt="", timeout_seconds=5,
+        env=spawn.os.environ.copy(), debug_stream="activity",
+    )
+    debug = capsys.readouterr().err
+    assert "[worker item] command_execution started" in debug
+    assert "command: API_KEY=<redacted> pytest -q" in debug
+    assert "[worker item] command_execution completed" in debug
+    assert "exit: 0" in debug
+    assert "[worker item] agent_message started" in debug
+    assert "secret" not in debug
 
 def test_run_guard_interruption_preserves_exact_thread_for_feedback(
     tmp_path: Path, monkeypatch
@@ -4423,3 +4460,73 @@ def test_opencode_draft_command_remains_disabled_with_debug_override(tmp_path: P
     ])
     assert code == 2
     assert "opencode execution is disabled" in capsys.readouterr().out
+
+def test_split_root_artifact_report_validates_control_root(tmp_path: Path, monkeypatch):
+    args, control, work, git_root, decoy = split_request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+    (control / "results" / "gates").mkdir(parents=True, exist_ok=True)
+    evidence_file = control / "results" / "gates" / "gate.json"
+    evidence_file.write_text('{"ok": true}')
+    report_path = request.artifact_report_path
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps({
+        "version": 1,
+        "summary": "Split root test",
+        "evidence": ["results/gates/gate.json"],
+        "limitations": [],
+    }))
+    candidate, errors = spawn._artifact_report_from_file(request)
+    assert candidate is not None
+    assert errors == []
+
+def test_split_root_artifact_report_rejects_wrong_root(tmp_path: Path, monkeypatch):
+    args, control, work, git_root, decoy = split_request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+    # Create file in work root instead of control
+    (work / "results" / "gates").mkdir(parents=True, exist_ok=True)
+    evidence_file = work / "results" / "gates" / "gate.json"
+    evidence_file.write_text('{"ok": true}')
+    report_path = request.artifact_report_path
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps({
+        "version": 1,
+        "summary": "Wrong root",
+        "evidence": ["results/gates/gate.json"],
+        "limitations": [],
+    }))
+    candidate, errors = spawn._artifact_report_from_file(request)
+    assert candidate is None
+    assert any("under control" in e or "does not name an existing regular file" in e for e in errors)
+
+def test_result_artifact_errors_root_specific_control(tmp_path: Path, monkeypatch):
+    args, control, work, git_root, decoy = split_request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+    (control / "results" / "gates").mkdir(parents=True, exist_ok=True)
+    (control / "results" / "gates" / "gate.json").write_text('{"ok": true}')
+    result = {
+        "file_changes": [],
+        "evidence": [{
+            "artifact_ref": "results/gates/gate.json",
+            "type": "test_output",
+            "summary": "Gate passed",
+            "metadata": {"root": "control"},
+        }],
+    }
+    errors = spawn._result_artifact_errors(request, result)
+    assert errors == []
+
+def test_result_artifact_errors_wrong_root_error_message(tmp_path: Path, monkeypatch):
+    args, control, work, git_root, decoy = split_request_args(tmp_path, monkeypatch)
+    request = spawn.prepare_request(args)
+    result = {
+        "file_changes": [],
+        "evidence": [{
+            "artifact_ref": "results/gates/gate.json",
+            "type": "test_output",
+            "summary": "Gate passed",
+            "metadata": {"root": "work"},
+        }],
+    }
+    errors = spawn._result_artifact_errors(request, result)
+    assert len(errors) == 1
+    assert "under work" in errors[0] or "does not exist under" in errors[0]

@@ -30,7 +30,12 @@ MCP tools to infer that a mutation, test, or acceptance check occurred.
 
 1. The Project Lead discovers `codexteam-context` once when its tools are not
    already visible. A worker uses its launcher-provided subset directly.
-2. Call the smallest tool that answers the current question:
+2. For project, task, attempt, gate, change, and repository context, call the
+   smallest allowed `codexteam-context` tool first. Do not use Bash, `find`,
+   recursive `ls`, broad `grep`, or `read_mcp_resource` to rediscover that
+   context. Use native file reads only after the MCP response names an exact
+   artifact or source target that must be inspected.
+3. Call the smallest tool that answers the current question:
 
 | Need | Tool |
 |---|---|
@@ -82,19 +87,19 @@ names sufficient exact headings, symbols, or short source ranges for a smaller
 direct read. After a sufficient response, inspect returned exact paths rather
 than repeating the same discovery with broad shell output.
 
-3. Chain another MCP call only when the first result exposes a specific missing
+4. Chain another MCP call only when the first result exposes a specific missing
    dependency. Do not call the full tool set as a routine preflight.
-4. Respect truncation, freshness, and `query_stats`. Open only a named source or
+5. Respect truncation, freshness, and `query_stats`. Open only a named source or
    artifact when the Lead must inspect exact content.
-5. Use canonical CodexTeam commands for every mutation and for captured
+6. Use canonical CodexTeam commands for every mutation and for captured
    verification evidence. A read-only MCP response is context, not proof that a
    gate or product check passed.
-6. If a tool is unavailable or returns an error, retry once only when input or
+7. If a tool is unavailable or returns an error, retry once only when input or
    relevant state changed. Otherwise use the narrow existing command or file
    read and record the fallback reason.
-7. Reuse the resulting facts in worker handoffs and review. Do not make a worker
+8. Reuse the resulting facts in worker handoffs and review. Do not make a worker
    rediscover accepted context.
-8. Read cost hotspot `usage_totals` by scope. `worker_turns` comes from worker
+9. Read cost hotspot `usage_totals` by scope. `worker_turns` comes from worker
    sidecars, `lead_orchestration` comes from Lead rollout metrics, and `combined` is
    their sum; do not attribute the combined number to either layer alone.
 

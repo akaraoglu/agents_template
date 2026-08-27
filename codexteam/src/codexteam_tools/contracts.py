@@ -515,6 +515,11 @@ def _validate_evidence(value: Any, status: Any, errors: list[str]) -> None:
         metadata = item.get("metadata", {})
         if not isinstance(metadata, dict):
             errors.append(f"{prefix}.metadata must be an object")
+        else:
+             # T014: optional root hint for split-root validation; legacy records remain readable.
+            root = metadata.get("root")
+            if root is not None and root not in {"work", "control"}:
+                errors.append(f"{prefix}.metadata.root must be 'work' or 'control' if present")
 
 
 def _validate_followups(value: Any, errors: list[str]) -> None:

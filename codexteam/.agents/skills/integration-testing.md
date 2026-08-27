@@ -22,7 +22,10 @@ Use after a Developer draft and development-gate evidence exist, before the Deve
    exact evidence, use `get_task_context` for the assignment boundary, `get_change_summary`
    to identify the changed surface, and `get_gate_status` for gate configuration or
    freshness. Do not repeat a sufficient result with a broad repository scan. Open the
-    returned exact source, tests, and artifacts before making an acceptance claim.
+   returned exact source, tests, and artifacts before making an acceptance claim.
+   These MCP calls are the first discovery mechanism; do not use Bash, `find`,
+   recursive `ls`, broad `grep`, or `read_mcp_resource` to rediscover project,
+   task, gate, or change context.
    Gate status is a bounded semantic summary. Do not open or print the full gate
    JSON or successful command output unless a named failure diagnostic requires it.
 2. Read the current Verification Plan in `PROJECT.md`. Map each applicable row

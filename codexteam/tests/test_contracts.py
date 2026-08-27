@@ -233,3 +233,23 @@ def test_artifact_report_required_fields_and_types():
         del invalid[field]
         with pytest.raises(ResultValidationError, match="missing required artifact report fields"):
             validate_artifact_report(invalid)
+
+def test_evidence_metadata_root_valid_values(result_factory):
+    result = result_factory()
+    for root in ("work", "control"):
+        result["evidence"][0]["metadata"]["root"] = root
+        assert validate_result(result) is result
+
+def test_evidence_metadata_root_invalid_value_rejected(result_factory):
+    result = result_factory()
+    result["evidence"][0]["metadata"]["root"] = "invalid"
+    with pytest.raises(ResultValidationError, match="metadata.root must be 'work' or 'control'"):
+        validate_result(result)
+
+def test_evidence_metadata_root_legacy_compatibility(result_factory):
+    result = result_factory()
+    # No root present
+    assert validate_result(result) is result
+    # Empty metadata
+    result["evidence"][0]["metadata"] = {}
+    assert validate_result(result) is result

@@ -159,3 +159,24 @@ The read-only Git Steward returns one exact `commit-plan` JSON draft. After revi
 ```
 
 Preview is the default. The plan must be inside the exact Git-root project, and authorization is stored under ignored runtime. The applied executor re-verifies the candidate tree and creates one local commit. Push, merge, tag, release, publication, and remote PR creation require human action outside CodexTeam.
+
+## Evidence Roots
+
+When a task uses split-root mode, source evidence remains relative to the work root and control evidence is validated against the control root. The `metadata.root` hint may be set to `work` or `control` for clarity. Example result evidence:
+
+```json
+{
+  "type": "test_output",
+  "artifact_ref": "results/gates/development.json",
+  "summary": "Development gate passed",
+  "metadata": {"root": "control"}
+}
+{
+  "type": "test_output",
+  "artifact_ref": "tests/unit/test_example.py",
+  "summary": "Unit test passed",
+  "metadata": {"root": "work"}
+}
+```
+
+Invalid root values are rejected with a clear error, and legacy records without the field remain readable. The `metadata.root` field is optional and backward compatible with existing result records.
