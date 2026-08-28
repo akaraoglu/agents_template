@@ -43,6 +43,10 @@ system than to an autonomous agent swarm or a general multi-agent framework.
 | Project memory | Source-backed institutional memory |
 | Context pack | Context provenance manifest |
 | Turn metrics | Agent observability telemetry |
+| Skill evaluator | Guidance routing and behavioral conformance harness |
+| Milestone retrospective | Post-delivery evidence analyzer |
+| Improvement proposal | Automatically recorded, human-gated backlog candidate |
+| Improvement disposition | Immutable human planning decision |
 
 ## System Shape
 
@@ -61,6 +65,10 @@ Canonical project state
   -> advances only after acceptance
 Git Steward executor
   -> creates an explicitly authorized local commit
+Milestone retrospective
+  -> records no change or Proposed improvements
+Human disposition
+  -> approves, rejects, or defers planning
 ```
 
 Workers do not spawn other workers, negotiate ownership, or autonomously alter
@@ -225,7 +233,7 @@ provenance, project isolation, and low operational complexity.
 
 Canonical memory remains in reviewed project files such as `DECISIONS.md`,
 `OPEN_QUESTIONS.md`, `ARCHITECTURE.md`, and architecture decision records.
-Discovery notes under `design/architecture/` are durable advisory research and
+Discovery notes under `discoveries/` are durable advisory research and
 must be verified against current source. Runtime transcripts and worker claims
 are not promoted automatically into institutional memory.
 
@@ -311,6 +319,127 @@ This is an agent observability layer rather than financial accounting. It does
 not yet calculate currency cost or represent every token that may be visible in
 provider-side system instructions, tool schemas, or persistent history.
 
+## Evaluation and Self-Improvement
+
+CodexTeam now has two complementary evaluation loops. They use local models only
+for bounded advisory judgment; deterministic code retains authority over
+qualification, persistence, and state changes.
+
+### Skill Evaluation
+
+The skill evaluator tests whether the guidance system remains coherent before a
+guidance change is promoted:
+
+- Structural checks validate root skill frontmatter, required sections,
+  references, role skill ordering, project guidance projection, and AgentSpec
+  guidance containment.
+- Fixed positive and negative cases test skill routing and selected CodexTeam
+  authority decisions.
+- Candidate route and decision identifiers are supplied without revealing which
+  are required or forbidden.
+- Every case in the selected catalog must pass.
+- Manual evaluation uses one schema-constrained request to a curated local
+  Ollama profile.
+- The evaluator refuses cloud profiles and has no filesystem, shell, MCP,
+  lifecycle, project-state, or retry capability.
+
+This evaluator answers: **does a proposed instruction or skill change cause the
+agent to select and follow the intended workflow without broadening authority?**
+It does not evaluate a completed project milestone or approve a guidance change.
+
+### Milestone Retrospective
+
+After each verified milestone commit, the Project Lead runs a project-local
+retrospective. The analyzer binds:
+
+- Completed task results to matching runtime attempts and roles
+- Accepted per-task Integration Gate snapshots
+- The terminal ordered task's accepted workspace digest
+- The exact milestone commit, tree, trailers, and verification artifact
+- Split-root repository and runtime provenance
+- Worker turns, feedback loops, replacement attempts, timeouts, Run Guard
+  interruptions, failed tools or commands, MCP fallbacks, and repeated command
+  fingerprints
+- Lead and worker usage summaries without raw prompts or process output
+
+The committed tree is independently reconstructed from Git blobs using the same
+verification-path semantics as the Integration Gate. This prevents a correctly
+labelled commit from being associated with unrelated verification evidence.
+
+Every analysis invocation returns one explicit outcome:
+
+- `NO_CHANGE`: evidence is sufficient and no deterministic signal qualifies.
+- `PROPOSALS_RECORDED`: one or more deterministic signals qualify.
+- `BLOCKED_INSUFFICIENT_EVIDENCE`: identity, evidence, advisory, locking, or
+  publication validation prevents a safe conclusion.
+
+Only the first two become persisted retrospective dispositions. A blocked result
+is normally non-mutating and must be corrected and rerun. If artifact publication
+succeeds before backlog insertion is interrupted, the result truthfully reports
+the partial state and the same boundary can recover it.
+
+### Improvement Qualification
+
+Deterministic rules decide whether evidence qualifies. Examples include:
+
+- Invalid or missing modern execution or delegation identity
+- Scope or authority violations carrying an explicit structured marker
+- Multiple attempts for one task
+- Two or more feedback rounds for one attempt
+- Timeouts or Run Guard interruptions
+- Recurring failed tool activity or MCP fallback loops
+- Repeated command fingerprints across turns
+- Explicit evidence-integrity or unsupported-acceptance findings
+
+An isolated ordinary mistake, preference-only feedback, or unmeasured efficiency
+difference does not automatically qualify. `NO_CHANGE` is a valid and expected
+outcome.
+
+### Backlog and Human Authority
+
+Every qualified signal produces one collision-resistant improvement proposal.
+Applied retrospective analysis automatically appends it to the project backlog
+with:
+
+- `Status: Proposed`
+- Evidence, impact, confidence, expected gain, validation, and rollback
+- No task creation
+- No implementation authority
+- No human disposition
+
+An optional tool-free local advisory model may summarize qualified signals or
+recommend a smaller response class. It cannot add a signal, suppress a signal,
+approve a proposal, create a task, or authorize execution.
+
+Only an explicit human `decide --human-approved --apply` operation may transition
+a proposal to `Approved`, `Rejected`, or `Deferred`. The immutable disposition
+binds the exact proposal content by SHA-256. `Approved` means approved for normal
+planning only; implementation still requires the existing task, assignment,
+execution, verification, review, and authorization process.
+
+The improvement response is scaled to impact:
+
+| Evidence | Smallest candidate response |
+|---|---|
+| Existing rule was misunderstood | Instruction clarification |
+| Reusable judgment or trigger is missing | Skill update |
+| Handoffs repeatedly omit required context | Template update |
+| Evidence cannot represent a required fact | Contract update |
+| Repeated manual action is deterministic and error-prone | Tool update |
+| Authority, isolation, gate, or runtime mechanism failed | System update |
+
+### Improvement Lifecycle
+
+CodexTeam's improvement lifecycle is:
+
+```text
+observe -> qualify -> propose -> human disposition -> plan -> implement
+        -> independently verify -> accept or reject -> measure recurrence
+```
+
+Existing attempts retain their pinned guidance. A retrospective never rewrites a
+healthy active attempt, and accepted improvements do not apply retroactively.
+
 ## Deliberate Non-Goals
 
 CodexTeam is not currently:
@@ -343,6 +472,9 @@ The most developed capabilities are:
 - Provider-free finalization
 - Deterministic local Git transactions
 - Process supervision, timeout handling, and cleanup
+- Structural and behavioral skill evaluation
+- Evidence-bound milestone retrospectives
+- Automatic Proposed backlog capture with human-gated disposition
 
 The principal platform-level limitations are:
 

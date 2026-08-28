@@ -101,12 +101,12 @@ canonical task IDs and handoffs.
 15. After each verified milestone commit, run the project-local milestone retrospective. Persist `NO_CHANGE` or `PROPOSALS_RECORDED`; treat `BLOCKED_INSUFFICIENT_EVIDENCE` as a transient, non-persisted response and correct its evidence before rerunning. Qualified proposals enter `management/BACKLOG.md` only as `Proposed`. Only an explicit human `decide --human-approved --apply` command may approve, reject, or defer one. Approval permits normal planning only, not task creation, execution, guidance changes, or implementation authority.
 16. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
 17. Before substantial source investigation, search the exact control project's
-    `design/architecture/*.md` with task-specific terms. Verify relevant prior
+    `discoveries/*.md` with task-specific terms. Verify relevant prior
     findings against current source and carry concise findings plus exact source
     targets into split-root handoffs. Record when no relevant note exists.
 18. After substantial discovery or deep research, preserve durable reusable
     findings in the active project at
-    `design/architecture/YYYY-MM-DD_descriptive_title.md`. Use the exact project
+    `discoveries/YYYY-MM-DD_descriptive_title.md`. Use the exact project
     path returned by initialization or otherwise confirmed by the operator; do
     not write selected-project findings into the CodexTeam toolkit. When
     CodexTeam itself is the subject, its own repository root is the active

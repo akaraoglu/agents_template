@@ -404,7 +404,7 @@
     .system-map {
       position: relative;
       display: grid;
-      grid-template-columns: repeat(6, minmax(8rem, 1fr));
+      grid-template-columns: repeat(7, minmax(8rem, 1fr));
       gap: 0;
       border: 1px solid var(--coal);
       overflow-x: auto;
@@ -977,6 +977,120 @@
       text-transform: uppercase;
     }
 
+    .evaluation-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      border-top: 1px solid var(--coal);
+      border-left: 1px solid var(--coal);
+    }
+
+    .evaluation-card {
+      min-height: 24rem;
+      padding: clamp(1.5rem, 4vw, 3rem);
+      border-right: 1px solid var(--coal);
+      border-bottom: 1px solid var(--coal);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .evaluation-card.dark {
+      color: var(--mist);
+      background: var(--coal);
+    }
+
+    .evaluation-card h3 {
+      max-width: 12ch;
+      margin: 1.5rem 0 1rem;
+      font: 800 clamp(2rem, 4vw, 3.8rem)/0.92 var(--display);
+      letter-spacing: -0.045em;
+      text-transform: uppercase;
+    }
+
+    .evaluation-card p {
+      max-width: 35rem;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .evaluation-card.dark p {
+      color: #bfc1c5;
+    }
+
+    .evaluation-list {
+      margin: 2.5rem 0 0;
+      padding: 0;
+      list-style: none;
+      font: 0.68rem/1.4 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .evaluation-list li {
+      padding: 0.65rem 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .evaluation-card.dark .evaluation-list li {
+      border-color: #55585e;
+    }
+
+    .improvement-loop {
+      margin-top: 2rem;
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      border: 1px solid var(--coal);
+      overflow-x: auto;
+    }
+
+    .loop-step {
+      position: relative;
+      min-width: 8.5rem;
+      min-height: 9rem;
+      padding: 1rem;
+      border-right: 1px solid var(--coal);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .loop-step:last-child {
+      border-right: 0;
+    }
+
+    .loop-step strong {
+      font: 800 0.9rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .loop-step span {
+      color: var(--muted);
+      font: 0.61rem/1.35 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .human-gate {
+      margin-top: 1.25rem;
+      padding: 1.5rem;
+      border: 1px solid var(--coal);
+      display: grid;
+      grid-template-columns: minmax(12rem, 0.55fr) minmax(0, 1.45fr);
+      gap: 2rem;
+      align-items: start;
+      background: var(--quiet);
+    }
+
+    .human-gate h3 {
+      margin: 0.8rem 0 0;
+      font: 800 1.7rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .human-gate p {
+      margin: 0;
+      color: var(--muted);
+    }
+
     .signal-row {
       margin-bottom: 1rem;
       display: grid;
@@ -1225,7 +1339,7 @@
       }
 
       .system-map {
-        grid-template-columns: repeat(6, 10rem);
+        grid-template-columns: repeat(7, 10rem);
       }
 
       .lifecycle,
@@ -1350,6 +1464,7 @@
       .roles-grid,
       .context-stack,
       .memory-rule,
+      .evaluation-grid,
       .maturity-grid,
       .glossary,
       .telemetry {
@@ -1404,6 +1519,7 @@
       }
 
       .actor-state,
+      .human-gate,
       .git-protocol {
         grid-template-columns: 1fr;
       }
@@ -1542,8 +1658,9 @@
       <a href="#evidence">06 / Evidence</a>
       <a href="#git">07 / Git protocol</a>
       <a href="#observability">08 / Observability</a>
-      <a href="#maturity">09 / Maturity</a>
-      <a href="#vocabulary">10 / Vocabulary</a>
+      <a href="#evaluation">09 / Evaluation</a>
+      <a href="#maturity">10 / Maturity</a>
+      <a href="#vocabulary">11 / Vocabulary</a>
       <p class="side-nav-note">Living architectural orientation. Canonical runtime contracts and current source remain authoritative.</p>
     </nav>
 
@@ -1581,6 +1698,10 @@
           <div class="map-node">
             <span class="map-node-number">06</span>
             <div><strong>Git Executor</strong><span>Creates one explicitly authorized commit.</span></div>
+          </div>
+          <div class="map-node">
+            <span class="map-node-number">07</span>
+            <div><strong>Retrospective</strong><span>Records no change or human-gated proposals.</span></div>
           </div>
         </div>
 
@@ -1674,7 +1795,7 @@
               <li><span>management/tasks/</span><span>work orders</span></li>
               <li><span>.codexteam/runtime/</span><span>attempts</span></li>
               <li><span>results/</span><span>evidence</span></li>
-              <li><span>design/architecture/</span><span>discoveries</span></li>
+              <li><span>discoveries/</span><span>discoveries</span></li>
             </ul>
           </article>
           <div class="plane-connector" aria-hidden="true"><span>01</span></div>
@@ -1890,9 +2011,71 @@
         </div>
       </section>
 
+      <section id="evaluation" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">09 / Evaluation and self-improvement</p>
+          <div>
+            <h2>Evaluate guidance. Learn from delivery.</h2>
+            <p class="section-intro">CodexTeam uses two separate loops: synthetic skill evaluation before guidance promotion, and evidence-bound retrospectives after verified milestone commits.</p>
+          </div>
+        </div>
+
+        <div class="evaluation-grid reveal">
+          <article class="evaluation-card">
+            <div>
+              <p class="micro-label">Before promotion</p>
+              <h3>Skill evaluator</h3>
+              <p>Tests whether instructions route to the intended workflow and preserve authority. It evaluates guidance, not project completion.</p>
+            </div>
+            <ul class="evaluation-list">
+              <li>Structural skill and projection checks</li>
+              <li>Positive, negative, and authority cases</li>
+              <li>Schema-constrained local Ollama request</li>
+              <li>No tools, filesystem, MCP, cloud profiles, or retries</li>
+              <li>Every selected catalog case must pass</li>
+            </ul>
+          </article>
+          <article class="evaluation-card dark">
+            <div>
+              <p class="micro-label">After verified commit</p>
+              <h3>Milestone retrospective</h3>
+              <p>Correlates real attempts, gates, commit-tree evidence, correction loops, failures, and usage. Deterministic rules decide whether a proposal qualifies.</p>
+            </div>
+            <ul class="evaluation-list">
+              <li>Exact task, runtime, repository, and role identity</li>
+              <li>Accepted Integration Gate snapshots</li>
+              <li>Commit tree reconstructed from Git blobs</li>
+              <li>Timeout, guard, tool-loop, and retry signals</li>
+              <li>Raw prompts and process output excluded</li>
+              <li>NO_CHANGE / PROPOSALS_RECORDED / BLOCKED_INSUFFICIENT_EVIDENCE</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="improvement-loop reveal" aria-label="CodexTeam improvement lifecycle">
+          <div class="loop-step"><span>01 / Evidence</span><strong>Observe</strong></div>
+          <div class="loop-step"><span>02 / Rules</span><strong>Qualify</strong></div>
+          <div class="loop-step"><span>03 / Backlog</span><strong>Propose</strong></div>
+          <div class="loop-step"><span>04 / Human</span><strong>Decide</strong></div>
+          <div class="loop-step"><span>05 / Normal flow</span><strong>Plan</strong></div>
+          <div class="loop-step"><span>06 / Authorized</span><strong>Implement</strong></div>
+          <div class="loop-step"><span>07 / Evidence</span><strong>Verify</strong></div>
+          <div class="loop-step"><span>08 / Human</span><strong>Accept / Reject</strong></div>
+          <div class="loop-step"><span>09 / Later</span><strong>Measure</strong></div>
+        </div>
+
+        <div class="human-gate reveal">
+          <div>
+            <p class="micro-label">Authority boundary</p>
+            <h3>Proposed is not approved.</h3>
+          </div>
+          <p>When retrospective analysis is applied, qualified findings are automatically captured in the project backlog as <strong>Proposed</strong>. Preview mode writes nothing. Only an explicit human decision may approve, reject, or defer proposals. Approval is for planning only: it creates no task, changes no contract or skill, and grants no implementation authority. A retrospective may validly conclude <strong>NO_CHANGE</strong>.</p>
+        </div>
+      </section>
+
       <section id="maturity" class="section section-dark">
         <div class="section-head reveal">
-          <p class="section-index">09 / Maturity ledger</p>
+          <p class="section-index">10 / Maturity ledger</p>
           <div>
             <h2>Strong execution substrate. Clear next frontier.</h2>
             <p class="section-intro">The system already has substantial execution and assurance machinery. Its next maturity step is stronger machine-enforced authorization and split-root completeness, not simply more agents or more memory.</p>
@@ -1901,7 +2084,7 @@
 
         <div class="maturity-grid reveal">
           <article class="ledger">
-            <header class="ledger-head"><h3>Developed strengths</h3><span class="ledger-count">11 capabilities</span></header>
+            <header class="ledger-head"><h3>Developed strengths</h3><span class="ledger-count">14 capabilities</span></header>
             <ol>
               <li>Persistent draft-feedback sessions</li>
               <li>Immutable execution identity</li>
@@ -1914,6 +2097,9 @@
               <li>Provider-free finalization</li>
               <li>Deterministic Git transactions</li>
               <li>Process supervision and cleanup</li>
+              <li>Skill routing and behavior evaluation</li>
+              <li>Evidence-bound milestone retrospectives</li>
+              <li>Human-gated improvement proposals</li>
             </ol>
           </article>
           <article class="ledger">
@@ -1942,7 +2128,7 @@
 
       <section id="vocabulary" class="section">
         <div class="section-head reveal">
-          <p class="section-index">10 / Agentic vocabulary</p>
+          <p class="section-index">11 / Agentic vocabulary</p>
           <div>
             <h2>Name the system precisely.</h2>
             <p class="section-intro">CodexTeam combines familiar agent-platform patterns with a delivery-specific authority and evidence model.</p>
@@ -1951,7 +2137,7 @@
 
         <div class="glossary-tools reveal">
           <input id="glossary-search" class="glossary-search" type="search" placeholder="Filter the vocabulary..." aria-label="Filter vocabulary">
-          <span id="glossary-count" class="glossary-count" aria-live="polite">18 terms</span>
+          <span id="glossary-count" class="glossary-count" aria-live="polite">22 terms</span>
         </div>
 
         <dl id="glossary-list" class="glossary reveal">
@@ -1973,6 +2159,10 @@
           <div class="term"><dt>Context gateway</dt><dd>Read-only, bounded, project-bound MCP projection of useful state.</dd></div>
           <div class="term"><dt>Sparse RAG</dt><dd>Offline FTS5/BM25 retrieval over approved documentation sources.</dd></div>
           <div class="term"><dt>Git transaction broker</dt><dd>Read-only model planning followed by authorized deterministic mutation.</dd></div>
+          <div class="term"><dt>Skill evaluator</dt><dd>Tool-free conformance harness for guidance structure, routing, and authority decisions.</dd></div>
+          <div class="term"><dt>Milestone retrospective</dt><dd>Post-commit analyzer that correlates bounded project evidence and deterministic friction signals.</dd></div>
+          <div class="term"><dt>Improvement proposal</dt><dd>Qualified backlog candidate recorded automatically as Proposed without task or implementation authority.</dd></div>
+          <div class="term"><dt>Human disposition</dt><dd>Immutable approve, reject, or defer decision; approval grants planning only.</dd></div>
         </dl>
       </section>
 

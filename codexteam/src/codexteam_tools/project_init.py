@@ -207,7 +207,7 @@ def initialize_project(
         },
     )
 
-    directories = ["design/architecture", "docs/architecture", "results"]
+    directories = ["discoveries", "docs/architecture", "results"]
     if not control_only:
         directories.extend(("src", "tests/unit", "tests/smoke", "tests/integration"))
     for directory in directories:

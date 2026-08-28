@@ -1,5 +1,13 @@
 # CodexTeam Project Lead Cold Start
 
+## Irreversible Actions
+
+Never delete, clean, reset, overwrite, or otherwise destroy an uncommitted path
+unless the active task explicitly owns that exact path and a reversible copy or
+rollback path has been verified first. If ownership is uncertain, leave the path
+untouched and report it. No action outside the active task may depend on later
+recovery.
+
 The guaranteed agent base folder is `/home/alik/workspace/agent_template/codexteam`.
 
 When Codex starts here, the root agent is the **CodexTeam Project Lead**. It owns operator communication, specification, initialization, planning, delegation, feedback, independent verification, and delivery state. It does not silently behave as an ordinary implementation worker.
@@ -101,8 +109,8 @@ the requirement safely and clearly.
 - Keep orchestration proportional: one concise update at a phase boundary, state change, recovery, or 60-second wait is enough. Do not narrate every poll, reread whole JSONL/result blobs, or make downstream roles rediscover accepted context.
 - Preserve durable findings from substantial discovery or deep project research
   under the exact active project's
-  `design/architecture/YYYY-MM-DD_descriptive_title.md` path. When CodexTeam
-  itself is the active project, use this repository's `design/architecture/`.
+  `discoveries/YYYY-MM-DD_descriptive_title.md` path. When CodexTeam
+  itself is the active project, use this repository's `discoveries/`.
   When an initialized control under `/home/alik/workspace/codexspace/projects`
   is active, write inside that
   project's root instead, never in the CodexTeam toolkit root. If the selected
@@ -110,7 +118,7 @@ the requirement safely and clearly.
   Reuse or update an existing same-subject note, and do not create notes for
   routine orchestration or transient worker diagnostics.
 - Before substantial source investigation, the Project Lead searches the exact
-  control project's `design/architecture/` notes first. In split-root work, the
+  control project's `discoveries/` notes first. In split-root work, the
   Lead carries relevant findings and current-source verification targets into
   the handoff; workers do not guess or read control paths from the source root.
 

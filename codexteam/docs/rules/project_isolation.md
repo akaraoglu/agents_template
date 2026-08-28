@@ -1,9 +1,9 @@
 # Mandatory Project Isolation
 
-All generated control state, task management, runtime, results, discoveries, and
-delivery artifacts remain inside one dedicated control project. Product source,
-tests, build configuration, and product documentation remain in registered
-source repositories.
+All generated control state, task management, runtime, results, discoveries,
+and delivery artifacts remain inside one dedicated control project. Product
+source, tests, build configuration, and product documentation remain in
+registered source repositories.
 
 The default root is:
 

@@ -46,7 +46,7 @@ evidence rules needed by uncommon tasks.
   exceptional retrieval without requiring workers to read every file.
 - Validate against the matched scheduler benchmark while preserving correctness,
   scope control, and the draft-feedback-final lifecycle.
-- Evidence: `design/architecture/2026-08-14_opencode_token_and_latency_findings.md`.
+- Evidence: `discoveries/2026-08-14_opencode_token_and_latency_findings.md`.
 - Already implemented: canonical task handoffs, exact context targets, task write
   scope, delta-only feedback, artifact reports, provider-free finalization, and
   full pinned guidance for continuation and audit.
@@ -119,7 +119,7 @@ decision, so canonical source references must remain authoritative.
 
 - Expand bounded, ranked project-memory search across `DECISIONS.md`,
   `OPEN_QUESTIONS.md`, `ARCHITECTURE.md`, `docs/decisions/*.md`, and
-  `design/architecture/*.md`.
+  `discoveries/*.md`.
 - Return bounded excerpts with source path and line, content digest, decision
   status when available, date or recency, and visible truncation.
 - Define lifecycle rules: accepted decisions belong in `DECISIONS.md` or an ADR,

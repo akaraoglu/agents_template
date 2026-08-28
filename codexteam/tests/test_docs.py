@@ -450,6 +450,28 @@ def test_project_lead_context_mcp_workflow_is_discoverable_and_bounded():
     assert "one narrow fallback" in skill
 
 
+def test_discovery_guidance_routes_control_notes_to_discoveries_folder():
+    runtime_layout = (CODEXTEAM_ROOT / "docs" / "RUNTIME_LAYOUT.md").read_text(
+        encoding="utf-8"
+    )
+    project_agents = (CODEXTEAM_ROOT / "templates" / "project" / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
+    architect_task = (
+        CODEXTEAM_ROOT
+        / "templates"
+        / "project"
+        / "management"
+        / "tasks"
+        / "T002.md"
+    ).read_text(encoding="utf-8")
+
+    assert "discoveries/" in runtime_layout
+    assert "discoveries/YYYY-MM-DD_descriptive_title.md" in project_agents
+    assert "discoveries/*.md" in project_agents
+    assert "discoveries/YYYY-MM-DD_descriptive_title.md" in architect_task
+
+
 def test_context_target_guidance_requires_exact_source_and_test_locators():
     lead = (
         CODEXTEAM_ROOT / ".agents" / "skills" / "project-lead.md"

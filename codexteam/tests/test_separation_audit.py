@@ -62,6 +62,24 @@ def test_separation_audit_rejects_source_results_and_registry(tmp_path: Path):
     assert any("source contains control artifact: REPOSITORIES.json" in error for error in result["errors"])
 
 
+def test_separation_audit_rejects_source_discovery_notes(tmp_path: Path):
+    projects = tmp_path / "projects"
+    work = tmp_path / "repos/product"
+    work.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=work, check=True)
+    _control(projects, "product", work)
+    (work / "discoveries").mkdir()
+    (work / "discoveries/findings.md").write_text("# Findings\n")
+
+    result = audit_separation(projects)
+
+    assert result["status"] == "failed"
+    assert any(
+        "source contains control discovery notes: discoveries" in error
+        for error in result["errors"]
+    )
+
+
 def test_separation_audit_rejects_tracked_but_deleted_control_artifact(tmp_path: Path):
     projects = tmp_path / "projects"
     work = tmp_path / "repos/product"

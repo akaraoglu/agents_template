@@ -28,7 +28,7 @@ SOURCE_CONTROL_PATHS = (
     "DELIVERY.md",
     "BLOCKED_REPORT.md",
 )
-SOURCE_DISCOVERY_PATH = "design/architecture"
+SOURCE_DISCOVERY_PATH = "discoveries"
 
 
 def _git_index_control_paths(

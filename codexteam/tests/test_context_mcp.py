@@ -132,6 +132,14 @@ def context_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         "# Bounded Reader Findings\n\n## Prior failure\n\nThe reader must preserve exact source hashes.\n",
     )
     _write(
+        project / "discoveries/2026-08-26_bounded_reader_findings.md",
+        "# Bounded Reader Findings\n\n## Prior failure\n\nThe reader must preserve exact source hashes.\n",
+    )
+    _write(
+        project / "src/discoveries/2026-08-26_source_findings.md",
+        "# Source Findings\n\n## Prior failure\n\nThe reader must preserve exact source hashes.\n",
+    )
+    _write(
         memory / "decisions.md",
         (
             "# Decisions Memory\n\n## Entries\n\n"
@@ -800,7 +808,7 @@ def test_memory_search_is_ranked_bounded_and_source_backed(
         "demo", "exact source hashes", scope="discoveries"
     )
     assert discoveries["matches"][0]["source"] == (
-        "design/architecture/2026-08-26_bounded_reader_findings.md"
+        "discoveries/2026-08-26_bounded_reader_findings.md"
     )
     assert discoveries["matches"][0]["source_type"] == "project_discovery"
     assert discoveries["searched_sources"] == 1

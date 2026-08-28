@@ -29,6 +29,7 @@ EXPECTED_ROOT_DIRECTORIES = {
     ".codexteam",
     ".git",
     "design",
+    "discoveries",
     "docs",
     "golden",
     "management",

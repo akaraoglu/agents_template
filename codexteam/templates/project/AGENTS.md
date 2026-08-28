@@ -35,20 +35,24 @@ proportional to the requested outcome and relevant regressions.
 - Only the Project Lead authorizes finalization and advances canonical management state.
 - Workers report routine uncertainty to the Project Lead; only a genuine showstopper reaches the operator.
 - Preserve unrelated files and document content.
+- Never delete, clean, reset, overwrite, or otherwise destroy an uncommitted
+  path unless the active task explicitly owns that exact path and a reversible
+  copy or rollback path has been verified first. If ownership is uncertain,
+  leave it untouched and report it; do not rely on later recovery.
 - Stop when a task handoff's stop condition is reached.
 - Do not repeat the same command or failure path when no relevant state changed and no new evidence was produced. Choose a materially different diagnostic or return the unresolved evidence to the Project Lead.
 - For substantial discovery or deep research, preserve durable evidence-backed
   findings under this project root at
-  `design/architecture/YYYY-MM-DD_descriptive_title.md`. Update an existing
-  same-subject note when appropriate. Do not write project findings into the
-  parent CodexTeam toolkit, another project, or a shared repository directory.
-  If this project's exact root is unclear, ask the user or Project Lead before
-  writing. Skip notes for routine inspection, transient diagnostics, duplicated
+  `discoveries/YYYY-MM-DD_descriptive_title.md`. Update an existing same-subject
+  note when appropriate. Do not write project findings into the parent
+  CodexTeam toolkit, another project, or a shared repository directory. If this
+  project's exact root is unclear, ask the user or Project Lead before writing.
+  Skip notes for routine inspection, transient diagnostics, duplicated
   documentation, or explicitly read-only work.
 - Before substantial source investigation, search this control project's
-  `design/architecture/*.md`. Verify relevant prior findings against current
-  source. For split-root workers, the Project Lead supplies the relevant excerpt
-  and exact source targets in the handoff.
+  `discoveries/*.md`. Verify relevant prior findings against current source.
+  For split-root workers, the Project Lead supplies the relevant excerpt and
+  exact source targets in the handoff.
 - This control root owns management, runtime, results, discoveries, and agent
   guidance. Product source, tests, build files, and product architecture belong
   in the registered source repository.

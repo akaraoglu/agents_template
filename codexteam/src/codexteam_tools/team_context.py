@@ -262,7 +262,7 @@ class TeamContextReader:
                         if path.is_file() and not path.is_symlink():
                             files.append(("project", path))
         if scope in {"discoveries", "all"}:
-            discoveries = root / "design" / "architecture"
+            discoveries = root / "discoveries"
             if discoveries.is_dir() and not discoveries.is_symlink():
                 for path in sorted(discoveries.glob("*.md")):
                     if path.is_file() and not path.is_symlink():

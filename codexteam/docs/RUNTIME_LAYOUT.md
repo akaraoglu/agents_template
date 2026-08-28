@@ -28,9 +28,9 @@ The default projects root is `/home/alik/workspace/codexspace/projects`.
     TEST_GATES.md
     TEST_GATES.toml
     tasks/T001.md ... T005.md
+  discoveries/
   docs/architecture/
   docs/decisions/
-  design/architecture/       # dated advisory discoveries searched before source work
   results/
 ```
 
