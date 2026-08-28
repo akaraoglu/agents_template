@@ -12,6 +12,7 @@ These documents describe the current local workflow toolkit.
 - `ADAPTER_GUIDE.md`: local Codex execution boundary.
 - `LOCAL_DOCS_MCP.md`: offline bounded documentation retrieval and measured pilot.
 - `TASK_CAPSULE_PILOT.md`: opt-in digest-bound handoff capsule experiment.
+- `SKILL_EVALUATION.md`: deterministic skill structure checks and the bounded manual evaluator.
 - `USER_GUIDE.md`: operator workflow.
 - `TROUBLESHOOTING.md`: common failures.
 

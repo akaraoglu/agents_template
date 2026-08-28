@@ -16,6 +16,7 @@ Operator commands are thin wrappers around `src/codexteam_tools/`.
 - `local-docs-index.py`: preview, atomically update, or verify the deterministic offline documentation index.
 - `local-docs-mcp.py`: serve the fixed three-tool offline read-only documentation MCP over STDIO.
 - `benchmark-team-context-mcp.py`: compare bounded context tools with broad and focused local reads, including the selected role's filtered tool-schema cost.
+- `run-skill-evals.py`: dry-run or execute one bounded, tool-free local Ollama skill evaluation from a strict case catalog.
 - `close-loop.sh`: independently verify and close one task.
 - `run-e2e-fibonacci-test.sh`: run or preview the historical five-role Fibonacci Tree CLI compatibility canary.
 - `../.agents/scripts/spawn-subagent.sh`: run one `draft`, `feedback`, or `final` turn in a persistent local Codex session.

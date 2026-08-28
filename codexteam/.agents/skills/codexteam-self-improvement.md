@@ -78,6 +78,7 @@ CodexTeam improvement observation:
    - Existing repository regressions
    - The intended local model profile when behavior is model-dependent
    - Time, turns, tokens, or corrections when performance is the claimed benefit
+   - The deterministic skill structure suite and, when routing or decision behavior changes, the fixed manual skill case catalog
 
 8. Promote only supported claims.
    - Keep the evaluation criteria fixed during one experiment.
@@ -103,11 +104,12 @@ Run the smallest focused validation first, followed by the repository suite when
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 ../env-python/bin/python -m pytest -p no:cacheprovider -q <focused-tests>
+PYTHONDONTWRITEBYTECODE=1 ../env-python/bin/python -m pytest -p no:cacheprovider -q tests/test_skill_structure.py tests/test_skill_evals.py
 PYTHONDONTWRITEBYTECODE=1 ../env-python/bin/python -m pytest -p no:cacheprovider -q tests
 git diff --check -- .
 ```
 
-Use the relevant existing help, dry-run, product canary, or test-gate command when the candidate affects those surfaces. Do not introduce a new validation framework for one improvement.
+Use `./scripts/run-skill-evals.py --profile <curated-local-profile> --output <new-json-path> --dry-run` before an authorized manual skill evaluation. The manual evaluator is one schema-constrained, tool-free local Ollama request, never retries, and is not lifecycle evidence. Use the relevant existing help, dry-run, product canary, or test-gate command when the candidate affects those surfaces. Do not introduce another validation framework for one improvement.
 
 ## Expected Output
 
@@ -164,3 +166,4 @@ For every accepted improvement:
 - `.agents/memory/changelog.md`
 - `.agents/memory/corrections.md`
 - `.agents/memory/decisions.md`
+- `docs/SKILL_EVALUATION.md`

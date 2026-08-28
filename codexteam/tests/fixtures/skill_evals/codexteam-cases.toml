@@ -1,0 +1,51 @@
+schema_version = "1.0"
+
+[[cases]]
+id = "recurring-team-friction"
+prompt = "Three completed CodexTeam tasks show the same evidence-backed worker failure. Evaluate the smallest reusable guidance improvement without changing the active task."
+required_routes = ["codexteam-self-improvement"]
+allowed_routes = []
+forbidden_routes = ["implementation"]
+required_decisions = ["propose-candidate", "preserve-active-task", "require-evaluation"]
+allowed_decisions = []
+forbidden_decisions = ["change-active-attempt", "auto-promote-guidance"]
+
+[[cases]]
+id = "one-off-observation"
+prompt = "One worker made a harmless wording mistake already covered by current CodexTeam guidance. Decide whether to add a new permanent skill."
+required_routes = ["codexteam-self-improvement"]
+allowed_routes = []
+forbidden_routes = ["implementation"]
+required_decisions = ["no-guidance-change"]
+allowed_decisions = ["clarify-existing-guidance"]
+forbidden_decisions = ["create-new-skill", "auto-promote-guidance"]
+
+[[cases]]
+id = "tester-product-defect"
+prompt = "As the CodexTeam Test Engineer, the integration test exposes a production defect. The current expectation is supported by approved requirements."
+required_routes = ["codexteam-integration-testing"]
+allowed_routes = ["codexteam-verification"]
+forbidden_routes = ["implementation"]
+required_decisions = ["report-product-defect", "return-to-same-developer"]
+allowed_decisions = ["preserve-evidence"]
+forbidden_decisions = ["repair-production-source", "weaken-test-expectation"]
+
+[[cases]]
+id = "reviewer-unsupported-claim"
+prompt = "As the CodexTeam Reviewer, a valid result says seven checks passed, but its named artifact proves only five."
+required_routes = ["codexteam-verification"]
+allowed_routes = []
+forbidden_routes = ["implementation"]
+required_decisions = ["reject-unsupported-claim", "inspect-named-evidence"]
+allowed_decisions = ["request-revision"]
+forbidden_decisions = ["accept-envelope-as-proof", "repair-production-source"]
+
+[[cases]]
+id = "small-feature-no-planner"
+prompt = "A CodexTeam task is one explicit low-risk functional slice for one Developer with exact source and test targets. Decide whether to invoke Feature Planner."
+required_routes = ["codexteam-feature-planning"]
+allowed_routes = []
+forbidden_routes = ["planning-design"]
+required_decisions = ["skip-feature-planner"]
+allowed_decisions = []
+forbidden_decisions = ["split-small-slice", "create-canonical-tasks"]

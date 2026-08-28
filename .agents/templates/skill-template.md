@@ -9,6 +9,10 @@ description: State the task this skill supports and the concrete conditions that
 
 State the reusable outcome this skill helps an agent achieve.
 
+## Trigger
+
+State narrow positive conditions for loading the skill and important non-triggers.
+
 ## Inputs
 
 - Required context or artifacts
@@ -35,6 +39,8 @@ Describe the artifact, code change, decision, or evidence produced.
 
 - Common failure modes
 - Safety, scope, compatibility, or environment constraints
+- For high-risk workflows commonly skipped on weak grounds, add one concrete
+  anti-rationalization rule; omit generic anti-skip language elsewhere
 
 ## Related Guidance
 

@@ -85,6 +85,19 @@ Use the smallest relevant workflow under `.agents/skills/`:
 - `debugging/` covers diagnosis and root-cause analysis.
 - `refactoring/` covers behavior-preserving structural changes.
 - `python/` adds Python-specific implementation and testing guidance.
+- `source-grounded-development/` covers version-sensitive external technical
+  evidence and untrusted fetched content.
+- `security-threat-modeling/` covers change-scoped assets, boundaries, threats,
+  abuse cases, and controls.
+- `observability/` covers question-driven structured telemetry and bounded
+  cardinality.
+- `performance/` covers controlled, variance-aware performance experiments.
+- `browser-verification/` covers isolated local browser checks and cleanup.
+- `frontend-engineering/` covers semantic, responsive, accessible user interfaces
+  and design-system use.
+- `migration-deprecation/` covers staged state migration and usage-gated removal.
+- `api-interface-design/` covers cross-boundary contracts, compatibility, errors,
+  idempotency, and unknown outcomes.
 - `git-delivery/` covers commits, pushes, branches, and pull requests.
 - `releases/` covers release preparation, publication, and deployment.
 
@@ -166,8 +179,9 @@ summary for non-trivial changes.
 
 ## Skill Authoring
 
-Before creating a skill, check for an existing workflow to extend. A skill
-should define:
+Before creating a skill, check for an existing workflow to extend. Give each
+skill a narrow positive trigger and important non-triggers so it is loaded only
+when relevant. A skill should define:
 
 1. Purpose and trigger
 2. Inputs and prerequisites
@@ -181,3 +195,5 @@ Keep the main `SKILL.md` concise. Put language details, long examples, or stable
 reference material in a skill's `references/` directory. Add a helper tool only
 when a repeated, error-prone process benefits from deterministic execution;
 document safe defaults, validation, errors, and a test or example invocation.
+Use explicit anti-rationalization rules only for high-risk workflows that agents
+commonly skip on weak grounds; do not add generic anti-skip boilerplate.

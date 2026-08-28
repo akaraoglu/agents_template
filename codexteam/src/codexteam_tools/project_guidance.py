@@ -4,7 +4,11 @@ import argparse
 from pathlib import Path
 
 from .files import atomic_write_text
-from .native_agents import GENERATED_MARKER, expected_native_agents
+from .native_agents import (
+    GENERATED_MARKER,
+    LEGACY_GENERATED_MARKERS,
+    expected_native_agents,
+)
 from .paths import ensure_existing_workspace
 from .roles import DEFAULT_ROLES_ROOT, RolePolicyError, load_all_role_policies
 
@@ -113,7 +117,9 @@ def _managed_content(relative: str, content: str) -> bool:
         return content == GUIDANCE_README or content.startswith("# Managed CodexTeam Role Guidance")
     if relative.startswith(".codexteam/skills/"):
         return True
-    return content.startswith(MANAGED_MARKER) or content.startswith(GENERATED_MARKER)
+    return content.startswith(
+        (MANAGED_MARKER, GENERATED_MARKER, *LEGACY_GENERATED_MARKERS)
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

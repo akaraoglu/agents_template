@@ -1,0 +1,2056 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An interactive system overview of CodexTeam, a local-first agentic software delivery control plane.">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>CodexTeam Playbook</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --coal: #191b1f;
+      --coal-soft: #292c31;
+      --mist: #f2f3f5;
+      --paper: #fafafa;
+      --line: #cfd1d4;
+      --muted: #686c72;
+      --quiet: #e5e6e8;
+      --white: #ffffff;
+      --signal: #191b1f;
+      --page: min(92rem, calc(100vw - 3rem));
+      --display: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+      --body: Inter, "Noto Sans", "Segoe UI", Arial, sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 6rem;
+    }
+
+    body {
+      margin: 0;
+      color: var(--coal);
+      background: var(--mist);
+      font-family: var(--body);
+      line-height: 1.55;
+      text-rendering: optimizeLegibility;
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      content: "";
+      opacity: 0.38;
+      background-image:
+        linear-gradient(to right, rgb(25 27 31 / 6%) 1px, transparent 1px),
+        linear-gradient(to bottom, rgb(25 27 31 / 6%) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    :focus-visible {
+      outline: 3px solid var(--coal);
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      z-index: 100;
+      padding: 0.7rem 1rem;
+      color: var(--mist);
+      background: var(--coal);
+      transform: translateY(-180%);
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      height: 4.25rem;
+      border-bottom: 1px solid var(--coal);
+      background: rgb(242 243 245 / 94%);
+      backdrop-filter: blur(12px);
+    }
+
+    .topbar-inner {
+      width: var(--page);
+      height: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      width: 2.15rem;
+      height: 2.15rem;
+      color: var(--mist);
+      background: var(--coal);
+      display: grid;
+      place-items: center;
+      font: 800 0.75rem/1 var(--mono);
+      letter-spacing: -0.08em;
+    }
+
+    .brand-word {
+      font: 800 1rem/1 var(--display);
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
+    }
+
+    .top-meta {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      color: var(--muted);
+      font: 600 0.68rem/1 var(--mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .status-light {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      color: var(--coal);
+    }
+
+    .status-light::before {
+      width: 0.55rem;
+      height: 0.55rem;
+      border: 1px solid var(--coal);
+      border-radius: 50%;
+      background: var(--coal);
+      content: "";
+    }
+
+    .menu-button {
+      display: none;
+      border: 1px solid var(--coal);
+      padding: 0.55rem 0.7rem;
+      color: var(--coal);
+      background: transparent;
+      font: 700 0.7rem/1 var(--mono);
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .hero {
+      width: var(--page);
+      min-height: calc(100vh - 4.25rem);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(18rem, 0.55fr);
+      border-right: 1px solid var(--coal);
+      border-left: 1px solid var(--coal);
+    }
+
+    .hero-copy {
+      min-height: 40rem;
+      padding: clamp(3rem, 8vw, 8rem) clamp(1.5rem, 5vw, 5.5rem) 3rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-right: 1px solid var(--coal);
+      background: var(--paper);
+    }
+
+    .eyebrow,
+    .section-index,
+    .micro-label {
+      margin: 0;
+      font: 700 0.69rem/1.3 var(--mono);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--muted);
+    }
+
+    .eyebrow::before {
+      width: 2.5rem;
+      height: 1px;
+      background: currentColor;
+      content: "";
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      text-wrap: pretty;
+    }
+
+    h1 {
+      max-width: 12ch;
+      margin: 2rem 0 2.5rem;
+      font: 800 clamp(3.7rem, 9vw, 9rem) / 0.82 var(--display);
+      letter-spacing: -0.075em;
+      text-transform: uppercase;
+    }
+
+    h1 span {
+      display: block;
+      color: transparent;
+      -webkit-text-stroke: 1.5px var(--coal);
+    }
+
+    .hero-lede {
+      max-width: 46rem;
+      margin: 0;
+      font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+      line-height: 1.45;
+    }
+
+    .hero-lede strong {
+      font-weight: 750;
+    }
+
+    .hero-foot {
+      margin-top: 5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      color: var(--muted);
+      font: 600 0.72rem/1.5 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .hero-rail {
+      min-height: 40rem;
+      display: grid;
+      grid-template-rows: repeat(4, 1fr);
+      background: var(--coal);
+      color: var(--mist);
+    }
+
+    .hero-stat {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-bottom: 1px solid rgb(242 243 245 / 30%);
+    }
+
+    .hero-stat:last-child {
+      border-bottom: 0;
+    }
+
+    .hero-stat-value {
+      font: 800 clamp(2.4rem, 5vw, 4.8rem)/0.9 var(--display);
+      letter-spacing: -0.06em;
+    }
+
+    .hero-stat-name {
+      max-width: 18ch;
+      color: #bfc1c5;
+      font: 600 0.68rem/1.45 var(--mono);
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .layout {
+      width: var(--page);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 15rem minmax(0, 1fr);
+      border-right: 1px solid var(--coal);
+      border-left: 1px solid var(--coal);
+      background: var(--paper);
+    }
+
+    .side-nav {
+      position: sticky;
+      top: 4.25rem;
+      height: calc(100vh - 4.25rem);
+      padding: 2rem 1.25rem;
+      border-right: 1px solid var(--coal);
+      background: var(--mist);
+      overflow: auto;
+    }
+
+    .side-nav-label {
+      margin: 0 0 1.5rem;
+      color: var(--muted);
+      font: 700 0.64rem/1 var(--mono);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .side-nav a {
+      position: relative;
+      display: block;
+      padding: 0.65rem 0 0.65rem 1.15rem;
+      border-left: 1px solid var(--line);
+      color: var(--muted);
+      font: 650 0.72rem/1.3 var(--mono);
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+
+    .side-nav a::before {
+      position: absolute;
+      top: 50%;
+      left: -3px;
+      width: 5px;
+      height: 5px;
+      background: transparent;
+      content: "";
+      transform: translateY(-50%);
+    }
+
+    .side-nav a:hover,
+    .side-nav a.active {
+      color: var(--coal);
+    }
+
+    .side-nav a.active::before {
+      background: var(--coal);
+    }
+
+    .side-nav-note {
+      margin-top: 2.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font: 0.67rem/1.55 var(--mono);
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    .section {
+      padding: clamp(4rem, 8vw, 8rem) clamp(1.5rem, 5vw, 5.5rem);
+      border-bottom: 1px solid var(--coal);
+    }
+
+    .section-dark {
+      color: var(--mist);
+      background: var(--coal);
+    }
+
+    .section-head {
+      margin-bottom: clamp(2.5rem, 6vw, 5rem);
+      display: grid;
+      grid-template-columns: minmax(6rem, 0.35fr) minmax(0, 1fr);
+      gap: 2rem;
+      align-items: start;
+    }
+
+    .section-index {
+      color: var(--muted);
+    }
+
+    .section-dark .section-index {
+      color: #9da0a6;
+    }
+
+    .section h2 {
+      max-width: 16ch;
+      margin: 0;
+      font: 800 clamp(2.5rem, 6vw, 5.8rem)/0.93 var(--display);
+      letter-spacing: -0.055em;
+      text-transform: uppercase;
+    }
+
+    .section-intro {
+      max-width: 48rem;
+      margin: 1.5rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.4vw, 1.25rem);
+    }
+
+    .section-dark .section-intro {
+      color: #bfc1c5;
+    }
+
+    .system-map {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(8rem, 1fr));
+      gap: 0;
+      border: 1px solid var(--coal);
+      overflow-x: auto;
+      background: var(--line);
+    }
+
+    .map-node {
+      position: relative;
+      min-height: 13rem;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: var(--paper);
+    }
+
+    .map-node + .map-node {
+      border-left: 1px solid var(--coal);
+    }
+
+    .map-node:not(:last-child)::after {
+      position: absolute;
+      top: 50%;
+      right: -0.6rem;
+      z-index: 2;
+      width: 1.1rem;
+      height: 1.1rem;
+      border-top: 1px solid var(--coal);
+      border-right: 1px solid var(--coal);
+      background: var(--paper);
+      content: "";
+      transform: translateY(-50%) rotate(45deg);
+    }
+
+    .map-node-number {
+      color: var(--muted);
+      font: 700 0.65rem/1 var(--mono);
+    }
+
+    .map-node strong {
+      display: block;
+      font: 800 1.05rem/1.05 var(--display);
+      text-transform: uppercase;
+    }
+
+    .map-node span {
+      display: block;
+      margin-top: 0.4rem;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.4;
+    }
+
+    .principle-grid {
+      margin-top: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--coal);
+      border-left: 1px solid var(--coal);
+    }
+
+    .principle {
+      min-height: 13rem;
+      padding: 1.5rem;
+      border-right: 1px solid var(--coal);
+      border-bottom: 1px solid var(--coal);
+    }
+
+    .principle h3 {
+      margin: 1.75rem 0 0.6rem;
+      font: 800 1.25rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .principle p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .lifecycle {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border: 1px solid rgb(242 243 245 / 40%);
+    }
+
+    .phase {
+      position: relative;
+      min-height: 14rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-right: 1px solid rgb(242 243 245 / 40%);
+    }
+
+    .phase:last-child {
+      border-right: 0;
+    }
+
+    .phase::before {
+      position: absolute;
+      top: -4px;
+      left: 1.5rem;
+      width: 7px;
+      height: 7px;
+      background: var(--mist);
+      content: "";
+    }
+
+    .phase-type {
+      color: #9da0a6;
+      font: 700 0.65rem/1 var(--mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .phase h3 {
+      margin: 0;
+      font: 800 1.4rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .phase p {
+      margin: 0.6rem 0 0;
+      color: #bfc1c5;
+      font-size: 0.78rem;
+    }
+
+    .actor-state {
+      margin-top: 2rem;
+      padding: 1.5rem;
+      border: 1px solid rgb(242 243 245 / 40%);
+      display: grid;
+      grid-template-columns: minmax(12rem, 0.65fr) minmax(0, 1.35fr);
+      gap: 2rem;
+    }
+
+    .actor-state h3 {
+      margin: 0;
+      font: 800 1.5rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .state-tags {
+      display: flex;
+      flex-wrap: wrap;
+      align-content: start;
+      gap: 0.55rem;
+    }
+
+    .state-tag {
+      padding: 0.5rem 0.65rem;
+      border: 1px solid rgb(242 243 245 / 35%);
+      color: #d8dade;
+      font: 0.67rem/1 var(--mono);
+    }
+
+    .plane-grid {
+      display: grid;
+      grid-template-columns: 1fr 4rem 1fr;
+      align-items: stretch;
+    }
+
+    .plane {
+      min-height: 25rem;
+      padding: clamp(1.5rem, 4vw, 3rem);
+      border: 1px solid var(--coal);
+    }
+
+    .plane.dark {
+      color: var(--mist);
+      background: var(--coal);
+    }
+
+    .plane-connector {
+      position: relative;
+      display: grid;
+      place-items: center;
+    }
+
+    .plane-connector::before {
+      position: absolute;
+      width: 100%;
+      height: 1px;
+      background: var(--coal);
+      content: "";
+    }
+
+    .plane-connector span {
+      z-index: 1;
+      width: 2rem;
+      height: 2rem;
+      border: 1px solid var(--coal);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--paper);
+      font: 700 0.65rem/1 var(--mono);
+    }
+
+    .plane h3 {
+      margin: 2rem 0 0.8rem;
+      font: 800 clamp(1.8rem, 3vw, 3rem)/0.95 var(--display);
+      text-transform: uppercase;
+    }
+
+    .plane > p {
+      max-width: 32rem;
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .plane.dark > p {
+      color: #bfc1c5;
+    }
+
+    .file-list {
+      margin: 2.5rem 0 0;
+      padding: 0;
+      list-style: none;
+      border-top: 1px solid var(--line);
+    }
+
+    .plane.dark .file-list {
+      border-color: #55585e;
+    }
+
+    .file-list li {
+      padding: 0.65rem 0;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      font: 0.72rem/1.3 var(--mono);
+    }
+
+    .plane.dark .file-list li {
+      border-color: #55585e;
+    }
+
+    .file-list span:last-child {
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .plane.dark .file-list span:last-child {
+      color: #9da0a6;
+    }
+
+    .roles-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      border-top: 1px solid var(--coal);
+      border-left: 1px solid var(--coal);
+    }
+
+    .role-card {
+      position: relative;
+      min-height: 16rem;
+      padding: 1.6rem;
+      border-right: 1px solid var(--coal);
+      border-bottom: 1px solid var(--coal);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 1.5rem;
+      transition: color 180ms ease, background 180ms ease;
+    }
+
+    .role-card:hover {
+      color: var(--mist);
+      background: var(--coal);
+    }
+
+    .role-card:hover p,
+    .role-card:hover .role-meta {
+      color: #bfc1c5;
+    }
+
+    .role-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .role-card h3 {
+      margin: 0;
+      font: 800 clamp(1.5rem, 3vw, 2.4rem)/0.95 var(--display);
+      text-transform: uppercase;
+    }
+
+    .role-code {
+      font: 700 0.67rem/1 var(--mono);
+    }
+
+    .role-card p {
+      max-width: 35rem;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .role-meta {
+      padding-top: 0.85rem;
+      border-top: 1px solid currentColor;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      color: var(--muted);
+      font: 650 0.62rem/1.3 var(--mono);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .authority-formula {
+      margin-top: 2rem;
+      padding: clamp(1.5rem, 4vw, 3rem);
+      border: 1px solid var(--coal);
+      background: var(--coal);
+      color: var(--mist);
+    }
+
+    .formula {
+      margin: 2rem 0;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      font: 800 clamp(1.1rem, 2.3vw, 2.1rem)/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .formula-term {
+      padding: 0.8rem 1rem;
+      border: 1px solid #777a80;
+    }
+
+    .formula-op {
+      color: #9da0a6;
+      font-family: var(--mono);
+    }
+
+    .formula-note {
+      max-width: 55rem;
+      margin: 0;
+      color: #bfc1c5;
+      font-size: 0.85rem;
+    }
+
+    .context-stack {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+
+    .context-layer {
+      min-height: 24rem;
+      padding: 1.5rem;
+      border: 1px solid var(--coal);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: var(--paper);
+      box-shadow: 7px 7px 0 var(--quiet);
+    }
+
+    .context-layer:nth-child(2) {
+      transform: translateY(1.5rem);
+    }
+
+    .context-layer:nth-child(3) {
+      transform: translateY(3rem);
+    }
+
+    .context-layer h3 {
+      margin: 1rem 0 0.75rem;
+      font: 800 1.55rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .context-layer p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.87rem;
+    }
+
+    .context-layer ul {
+      margin: 2rem 0 0;
+      padding: 0;
+      list-style: none;
+      font: 0.69rem/1.4 var(--mono);
+    }
+
+    .context-layer li {
+      padding: 0.48rem 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .memory-rule {
+      margin-top: 5.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--coal);
+    }
+
+    .memory-rule > div {
+      min-height: 14rem;
+      padding: 1.5rem;
+    }
+
+    .memory-rule > div + div {
+      border-left: 1px solid var(--coal);
+    }
+
+    .memory-rule h3 {
+      margin: 1rem 0 0.5rem;
+      font: 800 1.35rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .memory-rule p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .evidence-chain {
+      counter-reset: evidence;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      border-top: 1px solid rgb(242 243 245 / 35%);
+      border-left: 1px solid rgb(242 243 245 / 35%);
+    }
+
+    .evidence-step {
+      counter-increment: evidence;
+      min-height: 14rem;
+      padding: 1.25rem;
+      border-right: 1px solid rgb(242 243 245 / 35%);
+      border-bottom: 1px solid rgb(242 243 245 / 35%);
+    }
+
+    .evidence-step::before {
+      display: block;
+      margin-bottom: 3.5rem;
+      color: #9da0a6;
+      font: 700 0.65rem/1 var(--mono);
+      content: "0" counter(evidence);
+    }
+
+    .evidence-step h3 {
+      margin: 0 0 0.6rem;
+      font: 800 1.1rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .evidence-step p {
+      margin: 0;
+      color: #bfc1c5;
+      font-size: 0.75rem;
+    }
+
+    .evidence-callout {
+      margin-top: 2rem;
+      padding: 1.5rem;
+      border-left: 0.4rem solid var(--mist);
+      background: var(--coal-soft);
+      font-size: clamp(1.05rem, 1.8vw, 1.4rem);
+    }
+
+    .git-protocol {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 0.6fr);
+      border: 1px solid var(--coal);
+    }
+
+    .git-steps {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+      counter-reset: git-step;
+    }
+
+    .git-steps li {
+      counter-increment: git-step;
+      min-height: 5.6rem;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--coal);
+      display: grid;
+      grid-template-columns: 3rem minmax(0, 1fr);
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .git-steps li:last-child {
+      border-bottom: 0;
+    }
+
+    .git-steps li::before {
+      font: 700 0.68rem/1 var(--mono);
+      content: "0" counter(git-step);
+    }
+
+    .git-steps strong {
+      display: block;
+      font: 800 1rem/1.1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .git-steps span {
+      display: block;
+      margin-top: 0.3rem;
+      color: var(--muted);
+      font-size: 0.77rem;
+    }
+
+    .git-boundary {
+      padding: 2rem;
+      color: var(--mist);
+      background: var(--coal);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .git-boundary h3 {
+      margin: 1rem 0;
+      font: 800 clamp(2rem, 4vw, 3.6rem)/0.9 var(--display);
+      text-transform: uppercase;
+    }
+
+    .git-boundary p {
+      margin: 0;
+      color: #bfc1c5;
+      font-size: 0.85rem;
+    }
+
+    .deny-list {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid #55585e;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .deny-list span {
+      padding: 0.4rem 0.55rem;
+      border: 1px solid #55585e;
+      font: 0.63rem/1 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .telemetry {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 1.25rem;
+    }
+
+    .telemetry-panel {
+      padding: 1.5rem;
+      border: 1px solid var(--coal);
+      background: var(--paper);
+    }
+
+    .telemetry-panel h3 {
+      margin: 0 0 2rem;
+      font: 800 1.25rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .signal-row {
+      margin-bottom: 1rem;
+      display: grid;
+      grid-template-columns: 8.5rem minmax(0, 1fr) 3.2rem;
+      gap: 1rem;
+      align-items: center;
+      font: 0.66rem/1 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .signal-track {
+      height: 0.75rem;
+      border: 1px solid var(--coal);
+      background: var(--quiet);
+    }
+
+    .signal-fill {
+      display: block;
+      width: var(--value);
+      height: 100%;
+      background: var(--coal);
+    }
+
+    .metric-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+
+    .metric {
+      min-height: 7.5rem;
+      padding: 1rem;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .metric strong,
+    .metric span {
+      display: block;
+    }
+
+    .metric strong {
+      margin-top: 1.4rem;
+      font: 800 1.1rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font: 0.63rem/1.4 var(--mono);
+    }
+
+    .maturity-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    .ledger {
+      border: 1px solid rgb(242 243 245 / 35%);
+    }
+
+    .ledger-head {
+      padding: 1.25rem;
+      border-bottom: 1px solid rgb(242 243 245 / 35%);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .ledger-head h3 {
+      margin: 0;
+      font: 800 1.2rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .ledger-count {
+      color: #9da0a6;
+      font: 0.65rem/1 var(--mono);
+    }
+
+    .ledger ol,
+    .ledger ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: ledger;
+    }
+
+    .ledger li {
+      counter-increment: ledger;
+      min-height: 4.2rem;
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid rgb(242 243 245 / 20%);
+      display: grid;
+      grid-template-columns: 2rem minmax(0, 1fr);
+      align-items: center;
+      gap: 0.75rem;
+      color: #d8dade;
+      font-size: 0.82rem;
+    }
+
+    .ledger li:last-child {
+      border-bottom: 0;
+    }
+
+    .ledger li::before {
+      color: #777a80;
+      font: 0.61rem/1 var(--mono);
+      content: counter(ledger, decimal-leading-zero);
+    }
+
+    .non-goals {
+      margin-top: 1.25rem;
+      padding: 1.5rem;
+      border: 1px solid rgb(242 243 245 / 35%);
+    }
+
+    .non-goals h3 {
+      margin: 0 0 1.25rem;
+      font: 800 1.2rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .non-goal-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+    }
+
+    .non-goal-tags span {
+      padding: 0.55rem 0.7rem;
+      border: 1px solid #55585e;
+      color: #bfc1c5;
+      font: 0.65rem/1 var(--mono);
+    }
+
+    .glossary-tools {
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .glossary-search {
+      width: min(100%, 28rem);
+      height: 3rem;
+      border: 1px solid var(--coal);
+      border-radius: 0;
+      padding: 0 1rem;
+      color: var(--coal);
+      background: var(--paper);
+      font-family: var(--mono);
+    }
+
+    .glossary-search::placeholder {
+      color: var(--muted);
+    }
+
+    .glossary-count {
+      color: var(--muted);
+      font: 0.67rem/1 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .glossary {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      border-top: 1px solid var(--coal);
+      border-left: 1px solid var(--coal);
+    }
+
+    .term {
+      min-height: 8rem;
+      padding: 1.25rem;
+      border-right: 1px solid var(--coal);
+      border-bottom: 1px solid var(--coal);
+    }
+
+    .term[hidden] {
+      display: none;
+    }
+
+    .term dt {
+      font: 800 1rem/1 var(--display);
+      text-transform: uppercase;
+    }
+
+    .term dd {
+      margin: 0.6rem 0 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .closing {
+      padding: clamp(4rem, 10vw, 9rem) clamp(1.5rem, 5vw, 5.5rem);
+      color: var(--mist);
+      background: var(--coal);
+    }
+
+    .closing blockquote {
+      max-width: 18ch;
+      margin: 0;
+      font: 800 clamp(2.6rem, 7vw, 7rem)/0.9 var(--display);
+      letter-spacing: -0.055em;
+      text-transform: uppercase;
+    }
+
+    .closing footer {
+      margin-top: 4rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid #55585e;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      color: #9da0a6;
+      font: 0.68rem/1.5 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .closing a:hover {
+      color: var(--mist);
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(1.25rem);
+      transition: opacity 500ms ease, transform 500ms ease;
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 1100px) {
+      :root {
+        --page: calc(100vw - 2rem);
+      }
+
+      .layout {
+        grid-template-columns: 12rem minmax(0, 1fr);
+      }
+
+      .system-map {
+        grid-template-columns: repeat(6, 10rem);
+      }
+
+      .lifecycle,
+      .evidence-chain {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .phase:nth-child(3) {
+        border-right: 0;
+      }
+
+      .phase:nth-child(-n + 3) {
+        border-bottom: 1px solid rgb(242 243 245 / 40%);
+      }
+
+      .evidence-chain {
+        border-top: 0;
+        border-left: 0;
+      }
+    }
+
+    @media (max-width: 820px) {
+      :root {
+        --page: 100%;
+      }
+
+      html {
+        scroll-padding-top: 4.25rem;
+      }
+
+      .topbar-inner {
+        padding: 0 1rem;
+      }
+
+      .top-meta > span:not(.status-light) {
+        display: none;
+      }
+
+      .menu-button {
+        display: block;
+      }
+
+      .hero {
+        min-height: auto;
+        grid-template-columns: 1fr;
+        border: 0;
+      }
+
+      .hero-copy {
+        min-height: calc(100svh - 4.25rem);
+        padding: 4rem 1.25rem 2rem;
+        border-right: 0;
+        border-bottom: 1px solid var(--coal);
+      }
+
+      h1 {
+        margin-top: 4rem;
+        font-size: clamp(3.6rem, 18vw, 7rem);
+      }
+
+      .hero-foot {
+        margin-top: 4rem;
+        display: block;
+      }
+
+      .hero-foot span {
+        display: block;
+        margin-top: 0.4rem;
+      }
+
+      .hero-rail {
+        min-height: auto;
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(2, minmax(10rem, auto));
+      }
+
+      .hero-stat {
+        border-right: 1px solid rgb(242 243 245 / 30%);
+      }
+
+      .layout {
+        display: block;
+        border: 0;
+      }
+
+      .side-nav {
+        position: fixed;
+        top: 4.25rem;
+        right: 0;
+        left: 0;
+        z-index: 40;
+        height: calc(100svh - 4.25rem);
+        border-right: 0;
+        border-bottom: 1px solid var(--coal);
+        padding: 1.5rem;
+        transform: translateY(-120%);
+        transition: transform 220ms ease;
+      }
+
+      .side-nav.open {
+        transform: translateY(0);
+      }
+
+      .side-nav a {
+        padding-top: 0.85rem;
+        padding-bottom: 0.85rem;
+        font-size: 0.8rem;
+      }
+
+      .section,
+      .closing {
+        padding-right: 1.25rem;
+        padding-left: 1.25rem;
+      }
+
+      .section-head {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .principle-grid,
+      .roles-grid,
+      .context-stack,
+      .memory-rule,
+      .maturity-grid,
+      .glossary,
+      .telemetry {
+        grid-template-columns: 1fr;
+      }
+
+      .context-stack {
+        gap: 1rem;
+      }
+
+      .context-layer:nth-child(2),
+      .context-layer:nth-child(3) {
+        transform: none;
+      }
+
+      .memory-rule {
+        margin-top: 1rem;
+      }
+
+      .memory-rule > div + div {
+        border-top: 1px solid var(--coal);
+        border-left: 0;
+      }
+
+      .plane-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .plane-connector {
+        height: 4rem;
+      }
+
+      .plane-connector::before {
+        width: 1px;
+        height: 100%;
+      }
+
+      .lifecycle,
+      .evidence-chain {
+        grid-template-columns: 1fr;
+      }
+
+      .phase,
+      .phase:nth-child(3) {
+        min-height: 10rem;
+        border-right: 0;
+        border-bottom: 1px solid rgb(242 243 245 / 40%);
+      }
+
+      .phase:last-child {
+        border-bottom: 0;
+      }
+
+      .actor-state,
+      .git-protocol {
+        grid-template-columns: 1fr;
+      }
+
+      .git-boundary {
+        min-height: 20rem;
+      }
+
+      .closing footer,
+      .glossary-tools {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .glossary-search {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .brand-word {
+        font-size: 0.85rem;
+      }
+
+      .top-meta .status-light {
+        display: none;
+      }
+
+      .hero-rail {
+        grid-template-columns: 1fr;
+        grid-template-rows: none;
+      }
+
+      .hero-stat {
+        min-height: 9rem;
+        border-right: 0;
+      }
+
+      .principle-grid,
+      .roles-grid {
+        border-left: 0;
+      }
+
+      .principle,
+      .role-card {
+        border-left: 1px solid var(--coal);
+      }
+
+      .metric-list {
+        grid-template-columns: 1fr;
+      }
+
+      .signal-row {
+        grid-template-columns: 6.5rem minmax(0, 1fr) 2.5rem;
+        gap: 0.6rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#top" aria-label="CodexTeam Playbook home">
+        <span class="brand-mark" aria-hidden="true">CT</span>
+        <span class="brand-word">CodexTeam / Playbook</span>
+      </a>
+      <div class="top-meta">
+        <span>System overview</span>
+        <span class="status-light">Local-first</span>
+        <button class="menu-button" type="button" aria-expanded="false" aria-controls="page-nav">Index</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="top" class="hero">
+    <div class="hero-copy">
+      <div>
+        <p class="eyebrow">Agentic engineering control plane</p>
+        <h1>Agents, <span>under control.</span></h1>
+        <p class="hero-lede"><strong>CodexTeam is a local software-delivery operating system for self-hosted specialist agents.</strong> It combines contract-bound execution, progressive context, capability isolation, evidence-gated acceptance, and deterministic delivery controls.</p>
+      </div>
+      <div class="hero-foot">
+        <span>Not a swarm. Not a chatbot wrapper.</span>
+        <span>Supervisor-led / Evidence-first / Local</span>
+      </div>
+    </div>
+    <aside class="hero-rail" aria-label="System characteristics">
+      <div class="hero-stat">
+        <span class="hero-stat-value">01</span>
+        <span class="hero-stat-name">Accountable supervisor</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">08</span>
+        <span class="hero-stat-name">Specialist responsibilities</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">02</span>
+        <span class="hero-stat-name">Independent quality gates</span>
+      </div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">0</span>
+        <span class="hero-stat-name">Provider calls during finalization</span>
+      </div>
+    </aside>
+  </div>
+
+  <div class="layout">
+    <nav id="page-nav" class="side-nav" aria-label="Page index">
+      <p class="side-nav-label">System index</p>
+      <a href="#system">01 / System shape</a>
+      <a href="#runtime">02 / Runtime</a>
+      <a href="#planes">03 / Project planes</a>
+      <a href="#roles">04 / Authority</a>
+      <a href="#context">05 / Context</a>
+      <a href="#evidence">06 / Evidence</a>
+      <a href="#git">07 / Git protocol</a>
+      <a href="#observability">08 / Observability</a>
+      <a href="#maturity">09 / Maturity</a>
+      <a href="#vocabulary">10 / Vocabulary</a>
+      <p class="side-nav-note">Living architectural orientation. Canonical runtime contracts and current source remain authoritative.</p>
+    </nav>
+
+    <main id="content">
+      <section id="system" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">01 / System shape</p>
+          <div>
+            <h2>One supervisor. Bounded specialists.</h2>
+            <p class="section-intro">CodexTeam uses a hierarchical supervisor pattern. The Lead delegates work; specialists produce artifacts; deterministic mechanisms verify and seal the outcome.</p>
+          </div>
+        </div>
+
+        <div class="system-map reveal" aria-label="CodexTeam delivery flow">
+          <div class="map-node">
+            <span class="map-node-number">01</span>
+            <div><strong>Operator</strong><span>Authorizes project and execution boundaries.</span></div>
+          </div>
+          <div class="map-node">
+            <span class="map-node-number">02</span>
+            <div><strong>Project Lead</strong><span>Plans, delegates, reviews, and reconciles.</span></div>
+          </div>
+          <div class="map-node">
+            <span class="map-node-number">03</span>
+            <div><strong>Specialists</strong><span>Own bounded work and evidence stages.</span></div>
+          </div>
+          <div class="map-node">
+            <span class="map-node-number">04</span>
+            <div><strong>Quality Gates</strong><span>Execute source-owned verification.</span></div>
+          </div>
+          <div class="map-node">
+            <span class="map-node-number">05</span>
+            <div><strong>Canonical State</strong><span>Advances only after accepted evidence.</span></div>
+          </div>
+          <div class="map-node">
+            <span class="map-node-number">06</span>
+            <div><strong>Git Executor</strong><span>Creates one explicitly authorized commit.</span></div>
+          </div>
+        </div>
+
+        <div class="principle-grid reveal">
+          <article class="principle">
+            <p class="micro-label">Control model</p>
+            <h3>Supervisor-led</h3>
+            <p>Workers do not spawn workers, negotiate ownership, or change the project plan. The Lead remains accountable.</p>
+          </article>
+          <article class="principle">
+            <p class="micro-label">Work model</p>
+            <h3>Contract-bound</h3>
+            <p>Every attempt begins with exact identity, scope, context, permissions, completion criteria, and gate routing.</p>
+          </article>
+          <article class="principle">
+            <p class="micro-label">Acceptance model</p>
+            <h3>Evidence-first</h3>
+            <p>A worker claim is never enough. Evidence, independent checks, and Lead acceptance remain separate authorities.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="runtime" class="section section-dark">
+        <div class="section-head reveal">
+          <p class="section-index">02 / Agent runtime</p>
+          <div>
+            <h2>A persistent actor, not a disposable prompt.</h2>
+            <p class="section-intro">An attempt retains its task, role, model, policy, provider thread, guidance, workspace baseline, evidence, and accepted checkpoint across correction rounds.</p>
+          </div>
+        </div>
+
+        <div class="lifecycle reveal" aria-label="Persistent agent lifecycle">
+          <article class="phase">
+            <span class="phase-type">Model turn</span>
+            <div><h3>Draft</h3><p>The specialist performs bounded work and writes a small artifact report.</p></div>
+          </article>
+          <article class="phase">
+            <span class="phase-type">Lead judgment</span>
+            <div><h3>Review</h3><p>The supervisor checks scope, artifacts, claims, and gate evidence.</p></div>
+          </article>
+          <article class="phase">
+            <span class="phase-type">Same thread</span>
+            <div><h3>Feedback</h3><p>A concise correction delta resumes the exact attempt without changing identity.</p></div>
+          </article>
+          <article class="phase">
+            <span class="phase-type">Model turn</span>
+            <div><h3>Revision</h3><p>The same responsible agent addresses classified findings and preserves accepted work.</p></div>
+          </article>
+          <article class="phase">
+            <span class="phase-type">No model call</span>
+            <div><h3>Final</h3><p>Deterministic code validates the checkpoint and seals the result exactly once.</p></div>
+          </article>
+        </div>
+
+        <div class="actor-state reveal">
+          <div>
+            <p class="micro-label">Attempt state</p>
+            <h3>Identity remains stable</h3>
+          </div>
+          <div class="state-tags" aria-label="Pinned attempt state">
+            <span class="state-tag">task + attempt</span>
+            <span class="state-tag">protocol role</span>
+            <span class="state-tag">provider thread</span>
+            <span class="state-tag">execution profile</span>
+            <span class="state-tag">RolePolicy</span>
+            <span class="state-tag">AgentSpec</span>
+            <span class="state-tag">guidance digest</span>
+            <span class="state-tag">workspace baseline</span>
+            <span class="state-tag">evidence hashes</span>
+            <span class="state-tag">accepted checkpoint</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="planes" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">03 / Project isolation</p>
+          <div>
+            <h2>Control plane, meet source plane.</h2>
+            <p class="section-intro">Governance and runtime state live separately from product code. Each project receives its own control root, repository binding, context, and memory boundary.</p>
+          </div>
+        </div>
+
+        <div class="plane-grid reveal">
+          <article class="plane dark">
+            <p class="micro-label">Control root</p>
+            <h3>Agent control plane</h3>
+            <p>Project intent, execution governance, durable decisions, attempt state, and accepted evidence.</p>
+            <ul class="file-list">
+              <li><span>PROJECT.md</span><span>scope</span></li>
+              <li><span>management/tasks/</span><span>work orders</span></li>
+              <li><span>.codexteam/runtime/</span><span>attempts</span></li>
+              <li><span>results/</span><span>evidence</span></li>
+              <li><span>design/architecture/</span><span>discoveries</span></li>
+            </ul>
+          </article>
+          <div class="plane-connector" aria-hidden="true"><span>01</span></div>
+          <article class="plane">
+            <p class="micro-label">Registered work root</p>
+            <h3>Product source plane</h3>
+            <p>Application code, product tests, build configuration, source architecture, and user documentation.</p>
+            <ul class="file-list">
+              <li><span>src/</span><span>product code</span></li>
+              <li><span>tests/</span><span>product evidence</span></li>
+              <li><span>build configuration</span><span>toolchain</span></li>
+              <li><span>docs/</span><span>product docs</span></li>
+              <li><span>Git history</span><span>delivery record</span></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="roles" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">04 / Capability security</p>
+          <div>
+            <h2>Roles are authority partitions.</h2>
+            <p class="section-intro">A role is not a costume placed on a general agent. It defines responsibility, write boundaries, evidence ownership, MCP capabilities, and explicit denials.</p>
+          </div>
+        </div>
+
+        <div class="roles-grid reveal">
+          <article class="role-card">
+            <div class="role-top"><h3>Architect</h3><span class="role-code">ROLE / 01</span></div>
+            <p>Defines requirement-traceable system structure and material decisions without implementing or self-approving.</p>
+            <div class="role-meta"><span>Owns architecture</span><span>Denies source</span></div>
+          </article>
+          <article class="role-card">
+            <div class="role-top"><h3>Feature Planner</h3><span class="role-code">ROLE / 02</span></div>
+            <p>Decomposes accepted architecture into advisory work slices without creating canonical tasks or execution state.</p>
+            <div class="role-meta"><span>Owns decomposition</span><span>Denies execution</span></div>
+          </article>
+          <article class="role-card">
+            <div class="role-top"><h3>UX Designer</h3><span class="role-code">ROLE / 03</span></div>
+            <p>Produces handoff-ready interface design and design QA while remaining outside production implementation.</p>
+            <div class="role-meta"><span>Owns design intent</span><span>Denies product source</span></div>
+          </article>
+          <article class="role-card">
+            <div class="role-top"><h3>Developer</h3><span class="role-code">ROLE / 04</span></div>
+            <p>Implements bounded behavior and focused unit or smoke evidence without changing integration expectations.</p>
+            <div class="role-meta"><span>Owns implementation</span><span>Development Gate</span></div>
+          </article>
+          <article class="role-card">
+            <div class="role-top"><h3>Test Engineer</h3><span class="role-code">ROLE / 05</span></div>
+            <p>Owns integration and regression expectations, classifies failures, and never repairs production source.</p>
+            <div class="role-meta"><span>Owns acceptance tests</span><span>Integration Gate</span></div>
+          </article>
+          <article class="role-card">
+            <div class="role-top"><h3>Reviewer</h3><span class="role-code">ROLE / 06</span></div>
+            <p>Acts as the independent critic, auditing claims, diffs, tests, architecture, and named evidence.</p>
+            <div class="role-meta"><span>Owns findings</span><span>Denies repairs</span></div>
+          </article>
+          <article class="role-card">
+            <div class="role-top"><h3>Documenter</h3><span class="role-code">ROLE / 07</span></div>
+            <p>Turns accepted behavior and evidence into scoped product documentation without inventing product truth.</p>
+            <div class="role-meta"><span>Owns approved docs</span><span>Evidence-bound</span></div>
+          </article>
+          <article class="role-card">
+            <div class="role-top"><h3>Git Steward</h3><span class="role-code">ROLE / 08</span></div>
+            <p>Creates a read-only transaction plan. Only deterministic host code may stage paths and create a commit.</p>
+            <div class="role-meta"><span>Owns commit plan</span><span>Model read-only</span></div>
+          </article>
+        </div>
+
+        <div class="authority-formula reveal">
+          <p class="micro-label">Effective authority</p>
+          <div class="formula" aria-label="Effective authority formula">
+            <span class="formula-term">RolePolicy</span><span class="formula-op">intersection</span>
+            <span class="formula-term">AgentSpec</span><span class="formula-op">intersection</span>
+            <span class="formula-term">Task scope</span><span class="formula-op">intersection</span>
+            <span class="formula-term">Workspace</span><span class="formula-op">intersection</span>
+            <span class="formula-term">MCP tools</span>
+          </div>
+          <p class="formula-note">The current fine-grained path policy is primarily detective: the runtime sandbox limits the broad workspace, then CodexTeam audits the resulting file manifest and rejects out-of-policy work.</p>
+        </div>
+      </section>
+
+      <section id="context" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">05 / Context engineering</p>
+          <div>
+            <h2>Deliver the minimum useful context.</h2>
+            <p class="section-intro">The system prefers exact locators, bounded retrieval, and source provenance over injecting entire repositories, histories, and guidance libraries into every turn.</p>
+          </div>
+        </div>
+
+        <div class="context-stack reveal">
+          <article class="context-layer">
+            <div>
+              <p class="micro-label">Layer 01</p>
+              <h3>Progressive disclosure</h3>
+              <p>Phase routing, role guidance, and exact handoff targets prevent cold starts from loading the full operating manual.</p>
+            </div>
+            <ul><li>phase-specific guidance</li><li>task context targets</li><li>delta-only feedback</li></ul>
+          </article>
+          <article class="context-layer">
+            <div>
+              <p class="micro-label">Layer 02</p>
+              <h3>Project context MCP</h3>
+              <p>Read-only structured tools expose task state, attempts, gates, repository matches, memory, and cost hotspots.</p>
+            </div>
+            <ul><li>project-bound schemas</li><li>source hashes + byte counts</li><li>role-filtered tool sets</li></ul>
+          </article>
+          <article class="context-layer">
+            <div>
+              <p class="micro-label">Layer 03</p>
+              <h3>Offline sparse RAG</h3>
+              <p>Local Docs uses SQLite FTS5 and BM25 over approved documentation with exact versions and locators.</p>
+            </div>
+            <ul><li>no network runtime</li><li>read-only index</li><li>no vector database</li></ul>
+          </article>
+        </div>
+
+        <div class="memory-rule reveal">
+          <div>
+            <p class="micro-label">Canonical memory</p>
+            <h3>Reviewed project truth</h3>
+            <p>Decisions, open questions, accepted architecture, and ADRs remain human-readable, versionable, and authoritative.</p>
+          </div>
+          <div>
+            <p class="micro-label">Advisory memory</p>
+            <h3>Source-backed discoveries</h3>
+            <p>Durable research notes are searchable but must be verified against current source. Runtime transcripts are never promoted automatically.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="evidence" class="section section-dark">
+        <div class="section-head reveal">
+          <p class="section-index">06 / Evidence-gated delivery</p>
+          <div>
+            <h2>A claim is not acceptance.</h2>
+            <p class="section-intro">CodexTeam separates worker output, contract validity, observed evidence, quality gates, independent judgment, Lead acceptance, and canonical closure.</p>
+          </div>
+        </div>
+
+        <div class="evidence-chain reveal">
+          <article class="evidence-step"><h3>Worker claim</h3><p>The specialist reports what it believes it completed.</p></article>
+          <article class="evidence-step"><h3>Valid envelope</h3><p>The launcher proves the report has the required contract shape.</p></article>
+          <article class="evidence-step"><h3>Named evidence</h3><p>Artifacts and file changes are present, bounded, and attributable.</p></article>
+          <article class="evidence-step"><h3>Fresh gates</h3><p>Commands pass against the current configuration and workspace digest.</p></article>
+          <article class="evidence-step"><h3>Independent review</h3><p>Evaluator roles compare claims with requirements and actual output.</p></article>
+          <article class="evidence-step"><h3>Lead closure</h3><p>Canonical project state advances only after acceptance-level checks.</p></article>
+        </div>
+
+        <div class="evidence-callout reveal">A result belongs to an attempt. It does not, by itself, complete a task or prove the product meets its acceptance criteria.</div>
+      </section>
+
+      <section id="git" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">07 / Git governance</p>
+          <div>
+            <h2>The model plans. The executor commits.</h2>
+            <p class="section-intro">Git mutation is isolated behind a two-phase, explicitly authorized transaction that verifies the exact candidate tree before creating one local commit.</p>
+          </div>
+        </div>
+
+        <div class="git-protocol reveal">
+          <ol class="git-steps">
+            <li><div><strong>Read-only plan</strong><span>The Git Steward classifies exact paths and proposes one coherent local commit.</span></div></li>
+            <li><div><strong>Lead authorization</strong><span>Branch, HEAD, plan digest, verification, and approved paths are pinned.</span></div></li>
+            <li><div><strong>Candidate tree</strong><span>Deterministic code constructs the tree without trusting ambient staging state.</span></div></li>
+            <li><div><strong>Isolated gate</strong><span>The Integration Gate runs against the proposed tree in a detached worktree.</span></div></li>
+            <li><div><strong>Exact staging</strong><span>Only authorized literal paths are staged and compared with the tested tree.</span></div></li>
+            <li><div><strong>One local commit</strong><span>The committed tree and path set are verified after Git returns.</span></div></li>
+          </ol>
+          <aside class="git-boundary">
+            <div>
+              <p class="micro-label">Privilege boundary</p>
+              <h3>Remote authority withheld.</h3>
+              <p>The protocol stops at one verified local commit. Publication remains a separate operator decision.</p>
+            </div>
+            <div class="deny-list" aria-label="Prohibited Git operations"><span>No push</span><span>No merge</span><span>No tag</span><span>No release</span><span>No remote PR</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="observability" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">08 / Agent observability</p>
+          <div>
+            <h2>Measure the work around the model.</h2>
+            <p class="section-intro">Turn-level telemetry attributes context growth, latency, token use, tool behavior, MCP traffic, failures, and evidence provenance without turning metrics into automatic authority.</p>
+          </div>
+        </div>
+
+        <div class="telemetry reveal">
+          <article class="telemetry-panel">
+            <h3>Observed signal families</h3>
+            <div class="signal-row"><span>Model tokens</span><span class="signal-track"><span class="signal-fill" style="--value: 88%"></span></span><span>tracked</span></div>
+            <div class="signal-row"><span>Tool cycles</span><span class="signal-track"><span class="signal-fill" style="--value: 72%"></span></span><span>tracked</span></div>
+            <div class="signal-row"><span>MCP traffic</span><span class="signal-track"><span class="signal-fill" style="--value: 80%"></span></span><span>tracked</span></div>
+            <div class="signal-row"><span>Context bytes</span><span class="signal-track"><span class="signal-fill" style="--value: 61%"></span></span><span>partial</span></div>
+            <div class="signal-row"><span>Currency cost</span><span class="signal-track"><span class="signal-fill" style="--value: 8%"></span></span><span>absent</span></div>
+          </article>
+          <article class="telemetry-panel">
+            <h3>Recorded dimensions</h3>
+            <div class="metric-list">
+              <div class="metric"><span>Context</span><strong>Prompt + guidance bytes</strong></div>
+              <div class="metric"><span>Usage</span><strong>Input + cached + output</strong></div>
+              <div class="metric"><span>Runtime</span><strong>Latency + termination</strong></div>
+              <div class="metric"><span>Behavior</span><strong>Commands + repeats</strong></div>
+              <div class="metric"><span>Retrieval</span><strong>MCP calls + bytes</strong></div>
+              <div class="metric"><span>Provenance</span><strong>Sources + digests</strong></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="maturity" class="section section-dark">
+        <div class="section-head reveal">
+          <p class="section-index">09 / Maturity ledger</p>
+          <div>
+            <h2>Strong execution substrate. Clear next frontier.</h2>
+            <p class="section-intro">The system already has substantial execution and assurance machinery. Its next maturity step is stronger machine-enforced authorization and split-root completeness, not simply more agents or more memory.</p>
+          </div>
+        </div>
+
+        <div class="maturity-grid reveal">
+          <article class="ledger">
+            <header class="ledger-head"><h3>Developed strengths</h3><span class="ledger-count">11 capabilities</span></header>
+            <ol>
+              <li>Persistent draft-feedback sessions</li>
+              <li>Immutable execution identity</li>
+              <li>Pinned policy and guidance</li>
+              <li>Curated self-hosted model admission</li>
+              <li>Role and capability partitioning</li>
+              <li>Split control and source ownership</li>
+              <li>Bounded source-backed retrieval</li>
+              <li>Evidence and gate freshness</li>
+              <li>Provider-free finalization</li>
+              <li>Deterministic Git transactions</li>
+              <li>Process supervision and cleanup</li>
+            </ol>
+          </article>
+          <article class="ledger">
+            <header class="ledger-head"><h3>Platform limitations</h3><span class="ledger-count">9 boundaries</span></header>
+            <ol>
+              <li>Runtime and published schema drift</li>
+              <li>Procedural rather than durable execution approvals</li>
+              <li>No enforced task dependency state machine</li>
+              <li>Mostly detective fine-grained write policy</li>
+              <li>Ignored-file blind spots in split-root audits</li>
+              <li>Git Steward lacks split-root support</li>
+              <li>Canonical closure is not one transaction</li>
+              <li>External MCP catalogs are not fully attested</li>
+              <li>Hashes provide integrity, not trusted identity</li>
+            </ol>
+          </article>
+        </div>
+
+        <div class="non-goals reveal">
+          <h3>Deliberate non-goals</h3>
+          <div class="non-goal-tags">
+            <span>autonomous swarm</span><span>peer-to-peer agents</span><span>generic graph runtime</span><span>distributed queue</span><span>multi-user cloud</span><span>hostile-workload VM</span><span>vector memory platform</span><span>automatic retries</span><span>automatic model switching</span><span>writable remote Git</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="vocabulary" class="section">
+        <div class="section-head reveal">
+          <p class="section-index">10 / Agentic vocabulary</p>
+          <div>
+            <h2>Name the system precisely.</h2>
+            <p class="section-intro">CodexTeam combines familiar agent-platform patterns with a delivery-specific authority and evidence model.</p>
+          </div>
+        </div>
+
+        <div class="glossary-tools reveal">
+          <input id="glossary-search" class="glossary-search" type="search" placeholder="Filter the vocabulary..." aria-label="Filter vocabulary">
+          <span id="glossary-count" class="glossary-count" aria-live="polite">18 terms</span>
+        </div>
+
+        <dl id="glossary-list" class="glossary reveal">
+          <div class="term"><dt>Project Lead</dt><dd>Supervisor agent and reconciliation authority.</dd></div>
+          <div class="term"><dt>Specialist role</dt><dd>Policy-bound agent with a distinct responsibility and authority ceiling.</dd></div>
+          <div class="term"><dt>Task handoff</dt><dd>Work-order contract defining intent, context, scope, criteria, and stop conditions.</dd></div>
+          <div class="term"><dt>Attempt</dt><dd>Stable accountable execution identity across draft and correction turns.</dd></div>
+          <div class="term"><dt>Persistent session</dt><dd>Stateful agent actor retaining the exact provider thread and lifecycle history.</dd></div>
+          <div class="term"><dt>RolePolicy</dt><dd>RBAC-like envelope for sandbox, file, MCP, and evidence permissions.</dd></div>
+          <div class="term"><dt>AgentSpec</dt><dd>Technical specialization that can narrow but never broaden a role.</dd></div>
+          <div class="term"><dt>Execution profile</dt><dd>Curated backend, model, provider, and reasoning configuration.</dd></div>
+          <div class="term"><dt>ExecutionSpec</dt><dd>Immutable run manifest pinning resolved attempt identity and authority.</dd></div>
+          <div class="term"><dt>Accepted checkpoint</dt><dd>Digest-bound freeze of report, evidence, files, session, and execution identity.</dd></div>
+          <div class="term"><dt>Development Gate</dt><dd>Producer-side focused quality gate owned by implementation work.</dd></div>
+          <div class="term"><dt>Integration Gate</dt><dd>Independent CI-equivalent gate that includes Development first.</dd></div>
+          <div class="term"><dt>Deterministic finalization</dt><dd>Provider-free sealing of a previously accepted worker checkpoint.</dd></div>
+          <div class="term"><dt>Control root</dt><dd>Project-local control plane for lifecycle, runtime, results, and discoveries.</dd></div>
+          <div class="term"><dt>Work root</dt><dd>Registered product source and test execution plane.</dd></div>
+          <div class="term"><dt>Context gateway</dt><dd>Read-only, bounded, project-bound MCP projection of useful state.</dd></div>
+          <div class="term"><dt>Sparse RAG</dt><dd>Offline FTS5/BM25 retrieval over approved documentation sources.</dd></div>
+          <div class="term"><dt>Git transaction broker</dt><dd>Read-only model planning followed by authorized deterministic mutation.</dd></div>
+        </dl>
+      </section>
+
+      <section class="closing">
+        <blockquote class="reveal">Accountable agents. Verifiable work. Local control.</blockquote>
+        <footer>
+          <span>CodexTeam / System Playbook</span>
+          <a href="CODEXTEAM_SYSTEM_OVERVIEW.md">Read the source overview</a>
+        </footer>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const menuButton = document.querySelector(".menu-button");
+      const navigation = document.querySelector(".side-nav");
+      const navLinks = [...document.querySelectorAll(".side-nav a")];
+      const sections = navLinks
+        .map((link) => document.querySelector(link.getAttribute("href")))
+        .filter(Boolean);
+
+      const closeMenu = () => {
+        navigation.classList.remove("open");
+        menuButton.setAttribute("aria-expanded", "false");
+      };
+
+      menuButton.addEventListener("click", () => {
+        const open = navigation.classList.toggle("open");
+        menuButton.setAttribute("aria-expanded", String(open));
+      });
+
+      navLinks.forEach((link) => link.addEventListener("click", closeMenu));
+
+      const sectionObserver = new IntersectionObserver((entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        navLinks.forEach((link) => {
+          const active = link.getAttribute("href") === `#${visible.target.id}`;
+          link.classList.toggle("active", active);
+          if (active) link.setAttribute("aria-current", "location");
+          else link.removeAttribute("aria-current");
+        });
+      }, { rootMargin: "-20% 0px -65% 0px", threshold: [0, 0.15, 0.5] });
+
+      sections.forEach((section) => sectionObserver.observe(section));
+
+      const revealObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("visible");
+          observer.unobserve(entry.target);
+        });
+      }, { threshold: 0.08 });
+
+      document.querySelectorAll(".reveal").forEach((element) => revealObserver.observe(element));
+
+      const search = document.querySelector("#glossary-search");
+      const terms = [...document.querySelectorAll(".term")];
+      const count = document.querySelector("#glossary-count");
+
+      search.addEventListener("input", () => {
+        const query = search.value.trim().toLowerCase();
+        let visible = 0;
+        terms.forEach((term) => {
+          const match = term.textContent.toLowerCase().includes(query);
+          term.hidden = !match;
+          if (match) visible += 1;
+        });
+        count.textContent = `${visible} ${visible === 1 ? "term" : "terms"}`;
+      });
+
+      window.addEventListener("resize", () => {
+        if (window.innerWidth > 820) closeMenu();
+      });
+    })();
+  </script>
+</body>
+</html>

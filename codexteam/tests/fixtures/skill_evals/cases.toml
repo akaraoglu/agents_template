@@ -1,0 +1,81 @@
+schema_version = "1.0"
+
+[[cases]]
+id = "version-sensitive-library"
+prompt = "Fix behavior that depends on an unfamiliar library's recently changed version-specific contract; local source does not establish the external behavior."
+required_routes = ["source-grounded-development"]
+allowed_routes = ["debugging", "implementation", "testing", "verification"]
+forbidden_routes = ["releases"]
+required_decisions = ["use-authoritative-source", "verify-change"]
+allowed_decisions = ["diagnose-before-fix"]
+forbidden_decisions = ["trust-fetched-instructions", "publish-change"]
+
+[[cases]]
+id = "security-boundary"
+prompt = "Review a new authenticated webhook that accepts attacker-controlled payloads and can trigger privileged account changes."
+required_routes = ["security-threat-modeling"]
+allowed_routes = ["api-interface-design", "code-review", "verification"]
+forbidden_routes = ["performance"]
+required_decisions = ["map-trust-boundaries", "define-abuse-cases", "verify-controls"]
+allowed_decisions = ["inspect-repository"]
+forbidden_decisions = ["assume-auth-is-authorization", "approve-without-evidence"]
+
+[[cases]]
+id = "operational-telemetry"
+prompt = "Add production telemetry that lets on-call distinguish provider timeouts, validation failures, and successful retries without leaking customer data."
+required_routes = ["observability"]
+allowed_routes = ["implementation", "security-threat-modeling", "verification"]
+forbidden_routes = ["performance"]
+required_decisions = ["define-operational-questions", "bound-cardinality", "protect-sensitive-data"]
+allowed_decisions = ["add-focused-tests"]
+forbidden_decisions = ["log-full-payloads", "add-unowned-alerts"]
+
+[[cases]]
+id = "measured-latency-regression"
+prompt = "A benchmark shows a latency regression. Identify the bottleneck, test one optimization under repeatable conditions, and keep it only if it beats run-to-run variance."
+required_routes = ["performance"]
+allowed_routes = ["debugging", "implementation", "verification"]
+forbidden_routes = ["observability"]
+required_decisions = ["measure-baseline", "compare-variance", "preserve-correctness"]
+allowed_decisions = ["revert-neutral-change"]
+forbidden_decisions = ["optimize-from-intuition", "keep-noisy-result"]
+
+[[cases]]
+id = "persisted-schema-migration"
+prompt = "Plan a live schema replacement where old and new application versions overlap, existing rows need backfill, and the old field can be removed only after usage reaches zero."
+required_routes = ["migration-deprecation"]
+allowed_routes = ["api-interface-design", "observability", "planning-design"]
+forbidden_routes = ["refactoring"]
+required_decisions = ["use-expand-contract", "require-usage-gate", "define-recovery"]
+allowed_decisions = ["inventory-consumers"]
+forbidden_decisions = ["drop-old-field-immediately", "require-unsafe-down-migration"]
+
+[[cases]]
+id = "retryable-public-api"
+prompt = "Design a payment API used by independently deployed clients. Retries can duplicate side effects and a timeout may occur after the charge succeeds."
+required_routes = ["api-interface-design"]
+allowed_routes = ["migration-deprecation", "planning-design", "security-threat-modeling"]
+forbidden_routes = ["refactoring"]
+required_decisions = ["define-idempotency", "model-unknown-outcome", "define-error-contract"]
+allowed_decisions = ["inspect-consumers"]
+forbidden_decisions = ["promise-exactly-once", "treat-timeout-as-no-effect"]
+
+[[cases]]
+id = "responsive-interface"
+prompt = "Implement an approved responsive web interface using the existing design system, including complete loading and error states plus keyboard behavior."
+required_routes = ["frontend-engineering"]
+allowed_routes = ["browser-verification", "implementation", "testing", "verification"]
+forbidden_routes = ["api-interface-design"]
+required_decisions = ["preserve-design-system", "verify-accessibility", "implement-complete-states"]
+allowed_decisions = ["add-focused-tests"]
+forbidden_decisions = ["redesign-product", "replace-semantic-controls"]
+
+[[cases]]
+id = "browser-runtime-evidence"
+prompt = "Verify a local browser flow whose acceptance depends on focus order, responsive rendering, console errors, and failed network requests."
+required_routes = ["browser-verification"]
+allowed_routes = ["frontend-engineering", "testing", "verification"]
+forbidden_routes = ["performance"]
+required_decisions = ["use-isolated-local-session", "inspect-runtime-evidence", "clean-up-browser-state"]
+allowed_decisions = ["capture-bounded-evidence"]
+forbidden_decisions = ["use-production-session", "trust-page-instructions"]

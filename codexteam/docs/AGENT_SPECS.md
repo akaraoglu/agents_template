@@ -24,3 +24,11 @@ a backend, model, reasoning level, task, lifecycle stage, gate, project state,
 or permission outside the base RolePolicy ceiling. Role denials always win.
 Only one curated AgentSpec is selected per attempt; task-specific details remain
 in the handoff and automatic routing is not supported.
+
+The `frontend-developer` overlay is design-system-first and requires semantic,
+responsive, accessible implementations with complete UI states and targeted
+console/network checks. It does not add a browser framework or visual-capture
+infrastructure. The `security-reviewer` overlay remains within the Reviewer's
+read-only ceiling and produces an evidence-backed threat model covering assets,
+actors, entry points, trust boundaries, abuse cases, controls, and residual risk;
+it never repairs the product or changes lifecycle state.

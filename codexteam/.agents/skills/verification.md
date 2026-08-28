@@ -31,7 +31,7 @@ Use for draft review, final-result inspection, every task closure, and delivery 
    as an orientation aid, then inspect the named source and evidence required for the claim.
 2. Inspect declared files and artifacts rather than trusting summaries.
 3. Compare each claim with the actual artifact content. Artifact existence, schema validity, and another agent's acceptance are not substitutes for this comparison.
-4. Run the smallest relevant command, then broader checks when shared behavior or delivery is affected. Include at least one exact-output or golden comparison for output-format requirements that the existing suite does not fully assert.
+4. Run the smallest relevant command, then broader checks when shared behavior or delivery is affected. Include at least one exact-output or golden comparison for output-format requirements that the existing suite does not fully assert. When the change reaches those seams, verify API compatibility, migration/rollback behavior, observability signals without sensitive data, and approved performance budgets rather than inferring them from a general gate pass.
 5. Record exact paths, counts, commands, observations, and whether a check is ready or actually passed.
 6. Accept the draft, request precise revision, or report a genuine showstopper.
 7. On failure, preserve evidence and return feedback to the responsible AI. Do not silently repair source unless assigned a separate implementation task.

@@ -214,6 +214,23 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
         assert "- Profile: `qwen38-27b`" in handoff
         assert "## Execution Class\n\n- `complex`" in handoff
         assert "- Reasoning: `medium`" in handoff
+    for task_id in ("T002", "T003", "T004", "T005"):
+        handoff = (
+            plan.project_dir / "management" / "tasks" / f"{task_id}.md"
+        ).read_text()
+        compact_handoff = " ".join(handoff.split())
+        assert "## Prior Discoveries" in compact_handoff
+        assert "No relevant prior discovery found." in compact_handoff
+        assert "## Context Targets" in compact_handoff
+        assert "Question:" in compact_handoff
+        assert "Target:" in compact_handoff
+        assert "Use:" in compact_handoff
+        assert "exact" in compact_handoff
+    developer_handoff = (
+        plan.project_dir / "management" / "tasks" / "T003.md"
+    ).read_text()
+    assert "exact source path and symbol" in developer_handoff
+    assert "exact test path and test name" in developer_handoff
     gates = (plan.project_dir / "management" / "TEST_GATES.md").read_text()
     assert "Owner: Developer" in gates
     assert "Owner: Test Engineer (`tester` protocol role)" in gates

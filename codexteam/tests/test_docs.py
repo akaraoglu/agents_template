@@ -101,6 +101,7 @@ def test_public_command_wrappers_are_executable_and_have_help():
         CODEXTEAM_ROOT / "scripts" / "sync-project-guidance.py",
         CODEXTEAM_ROOT / "scripts" / "run-test-gate.py",
         CODEXTEAM_ROOT / "scripts" / "git-steward.py",
+        CODEXTEAM_ROOT / "scripts" / "run-skill-evals.py",
         CODEXTEAM_ROOT / "scripts" / "close-loop.sh",
         CODEXTEAM_ROOT / ".agents" / "scripts" / "spawn-subagent.sh",
     )
@@ -134,6 +135,7 @@ def test_documentation_index_targets_exist():
         "COLD_START_CANARY_2026-07-17.md",
         "ADAPTER_GUIDE.md",
         "AGENT_SPECS.md",
+        "SKILL_EVALUATION.md",
         "OPTIONAL_INTERFACES.md",
         "TROUBLESHOOTING.md",
         "rules/project_isolation.md",
@@ -287,6 +289,55 @@ def test_specialist_role_skills_have_complete_reusable_workflow_sections():
         )
         for heading in required_headings:
             assert heading in content, f"missing {heading!r} in {name}"
+
+
+def test_product_guidance_covers_source_provenance_and_cross_cutting_seams():
+    architecture = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "architecture-design.md"
+    ).read_text(encoding="utf-8")
+    implementation = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "implementation.md"
+    ).read_text(encoding="utf-8")
+    integration = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "integration-testing.md"
+    ).read_text(encoding="utf-8")
+    verification = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "verification.md"
+    ).read_text(encoding="utf-8")
+
+    for content in (architecture, implementation):
+        compact = " ".join(content.split())
+        assert "exact dependency version" in compact
+        assert "version-matched `local-docs` first" in compact
+        assert "official, version-matched documentation" in compact
+        assert "untrusted reference" in compact
+        assert "label material claims unverified" in compact
+    for content in (architecture, implementation, integration, verification):
+        for marker in ("API", "migration", "observ", "performance"):
+            assert marker in content
+    combined = " ".join(" ".join(content.split()) for content in (
+        architecture,
+        implementation,
+        integration,
+    ))
+    for marker in (
+        "idempotency-key scope",
+        "payload binding",
+        "unknown-outcome semantics",
+        "expand, migrate/backfill, then contract",
+        "usage/state gate",
+    ):
+        assert marker in combined
+
+
+def test_browser_guidance_remains_inspection_only_without_visual_capture():
+    integration = (
+        CODEXTEAM_ROOT / ".agents" / "skills" / "integration-testing.md"
+    ).read_text(encoding="utf-8")
+    assert "console errors and failed network requests" in integration
+    assert "inspection-only pilot" in integration
+    assert "Do not use screenshots, visual capture" in integration
+    assert "do not add visual-capture infrastructure" in integration
 
 
 def test_project_lead_progressively_discloses_self_improvement_workflow():

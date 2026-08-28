@@ -40,6 +40,43 @@ def test_pilot_agent_specs_are_valid_and_model_free(spec_id: str):
     assert spec.reference()["digest"] == spec.digest
 
 
+def test_frontend_specialization_requires_complete_accessible_ui_evidence():
+    guidance = (
+        load_agent_spec("frontend-developer").source_path.parent
+        / "guidance"
+        / "frontend-specialization.md"
+    ).read_text()
+    compact_guidance = " ".join(guidance.split())
+    for marker in (
+        "design system",
+        "semantic HTML before ARIA",
+        "mobile and desktop",
+        "loading, empty, error, success",
+        "console errors and failed network requests",
+        "visual-capture infrastructure",
+    ):
+        assert marker in compact_guidance
+
+
+def test_security_specialization_is_read_only_and_outputs_a_threat_model():
+    guidance = (
+        load_agent_spec("security-reviewer").source_path.parent
+        / "guidance"
+        / "security-review-specialization.md"
+    ).read_text()
+    compact_guidance = " ".join(guidance.split())
+    for marker in (
+        "protected assets and security objectives",
+        "actors, entry points, data flows, and trust boundaries",
+        "credible abuse cases",
+        "attacker preconditions and exploit path",
+        "impact, likelihood, residual risk",
+        "Remain read-only",
+        "do not implement product changes",
+    ):
+        assert marker in compact_guidance
+
+
 def test_role_mismatch_is_rejected():
     with pytest.raises(AgentSpecError, match="base role mismatch"):
         load_agent_spec("security-reviewer", expected_role="developer")

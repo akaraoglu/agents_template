@@ -31,9 +31,23 @@ Use after a Developer draft and development-gate evidence exist, before the Deve
 2. Read the current Verification Plan in `PROJECT.md`. Map each applicable row
    assigned to the Test Engineer, plus affected existing behavior, to integration,
    regression, negative, lifecycle, concurrency, security, browser, or environment
-   checks as applicable. Report each `AC-*` reference as passed, failed, blocked,
+   checks as applicable. At affected seams, include public API compatibility,
+   migration upgrade/rollback behavior, observability and failure signals, and approved
+   performance budgets. Report each `AC-*` reference as passed, failed, blocked,
    or unverified with exact evidence; the plan itself is not evidence.
-3. Inspect existing tests before editing. Add or modify Test Engineer-owned tests and controlled fixtures only when the handoff authorizes the paths. When a browser is necessary, use the role-allowed Playwright inspection tools for a bounded observation and prefer `browser_find` over a full snapshot when one text target is sufficient. Do not use screenshots, form input, clicks, uploads, keyboard input, page evaluation, or arbitrary browser code in the inspection-only pilot.
+   For API or migration work, exercise representative old/new consumers,
+   duplicate and concurrent requests, timeout outcomes, partial progress,
+   restart-safe backfills, and the usage/state gate for destructive contraction
+   when those states are part of the accepted design.
+3. Inspect existing tests before editing. Add or modify Test Engineer-owned tests
+   and controlled fixtures only when the handoff authorizes the paths. When a
+   browser is necessary, use the role-allowed Playwright inspection tools only
+   for bounded reconnaissance. Inspect required viewports and complete UI states,
+   and check console errors and failed network requests when the allowed tools
+   expose them. Prefer `browser_find` over a full snapshot when one text target
+   is sufficient. Do not use screenshots, visual capture, form input, clicks,
+   uploads, keyboard input, page evaluation, or arbitrary browser code in the
+   inspection-only pilot, and do not add visual-capture infrastructure.
 4. For every changed assertion or golden value, record the requirement, accepted decision, or confirmed test defect that justifies the change.
 5. Demonstrate a relevant failure before the product fix when practical, then preserve the passing rerun after correction.
 6. Inspect the configured Integration Gate and run focused checks needed to prove the
@@ -67,6 +81,9 @@ and CI acceptance cannot drift.
 - Existing assertions are not weakened merely to obtain a pass.
 - Added tests cross a real boundary when integration is claimed; mocks alone do not prove system integration.
 - Playwright MCP observations identify what to test; repository-owned browser tests and the Integration Gate remain the acceptance evidence.
+- Browser evidence covers the required responsive states and reports console or
+  network failures when inspection capability exists; unavailable observations
+  remain explicit rather than inferred.
 - Repeated runs are deterministic or limitations are explicit.
 - The Reviewer can trace each changed expectation and acceptance claim to project truth and named evidence.
 - Every applicable Test Engineer Verification Plan row has an explicit status;
