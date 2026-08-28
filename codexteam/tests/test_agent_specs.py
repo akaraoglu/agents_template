@@ -29,7 +29,7 @@ def test_agent_spec_is_optional_for_every_protocol_role():
     (
         "python-developer", "go-developer", "frontend-developer",
         "cpp-developer", "cpp-embedded-developer", "security-reviewer",
-        "accessibility-reviewer",
+        "accessibility-reviewer", "agent-evaluator",
     ),
 )
 def test_pilot_agent_specs_are_valid_and_model_free(spec_id: str):
@@ -75,6 +75,39 @@ def test_security_specialization_is_read_only_and_outputs_a_threat_model():
         "do not implement product changes",
     ):
         assert marker in compact_guidance
+
+
+def test_agent_evaluator_is_narrow_and_prepared_packet_only():
+    spec = load_agent_spec("agent-evaluator", expected_role="reviewer")
+    effective = effective_role_policy(load_role_policy("reviewer"), spec)
+    assert spec.allowed_change_patterns == ()
+    assert spec.denied_change_patterns == ()
+    assert spec.mcp_servers == ()
+    assert spec.mcp_tools == ()
+    assert spec.allowed_evidence_types == ()
+    assert effective.allowed_change_patterns == load_role_policy("reviewer").allowed_change_patterns
+
+    guidance = (spec.source_path.parent / "guidance" / "agent-evaluator.md").read_text()
+    compact_guidance = " ".join(guidance.split())
+    for marker in (
+        "exact immutable preparation packet",
+        "no tools, filesystem, retries, MCP, cloud access, project context",
+        "established facts from hypotheses",
+        "plausible alternatives",
+        "state the discriminator",
+        "investigation request from a concrete change proposal",
+        "do not compare speed across unlike work",
+        "E1", "E2", "E3", "NO_CHANGE",
+        "exactly one JSON report",
+        "Do not write or change any file",
+        "creates no task", "grants no implementation authority",
+    ):
+        assert marker in compact_guidance
+
+
+def test_agent_evaluator_is_reserved_from_normal_worker_resolution():
+    with pytest.raises(AgentSpecError, match="dedicated execution path"):
+        resolve_agent_spec("reviewer", "agent-evaluator")
 
 
 def test_role_mismatch_is_rejected():

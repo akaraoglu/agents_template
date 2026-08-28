@@ -80,6 +80,43 @@ start a new attempt for these stage boundaries.
 
 Role and AgentSpec selection never selects backend, profile, model, or reasoning.
 
+## Agent Evaluator Flow
+
+For a new post-milestone retrospective, `agent-evaluator` specializes the
+existing Reviewer role; it is not a lifecycle role and receives no new
+authority. After `milestone-retrospective.py prepare` publishes the immutable
+packet, use the dedicated evaluator command rather than the subagent launcher:
+
+```bash
+./scripts/milestone-retrospective.py evaluate <control-root> \
+  --boundary <id> --preparation <preparation-digest> \
+  --profile <curated-local-profile> --apply --json
+```
+
+This is not a worker task or session. One schema-constrained local Ollama request
+receives only the AgentSpec identity and guidance plus the packet; it has no
+tools, filesystem, MCP, cloud profile, retries, or other project context.
+Deterministic caller code alone writes the strict evaluation report. After
+review, run deterministic retrospective `accept`; it validates the
+`agent-evaluator` identity and digest, strict report, preparation digests, and
+all evidence references before it can publish an outcome.
+
+The prepared packet is the evaluator's bounded material. The evaluator may
+classify natural complexity, compare alternatives, retain an observation,
+request an investigation, or rarely recommend a concrete proposal. An observed
+timeout, correction loop, replacement attempt, repeat, or metric is not itself
+a cause. It must not judge speed from a baseline for unlike work. It may not
+alter prepared evidence, raise its evidence ceiling, invent references, write
+the backlog, create a task, or approve work. The action ceiling is:
+
+- `E1`: observation or `NO_CHANGE`
+- `E2`: investigation request or `NO_CHANGE`
+- `E3`: proposal only with a concrete target and mechanism, alternatives,
+  falsifiable validation cases, and rollback
+
+`NO_CHANGE` may therefore include observations and investigations. It means no
+concrete change is justified now, not that nothing was observed.
+
 Inject the smallest role-specific guidance bundle that covers the task. Large generic bundles increase local-model context cost and can obscure the active contract. Use one consolidated feedback message per review round.
 
 The Task Capsule pilot is not part of the default Developer bundle. For an
@@ -309,6 +346,9 @@ Evidence reuse does not permit evidence inflation. If an artifact contains only 
 - Declared changed files and evidence exist inside the workspace.
 - Worker context is limited to the brief, handoff, and named files or evidence unless a concrete gap justifies expansion.
 - Development and Integration Gate evidence is reused by the Reviewer and Documenter without weakening independent acceptance.
+- An evaluator run is one tool-free local request over the exact prepared packet;
+  deterministic caller code persists its validated strict report before
+  retrospective acceptance.
 - Test Engineer changes to assertions, fixtures, or golden values cite an approved requirement, decision, or confirmed test defect.
 - Independent verification passes before state advances.
 - Conversation, JSONL, and stderr artifacts remain under ignored runtime storage. Handoff-scoped project edits may occur during draft and feedback, but no deterministic task result may appear before finalization.

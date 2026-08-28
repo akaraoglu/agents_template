@@ -13,10 +13,12 @@
 
 ## Improvement Proposals
 
-Applied milestone retrospective analysis appends every qualified proposal here
-with its stable ID, category, scope, impact, confidence, evidence, trigger,
-expected gain, validation, rollback, `Status: Proposed`, and
-`Human disposition: None`. Only an explicit human
+Applied v2 milestone retrospective acceptance appends each validated E3
+proposal here with its stable ID, category, scope, categorical impact, change
+risk, change amount, reversibility, confidence, action band, evidence, concrete
+mechanism, alternatives, validation, rollback, `Status: Proposed`, and `Human
+disposition: None`. Observations and investigation requests may remain in a
+`NO_CHANGE` retrospective and do not enter this queue. Only an explicit human
 `milestone-retrospective.py decide --human-approved --apply` command may change
 status to `Approved`, `Rejected`, or `Deferred`. Approval authorizes planning
 only; it does not create a task, start work, change guidance or contracts, or

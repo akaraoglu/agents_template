@@ -40,6 +40,9 @@ The Test Engineer may add or modify handoff-scoped integration/regression tests,
 6. Run the Development Gate, independent Integration Gate, and Reviewer audit as applicable.
 7. Close canonical task state only after verification passes.
 8. At a named milestone, explicitly authorize the Local Git Steward to create one verified local commit; remote actions remain human-only.
+9. Prepare a v2 retrospective, run one tool-free local `agent-evaluator` request
+   over that immutable packet, and deterministically accept its strict report
+   before presenting prioritized `Proposed` entries for a human decision.
 
 ## Runtime
 
@@ -114,6 +117,30 @@ example `--agent-spec cpp-embedded-developer`. Omission means no specialization.
 Role, AgentSpec, and execution profile remain
 separate; feedback/final reuse the pin and reject selection overrides. See
 `docs/AGENT_SPECS.md`.
+
+The post-milestone `agent-evaluator` is a Reviewer specialization, not another
+lifecycle role or normal worker. `prepare` gives one dedicated,
+schema-constrained local Ollama request a bounded immutable evidence packet plus
+the evaluator's identity and guidance. It has no tools, filesystem, MCP, cloud
+profile, retries, worker task, session, or other project context, so the Lead
+need not manually read all metrics. The evaluator distinguishes
+observations from causes, may retain observations or investigations in
+`NO_CHANGE`, and proposes rarely: only E3 evidence with a concrete target and
+mechanism can become a proposal. It never judges speed from unlike work.
+Deterministic acceptance automatically adds validated proposals to the backlog
+as `Proposed`; the Lead presents them categorically by impact, action band,
+evidence strength, change risk, change amount, reversibility, confidence, and
+recurrence breadth. Ordering is impact high to low, action band, evidence
+strength, change risk low to high to unknown, change amount small to large to
+unknown, reversibility easy to hard to unknown, recurrence breadth, then stable
+ID. Otherwise the Lead states `No candidate recommended this round`. Only a
+human decides, and approval is planning-only. Historical v1 retrospective
+records remain immutable and readable.
+
+The v2 evaluator flow is staged for new rounds. The current CLI does not expose
+v1 `analyze`; a branch whose retrospective `--help` still exposes only
+`analyze`/`decide` can read historical records but must not use v1 analysis as a
+substitute for the v2 flow.
 
 OpenCode profiles, implementation, qualification evidence, and historical
 attempt readers remain in the repository. Supported commands mark those profiles

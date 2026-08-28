@@ -15,6 +15,7 @@ from .roles import MCP_SERVER_PATTERN, MCP_TOOL_PATTERN, RolePolicy
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_AGENT_SPECS_ROOT = CODEXTEAM_ROOT / "agent_specs"
 AGENT_SPEC_ID = re.compile(r"[a-z][a-z0-9-]{1,63}")
+DEDICATED_AGENT_SPEC_IDS = {"agent-evaluator"}
 AGENT_SPEC_FIELDS = {
     "schema_version", "agent_spec_id", "version", "base_role", "description",
     "capabilities", "guidance_files", "permission_overlay",
@@ -131,6 +132,10 @@ def resolve_agent_spec(
         raise AgentSpecError(f"unsupported AgentSpec role: {role}")
     if selected is None:
         return None
+    if selected in DEDICATED_AGENT_SPEC_IDS:
+        raise AgentSpecError(
+            f"AgentSpec {selected} is reserved for its dedicated execution path"
+        )
     return load_agent_spec(selected, expected_role=role, root=root)
 
 

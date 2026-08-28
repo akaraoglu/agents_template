@@ -404,18 +404,27 @@ def test_milestone_retrospective_authority_is_documented():
     )
     compact = " ".join(guide.split())
     assert "after each verified milestone commit" in compact
-    assert "NO_CHANGE" in guide
-    assert "PROPOSALS_RECORDED" in guide
-    assert "BLOCKED_INSUFFICIENT_EVIDENCE" in guide
-    assert "transient CLI/API output" in compact
-    assert "never persisted as `analysis.json`" in compact
-    assert "automatically added to the backlog with `Status: Proposed`" in compact
+    assert "prepare -> tool-free local evaluate" in compact
+    assert "no tools, filesystem, MCP, cloud profile, retries" in compact
+    assert "not a new role or authority, worker task" in compact
+    assert "milestone-retrospective.py evaluate" in compact
+    assert "evaluation report and deterministic acceptance response" in compact
+    assert "deterministic accept" in compact
+    assert "The Lead need not manually read all turn metrics" in compact
+    assert "Observations are not causes" in compact
+    assert "`NO_CHANGE` result may contain observations and investigation requests" in compact
+    assert "`E3`: permit a proposal only" in compact
+    assert "baseline from unlike work" in compact
+    assert "automatically adds validated E3 proposals" in compact
+    assert "impact, change risk, change amount, reversibility" in compact
+    assert "No candidate recommended this round" in compact
     assert "Only an explicit human `decide` command" in compact
     assert "requires both `--human-approved` and `--apply`" in compact
     assert "approved for normal planning only" in compact
     assert "grant implementation authority" in compact
     assert "accepted per-task Integration Gate snapshots" in compact
-    assert "tool-free request" in compact
+    assert "Historical v1" in compact
+    assert "remain immutable and readable" in compact
     assert "rerun the identical human-approved command" in compact
 
 

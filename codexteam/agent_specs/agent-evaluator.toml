@@ -1,0 +1,8 @@
+schema_version = "1.0"
+agent_spec_id = "agent-evaluator"
+version = "1.0"
+base_role = "reviewer"
+description = "Tool-free prepared-packet-only milestone retrospective evaluator identity."
+capabilities = ["causal-analysis", "evidence-evaluation", "retrospective-evaluation"]
+guidance_files = ["agent-evaluator.md"]
+permission_overlay = { allowed_change_patterns = [], denied_change_patterns = [], mcp_servers = [], mcp_tools = {}, allowed_evidence_types = [] }

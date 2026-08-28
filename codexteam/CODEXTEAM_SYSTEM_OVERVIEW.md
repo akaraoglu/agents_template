@@ -44,7 +44,8 @@ system than to an autonomous agent swarm or a general multi-agent framework.
 | Context pack | Context provenance manifest |
 | Turn metrics | Agent observability telemetry |
 | Skill evaluator | Guidance routing and behavioral conformance harness |
-| Milestone retrospective | Post-delivery evidence analyzer |
+| Milestone retrospective | Staged post-delivery evidence evaluation |
+| Agent evaluator | Tool-free Reviewer-derived identity for retrospective judgment |
 | Improvement proposal | Automatically recorded, human-gated backlog candidate |
 | Improvement disposition | Immutable human planning decision |
 
@@ -65,7 +66,9 @@ Canonical project state
   -> advances only after acceptance
 Git Steward executor
   -> creates an explicitly authorized local commit
-Milestone retrospective
+Milestone retrospective preparation
+  -> supplies bounded evidence to a tool-free agent-evaluator request
+Deterministic retrospective acceptance
   -> records no change or Proposed improvements
 Human disposition
   -> approves, rejects, or defers planning
@@ -321,9 +324,9 @@ provider-side system instructions, tool schemas, or persistent history.
 
 ## Evaluation and Self-Improvement
 
-CodexTeam now has two complementary evaluation loops. They use local models only
-for bounded advisory judgment; deterministic code retains authority over
-qualification, persistence, and state changes.
+CodexTeam now has two complementary evaluation loops. Models provide bounded
+judgment; deterministic code retains authority over evidence preparation,
+acceptance, persistence, and state changes.
 
 ### Skill Evaluation
 
@@ -349,8 +352,19 @@ It does not evaluate a completed project milestone or approve a guidance change.
 
 ### Milestone Retrospective
 
-After each verified milestone commit, the Project Lead runs a project-local
-retrospective. The analyzer binds:
+After each verified milestone commit, the Project Lead runs a staged
+project-local retrospective:
+
+```text
+prepare immutable evidence
+  -> tool-free local evaluate
+  -> review the strict evaluation report
+  -> deterministic accept
+  -> present prioritized Proposed entries
+  -> human decide
+```
+
+Preparation binds:
 
 - Completed task results to matching runtime attempts and roles
 - Accepted per-task Integration Gate snapshots
@@ -366,40 +380,41 @@ The committed tree is independently reconstructed from Git blobs using the same
 verification-path semantics as the Integration Gate. This prevents a correctly
 labelled commit from being associated with unrelated verification evidence.
 
-Every analysis invocation returns one explicit outcome:
-
-- `NO_CHANGE`: evidence is sufficient and no deterministic signal qualifies.
-- `PROPOSALS_RECORDED`: one or more deterministic signals qualify.
-- `BLOCKED_INSUFFICIENT_EVIDENCE`: identity, evidence, advisory, locking, or
-  publication validation prevents a safe conclusion.
-
-Only the first two become persisted retrospective dispositions. A blocked result
-is normally non-mutating and must be corrected and rerun. If artifact publication
-succeeds before backlog insertion is interrupted, the result truthfully reports
-the partial state and the same boundary can recover it.
+Preparation writes a content-addressed packet of sanitized evidence,
+deterministic observations, conservative evidence ceilings, and investigation
+questions. It makes no model call and does not touch the backlog. The
+`agent-evaluator` AgentSpec narrows the existing Reviewer role; it is not a new
+role or authority. Its identity and guidance are supplied directly to one
+schema-constrained local Ollama request over the prepared packet. The request
+has no tools, filesystem, MCP, cloud profile, retries, worker task, session, or
+other project context. Deterministic caller code alone persists its strict
+report. The Lead need not manually read every metric or transcript, but still
+reviews the evaluation report and acceptance output.
 
 ### Improvement Qualification
 
-Deterministic rules decide whether evidence qualifies. Examples include:
+Observations are not causes. Multiple attempts, feedback rounds, timeouts, Run
+Guard interruptions, failed tools, MCP fallbacks, command repeats, or high usage
+prove that events occurred; they do not prove avoidable friction or identify a
+change mechanism. Natural complexity and alternative explanations remain valid.
+No speed judgment may use a baseline from unlike work.
 
-- Invalid or missing modern execution or delegation identity
-- Scope or authority violations carrying an explicit structured marker
-- Multiple attempts for one task
-- Two or more feedback rounds for one attempt
-- Timeouts or Run Guard interruptions
-- Recurring failed tool activity or MCP fallback loops
-- Repeated command fingerprints across turns
-- Explicit evidence-integrity or unsupported-acceptance findings
+The prepared evidence ceiling bounds evaluator action:
 
-An isolated ordinary mistake, preference-only feedback, or unmeasured efficiency
-difference does not automatically qualify. `NO_CHANGE` is a valid and expected
-outcome.
+- E1 permits observation or `NO_CHANGE`.
+- E2 permits investigation or `NO_CHANGE`.
+- E3 permits a proposal only with a concrete target and mechanism,
+  alternatives, falsifiable validation cases, and rollback.
+
+Proposals should be rare. A v2 `NO_CHANGE` record may retain observations and
+investigation requests; it means no concrete change is justified now.
 
 ### Backlog and Human Authority
 
-Every qualified signal produces one collision-resistant improvement proposal.
-Applied retrospective analysis automatically appends it to the project backlog
-with:
+Deterministic acceptance validates the AgentSpec identity and digest, strict
+evaluation report, preparation digests, evidence
+references, and action ceiling. Applied acceptance automatically appends each
+validated E3 proposal to the project backlog with:
 
 - `Status: Proposed`
 - Evidence, impact, confidence, expected gain, validation, and rollback
@@ -407,9 +422,13 @@ with:
 - No implementation authority
 - No human disposition
 
-An optional tool-free local advisory model may summarize qualified signals or
-recommend a smaller response class. It cannot add a signal, suppress a signal,
-approve a proposal, create a task, or authorize execution.
+The Lead presents accepted entries without a composite numeric score. Impact,
+change risk, change amount, reversibility, confidence, and action band remain
+separate categories. Ordering is impact high to low, action band, evidence
+strength, change risk low to high to unknown, change amount small to large to
+unknown, reversibility easy to hard to unknown, recurrence breadth, then stable
+ID. The Lead states
+`No candidate recommended this round` when no candidate merits human action.
 
 Only an explicit human `decide --human-approved --apply` operation may transition
 a proposal to `Approved`, `Rejected`, or `Deferred`. The immutable disposition
@@ -430,15 +449,18 @@ The improvement response is scaled to impact:
 
 ### Improvement Lifecycle
 
-CodexTeam's improvement lifecycle is:
+CodexTeam's v2 improvement lifecycle is:
 
 ```text
-observe -> qualify -> propose -> human disposition -> plan -> implement
+prepare -> tool-free evaluate -> strict report -> deterministic accept
+        -> Lead present -> human disposition -> plan -> implement
         -> independently verify -> accept or reject -> measure recurrence
 ```
 
 Existing attempts retain their pinned guidance. A retrospective never rewrites a
 healthy active attempt, and accepted improvements do not apply retroactively.
+Historical v1 analyses, proposals, and dispositions remain immutable and
+readable; they are not reclassified or backfilled into v2.
 
 ## Deliberate Non-Goals
 

@@ -6,23 +6,41 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
 
+import codexteam_tools.milestone_retrospective as retrospective
 from codexteam_tools.milestone_retrospective import (
+    FIXED_REMEDIATION_RECIPES,
     RetrospectiveError,
     _build_proposals,
+    _preparation_boundary_digest,
+    _prepared_analysis_digest,
+    accept_evaluation,
     analyze_milestone,
+    build_evaluation_request,
     build_model_request,
     decide_proposal,
+    evaluate_milestone,
+    prepare_milestone,
     qualify_signals,
     _structured_finding,
     _terminal_gate_digest,
     validate_disposition,
+    validate_evaluation_report,
+    validate_preparation,
     validate_proposal,
     validate_retrospective,
+    validate_v2_analysis,
+    validate_v2_proposal,
+    _NoRedirect,
+    _post_ollama,
 )
+from codexteam_tools.contract_registry import EVALUATION_CHECKS
+from codexteam_tools.agent_specs import load_agent_spec
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "milestone-retrospective.py"
@@ -326,6 +344,126 @@ def _analyze(control: Path, **kwargs):
         without_model=True,
         **kwargs,
     )
+
+
+def _prepare(control: Path, **kwargs):
+    return prepare_milestone(
+        control,
+        boundary_id=BOUNDARY,
+        task_ids=(TASK,),
+        **kwargs,
+    )
+
+
+def _write_evaluation_report(
+    control: Path,
+    preparation: dict,
+    *,
+    action: str,
+    evidence_refs: list[str] | None = None,
+    target: str | None = None,
+    mechanism: str | None = None,
+    injected_text: str | None = None,
+) -> tuple[str, str]:
+    report_ref = (
+        f"results/retrospectives/{BOUNDARY}/evaluations/"
+        f"{preparation['preparation_digest']}.json"
+    )
+    observations = preparation["preparation"]["observations"]
+    proposals = []
+    investigations = []
+    if action == "PROPOSE":
+        recipe = FIXED_REMEDIATION_RECIPES.get(
+            observations[0]["recurrence_key"],
+            {
+                "target": "unsupported evaluator target",
+                "mechanism": "Unsupported evaluator mechanism.",
+            },
+        )
+        proposals = [{
+            "proposal_id": "EVAL-PROP-001",
+            "observation_ids": [observations[0]["observation_id"]],
+            "target": target or recipe["target"],
+            "mechanism": mechanism or recipe["mechanism"],
+            "alternatives": ["Retain post-run detection only."],
+            "validation_cases": [
+                "A missing execution specification is rejected before worker execution.",
+                "A valid pinned execution specification remains accepted.",
+            ],
+            "rollback": injected_text or "Remove the pre-execution rejection and restore post-run detection.",
+            "evidence_refs": (
+                evidence_refs
+                if evidence_refs is not None
+                else observations[0]["evidence_refs"]
+            ),
+            "creates_task": False,
+            "grants_implementation_authority": False,
+        }]
+    elif action == "INVESTIGATE":
+        investigations = [{
+            "investigation_id": "INV-001",
+            "observation_ids": [observations[0]["observation_id"]],
+            "question": "Which natural complexity or avoidable mechanism caused this recurrence?",
+            "discriminator": "Inspect one bounded reason event that distinguishes the alternatives.",
+            "evidence_needed": ["A structured reason code for the observed event."],
+            "evidence_refs": (
+                evidence_refs
+                if evidence_refs is not None
+                else observations[0]["evidence_refs"]
+            ),
+        }]
+    assessments = []
+    for index, observation in enumerate(observations):
+        selected_action = action if index == 0 else "NO_CHANGE"
+        assessments.append({
+            "observation_id": observation["observation_id"],
+            "evidence_ceiling": observation["action_ceiling"],
+            "classification": (
+                "AVOIDABLE_FRICTION" if selected_action == "PROPOSE"
+                else "INSUFFICIENT_EVIDENCE"
+            ),
+            "facts": [observation["statement"]],
+            "hypotheses": ["The observation may indicate avoidable friction."],
+            "alternatives": ["The observation may reflect natural complexity."],
+            "discriminator": "Inspect evidence that distinguishes the competing explanations.",
+            "action": selected_action,
+            "rationale": injected_text or "The prepared evidence supports this bounded action.",
+            "evidence_refs": (
+                evidence_refs if index == 0 and evidence_refs is not None
+                else observation["evidence_refs"]
+            ),
+        })
+    checks = {
+        name: {"status": "PASS", "detail": f"{name} passed."}
+        for name in EVALUATION_CHECKS
+    }
+    packet = preparation["preparation"]
+    spec = load_agent_spec("agent-evaluator", expected_role="reviewer")
+    request, _ = build_evaluation_request(packet, profile="qwen38-27b")
+    report = {
+        "schema_version": "1.0",
+        "boundary_id": BOUNDARY,
+        "preparation_digest": preparation["preparation_digest"],
+        "evidence_digest": preparation["evidence_digest"],
+        "boundary_digest": _preparation_boundary_digest(packet),
+        "prepared_analysis_digest": _prepared_analysis_digest(packet),
+        "agent_spec_id": spec.agent_spec_id,
+        "agent_spec_version": spec.version,
+        "agent_spec_digest": request["format"]["properties"]["agent_spec_digest"]["const"],
+        "profile": "codex/qwen38-27b",
+        "verdict": "ACCEPT",
+        "checks": checks,
+        "observation_assessments": assessments,
+        "investigations": investigations,
+        "proposals": proposals,
+        "creates_task": False,
+        "grants_implementation_authority": False,
+    }
+    report_path = control / report_ref
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    content = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    report_path.write_text(content)
+    return hashlib.sha256(content.encode()).hexdigest(), report_ref
 
 
 def test_no_change_preview_and_atomic_apply(tmp_path: Path):
@@ -849,7 +987,7 @@ def test_retrospective_validator_rejects_semantic_contract_drift(mutation):
         validate_retrospective(value)
 
 
-def test_cli_preview_and_human_approval_flag(tmp_path: Path):
+def test_cli_does_not_expose_historical_v1_analysis(tmp_path: Path):
     control, _, _ = _project(tmp_path)
     completed = subprocess.run(
         [
@@ -860,8 +998,8 @@ def test_cli_preview_and_human_approval_flag(tmp_path: Path):
         capture_output=True,
         check=False,
     )
-    assert completed.returncode == 0
-    assert json.loads(completed.stdout)["disposition"] == "NO_CHANGE"
+    assert completed.returncode == 2
+    assert "invalid choice" in completed.stderr
     assert not (control / "results/retrospectives").exists()
 
 
@@ -883,3 +1021,581 @@ def test_advisory_project_lock_ignores_stale_file_and_blocks_active_holder(tmp_p
         os.close(descriptor)
     assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
     assert "project lock" in blocked["blocking_reasons"][0]["message"]
+
+
+def test_v2_prepare_is_conservative_content_addressed_and_backlog_free(tmp_path: Path):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    backlog_before = (control / "management/BACKLOG.md").read_text()
+
+    preview = _prepare(control)
+    assert preview["disposition"] == "PREPARED"
+    assert preview["preparation"]["observations"][0]["evidence_strength"] == "E1"
+    assert preview["preparation"]["assessments"][0]["default_action"] == "NO_CHANGE"
+    assert preview["preparation"]["assessments"][0]["fixed_recipe"] is None
+    assert not (control / "results/retrospectives").exists()
+
+    applied = _prepare(control, apply=True)
+    packet_path = Path(applied["artifact_root"]) / "preparation.json"
+    validate_preparation(json.loads(packet_path.read_text()))
+    assert packet_path.is_file()
+    assert Path(applied["artifact_root"]).name == applied["preparation_digest"]
+    assert (control / "management/BACKLOG.md").read_text() == backlog_before
+    assert _prepare(control, apply=True)["idempotent"] is True
+
+
+def test_v2_rejects_historical_v1_boundary_backfill(tmp_path: Path):
+    control, _, _ = _project(tmp_path)
+    _analyze(control, apply=True)
+
+    blocked = _prepare(control, apply=True)
+
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert blocked["blocking_reasons"][0]["code"] == "historical_v1_boundary"
+    assert not (control / f"results/retrospectives/{BOUNDARY}/preparations").exists()
+
+
+def test_v2_prepare_uses_exact_fixed_recipe_only_for_hard_identity_evidence(tmp_path: Path):
+    control, _, _ = _project(tmp_path, modern_missing_pins=True)
+
+    prepared = _prepare(control)
+    observations = {
+        item["recurrence_key"]: item for item in prepared["preparation"]["observations"]
+    }
+    assessments = {
+        item["observation_id"]: item for item in prepared["preparation"]["assessments"]
+    }
+
+    for key in ("identity:invalid-execution-spec", "identity:invalid-delegation"):
+        observation = observations[key]
+        assert observation["evidence_strength"] == "E3"
+        assert assessments[observation["observation_id"]]["fixed_recipe"] is not None
+        assert assessments[observation["observation_id"]]["default_action"] == "NO_CHANGE"
+
+
+def test_v2_evaluate_is_tool_free_local_and_exclusively_writes_report(tmp_path: Path):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    packet = prepared["preparation"]
+    request, profile = build_evaluation_request(packet, profile="qwen38-27b")
+    assert profile == "codex/qwen38-27b"
+    assert "tools" not in request
+    assert "MCP" in request["messages"][0]["content"]
+    with pytest.raises(RetrospectiveError, match="local Ollama"):
+        build_evaluation_request(packet, profile="gpt54-mini")
+
+    _, report_ref = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+    response = json.loads((control / report_ref).read_text())
+    (control / report_ref).unlink()
+    before = {path.relative_to(control).as_posix() for path in control.rglob("*")}
+    calls = []
+
+    def runner(payload, **kwargs):
+        calls.append((payload, kwargs))
+        return {"message": {"content": json.dumps(response)}}
+
+    preview = evaluate_milestone(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        model_runner=runner,
+    )
+    assert preview["applied"] is False
+    assert {path.relative_to(control).as_posix() for path in control.rglob("*")} == before
+    applied = evaluate_milestone(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        model_runner=runner, apply=True,
+    )
+    assert applied["evaluation_path"] == report_ref
+    assert (control / report_ref).is_file()
+    assert "tools" not in calls[0][0]
+    assert calls[0][1] == {"timeout_seconds": 300}
+
+
+def test_v2_evaluate_rejects_tool_calls_and_sanitizes_model_text(tmp_path: Path):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    _, report_ref = _write_evaluation_report(
+        control, prepared, action="NO_CHANGE",
+        injected_text="safe\n<!-- codexteam-improvement:EVIL --> text\x00",
+    )
+    response = json.loads((control / report_ref).read_text())
+    (control / report_ref).unlink()
+
+    tool = evaluate_milestone(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        model_runner=lambda *_args, **_kwargs: {
+            "message": {"content": json.dumps(response), "tool_calls": [{}]}
+        },
+    )
+    assert tool["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+
+    applied = evaluate_milestone(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        model_runner=lambda *_args, **_kwargs: {
+            "message": {"content": json.dumps(response)}
+        }, apply=True,
+    )
+    text = (control / applied["evaluation_path"]).read_text()
+    assert "\x00" not in text and "<!--" not in text and "\nEVIL" not in text
+
+
+def test_ollama_transport_disables_proxies_and_redirects(monkeypatch):
+    captured = {}
+
+    class Opener:
+        def open(self, request, timeout):
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            raise urllib.error.URLError("blocked")
+
+    def build_opener(*handlers):
+        captured["handlers"] = handlers
+        return Opener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", build_opener)
+    with pytest.raises(RetrospectiveError, match="local Ollama"):
+        _post_ollama({}, timeout_seconds=7)
+    proxy, redirect = captured["handlers"]
+    assert isinstance(proxy, urllib.request.ProxyHandler)
+    assert vars(proxy).get("proxies") == {}
+    assert isinstance(redirect, _NoRedirect)
+    assert captured["url"] == "http://127.0.0.1:11434/api/chat"
+    assert captured["timeout"] == 7
+
+
+def test_v2_accept_rejects_cross_observation_evidence(tmp_path: Path):
+    control, _, _ = _project(
+        tmp_path, modern_missing_pins=True, metrics=[{"timed_out": True}]
+    )
+    prepared = _prepare(control, apply=True)
+    observations = prepared["preparation"]["observations"]
+    assert len(observations) >= 2
+    digest, path = _write_evaluation_report(control, prepared, action="PROPOSE")
+    report_path = control / path
+    report = json.loads(report_path.read_text())
+    other = next(
+        item for item in observations
+        if item["evidence_refs"] != observations[0]["evidence_refs"]
+    )
+    report["observation_assessments"][0]["evidence_refs"] = other["evidence_refs"]
+    content = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    report_path.write_text(content)
+    blocked = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=hashlib.sha256(content.encode()).hexdigest(),
+        evaluation_path=path,
+    )
+    assert "exactly match" in blocked["blocking_reasons"][0]["message"]
+
+
+def test_v2_accept_rejects_noncanonical_evaluation_path(tmp_path: Path):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    digest, _ = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+    blocked = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest,
+        evaluation_path=f"results/retrospectives/{BOUNDARY}/evaluations/other.json",
+    )
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert "not canonical" in blocked["blocking_reasons"][0]["message"]
+
+
+def test_v2_accept_no_change_binds_evaluator_and_preserves_private_data(tmp_path: Path):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+
+    accepted = accept_evaluation(
+        control,
+        boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest,
+        evaluation_path=path,
+        apply=True,
+    )
+
+    persisted = json.loads((control / "results/retrospectives/M12/analysis-v2.json").read_text())
+    validate_v2_analysis(persisted)
+    assert accepted["disposition"] == "NO_CHANGE"
+    assert accepted["proposals"] == []
+    assert accepted["evaluator"]["agent_spec_id"] == "agent-evaluator"
+    assert "No candidate recommended this round" in (
+        control / "results/retrospectives/M12/RETROSPECTIVE-v2.md"
+    ).read_text()
+    assert "PRIVATE" not in json.dumps(persisted)
+
+
+@pytest.mark.parametrize("missing", ("analysis-v2.json", "RETROSPECTIVE-v2.md"))
+def test_v2_accept_recovers_one_missing_publication_file(tmp_path: Path, missing: str):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+    accepted = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+    destination = Path(accepted["artifact_root"])
+    (destination / missing).unlink()
+
+    recovered = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+
+    assert recovered["disposition"] == "NO_CHANGE"
+    assert (destination / "analysis-v2.json").is_file()
+    assert (destination / "RETROSPECTIVE-v2.md").is_file()
+
+
+def test_v2_accept_retains_investigation_under_no_change(tmp_path: Path):
+    control, _, _ = _project(tmp_path)
+    result_path = control / "results/T001-att-001.json"
+    result = json.loads(result_path.read_text())
+    result["warnings"] = ["[evidence-integrity] Accepted evidence needs investigation."]
+    result_path.write_text(json.dumps(result))
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="INVESTIGATE")
+    accepted = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+    assert accepted["disposition"] == "NO_CHANGE"
+    assert accepted["investigations"]
+    assert accepted["proposals"] == []
+
+
+def test_v2_accept_enforces_ceiling_references_and_concrete_proposal(tmp_path: Path):
+    e1, _, _ = _project(tmp_path / "e1", second_attempt=True)
+    prepared_e1 = _prepare(e1, apply=True)
+    digest, path = _write_evaluation_report(e1, prepared_e1, action="PROPOSE")
+    blocked = accept_evaluation(
+        e1,
+        boundary_id=BOUNDARY,
+        preparation_digest=prepared_e1["preparation_digest"],
+        evaluation_digest=digest,
+        evaluation_path=path,
+    )
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert "ceiling" in blocked["blocking_reasons"][0]["message"]
+
+    invented, _, _ = _project(tmp_path / "invented", modern_missing_pins=True)
+    prepared_invented = _prepare(invented, apply=True)
+    digest, path = _write_evaluation_report(
+        invented, prepared_invented, action="PROPOSE", evidence_refs=["private/unknown.json"]
+    )
+    blocked = accept_evaluation(
+        invented,
+        boundary_id=BOUNDARY,
+        preparation_digest=prepared_invented["preparation_digest"],
+        evaluation_digest=digest,
+        evaluation_path=path,
+    )
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert "exactly match" in blocked["blocking_reasons"][0]["message"]
+
+    recipe, _, _ = _project(tmp_path / "recipe", modern_missing_pins=True)
+    prepared_recipe = _prepare(recipe, apply=True)
+    digest, path = _write_evaluation_report(
+        recipe, prepared_recipe, action="PROPOSE", mechanism="Model-selected mechanism."
+    )
+    blocked = accept_evaluation(
+        recipe, boundary_id=BOUNDARY,
+        preparation_digest=prepared_recipe["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path,
+    )
+    assert "fixed E3 recipe" in blocked["blocking_reasons"][0]["message"]
+
+
+def test_v2_accept_rejects_tampered_report_and_agentspec_metadata(tmp_path: Path):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+    report_path = control / path
+    report = json.loads(report_path.read_text())
+    report["agent_spec_digest"] = "0" * 64
+    report_path.write_text(json.dumps(report))
+
+    blocked = accept_evaluation(
+        control,
+        boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest,
+        evaluation_path=path,
+    )
+
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert blocked["blocking_reasons"][0]["code"] == "evaluation_digest"
+
+    content = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    report_path.write_text(content)
+    blocked = accept_evaluation(
+        control,
+        boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=hashlib.sha256(content.encode()).hexdigest(),
+        evaluation_path=path,
+    )
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert "evaluator identity" in blocked["blocking_reasons"][0]["message"]
+
+
+def test_v2_accept_rejects_changed_evaluator_guidance(
+    tmp_path: Path, monkeypatch,
+):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+    changed = tmp_path / "changed-evaluator.md"
+    original = retrospective.guidance_paths(
+        load_agent_spec("agent-evaluator", expected_role="reviewer")
+    )[0].read_text()
+    changed.write_text(original + "\nChanged after evaluation.\n")
+    monkeypatch.setattr(retrospective, "guidance_paths", lambda _spec: (changed,))
+
+    blocked = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path,
+    )
+
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert "evaluator identity" in blocked["blocking_reasons"][0]["message"]
+
+
+def test_v2_accept_adds_only_valid_e3_proposal_as_proposed(tmp_path: Path):
+    control, _, _ = _project(tmp_path, modern_missing_pins=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="PROPOSE")
+
+    accepted = accept_evaluation(
+        control,
+        boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest,
+        evaluation_path=path,
+        apply=True,
+    )
+
+    proposal = accepted["proposals"][0]
+    validate_v2_proposal(proposal)
+    assert accepted["disposition"] == "PROPOSALS_RECORDED"
+    assert proposal["status"] == "Proposed"
+    assert proposal["category"] == "system"
+    assert proposal["impact"] == "high"
+    assert proposal["action_band"] == "Candidate"
+    assert proposal["change_risk"] == "medium"
+    assert proposal["change_amount"] == "medium"
+    assert proposal["reversibility"] == "managed"
+    assert proposal["creates_task"] is False
+    backlog = (control / "management/BACKLOG.md").read_text()
+    assert backlog.count(f"<!-- codexteam-improvement:{proposal['proposal_id']} -->") == 1
+    assert "- Creates task: No" in backlog
+    assert not (control / "management/tasks").exists()
+
+    decided = decide_proposal(
+        control,
+        boundary_id=BOUNDARY,
+        proposal_id=proposal["proposal_id"],
+        decision="approve",
+        approver="A. Human",
+        reason="Approved for planning only.",
+        human_approved=True,
+        apply=True,
+    )
+    assert decided["approval_scope"] == "planning-only"
+    assert decided["creates_task"] is False
+    assert decided["grants_implementation_authority"] is False
+    assert "- Status: Approved" in (control / "management/BACKLOG.md").read_text()
+
+
+def test_v2_accepted_proposal_remains_decidable_after_guidance_change(
+    tmp_path: Path, monkeypatch,
+):
+    control, _, _ = _project(tmp_path, modern_missing_pins=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="PROPOSE")
+    accepted = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+    changed = tmp_path / "later-evaluator.md"
+    changed.write_text("Legitimate guidance published after retrospective acceptance.\n")
+    monkeypatch.setattr(retrospective, "guidance_paths", lambda _spec: (changed,))
+
+    decided = decide_proposal(
+        control, boundary_id=BOUNDARY,
+        proposal_id=accepted["proposals"][0]["proposal_id"],
+        decision="defer", approver="A. Human", reason="Review later.",
+        human_approved=True, apply=True,
+    )
+
+    assert decided["status"] == "Deferred"
+
+
+def test_v2_acceptance_recovers_backlog_after_guidance_change(
+    tmp_path: Path, monkeypatch,
+):
+    control, _, _ = _project(tmp_path, modern_missing_pins=True)
+    backlog_before = (control / "management/BACKLOG.md").read_text()
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="PROPOSE")
+    accepted = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+    (control / "management/BACKLOG.md").write_text(backlog_before)
+    changed = tmp_path / "later-evaluator.md"
+    changed.write_text("Legitimate guidance published after retrospective acceptance.\n")
+    monkeypatch.setattr(retrospective, "guidance_paths", lambda _spec: (changed,))
+
+    recovered = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+
+    marker = f"<!-- codexteam-improvement:{accepted['proposals'][0]['proposal_id']} -->"
+    assert recovered["disposition"] == "PROPOSALS_RECORDED"
+    assert marker in (control / "management/BACKLOG.md").read_text()
+
+
+def test_v2_public_analysis_without_acceptance_receipt_cannot_bypass_provenance(
+    tmp_path: Path, monkeypatch,
+):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+    accepted = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+    receipt = (
+        control / ".codexteam/runtime/milestone-retrospectives"
+        / BOUNDARY / "acceptance.json"
+    )
+    receipt.unlink()
+    changed = tmp_path / "untrusted-evaluator.md"
+    changed.write_text("Guidance differs from the evaluation provenance.\n")
+    monkeypatch.setattr(retrospective, "guidance_paths", lambda _spec: (changed,))
+
+    blocked = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+
+    assert accepted["disposition"] == "NO_CHANGE"
+    assert blocked["disposition"] == "BLOCKED_INSUFFICIENT_EVIDENCE"
+    assert "evaluator identity" in blocked["blocking_reasons"][0]["message"]
+
+
+def test_v2_decision_requires_acceptance_receipt(tmp_path: Path):
+    control, _, _ = _project(tmp_path, modern_missing_pins=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="PROPOSE")
+    accepted = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+    receipt = (
+        control / ".codexteam/runtime/milestone-retrospectives"
+        / BOUNDARY / "acceptance.json"
+    )
+    receipt.unlink()
+
+    with pytest.raises(RetrospectiveError, match="acceptance receipt"):
+        decide_proposal(
+            control, boundary_id=BOUNDARY,
+            proposal_id=accepted["proposals"][0]["proposal_id"],
+            decision="defer", approver="A. Human", reason="Review later.",
+            human_approved=True, apply=True,
+        )
+
+
+def test_v2_acceptance_receipt_recovers_interrupted_publication_after_guidance_change(
+    tmp_path: Path, monkeypatch,
+):
+    control, _, _ = _project(tmp_path, second_attempt=True)
+    prepared = _prepare(control, apply=True)
+    digest, path = _write_evaluation_report(control, prepared, action="NO_CHANGE")
+    publish = retrospective._publish_v2_analysis
+    monkeypatch.setattr(
+        retrospective,
+        "_publish_v2_analysis",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("interrupted")),
+    )
+    interrupted = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+    monkeypatch.setattr(retrospective, "_publish_v2_analysis", publish)
+    changed = tmp_path / "later-evaluator.md"
+    changed.write_text("Legitimate guidance published after interrupted acceptance.\n")
+    monkeypatch.setattr(retrospective, "guidance_paths", lambda _spec: (changed,))
+
+    recovered = accept_evaluation(
+        control, boundary_id=BOUNDARY,
+        preparation_digest=prepared["preparation_digest"],
+        evaluation_digest=digest, evaluation_path=path, apply=True,
+    )
+
+    assert interrupted["blocking_reasons"][0]["code"] == "acceptance_publication_pending"
+    assert interrupted["applied"] is True
+    assert recovered["disposition"] == "NO_CHANGE"
+
+
+def test_v2_strict_validators_reject_extra_fields_and_authority():
+    preparation = {
+        "schema_version": "2.0", "boundary_id": BOUNDARY, "task_ids": [TASK],
+        "evidence_digest": "a" * 64, "evidence": {}, "observations": [],
+        "assessments": [], "investigations": [], "private": "no",
+    }
+    with pytest.raises(RetrospectiveError, match="strict v2"):
+        validate_preparation(preparation)
+
+    base = {
+        "schema_version": "2.0", "boundary_id": BOUNDARY, "task_ids": [TASK],
+        "evidence_digest": hashlib.sha256(b"{}").hexdigest(), "evidence": {},
+        "observations": [], "assessments": [], "investigations": [],
+    }
+    report = {
+        "schema_version": "1.0",
+        "boundary_id": BOUNDARY,
+        "boundary_digest": _preparation_boundary_digest(base),
+        "preparation_digest": hashlib.sha256(
+            json.dumps(base, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "evidence_digest": base["evidence_digest"],
+        "prepared_analysis_digest": _prepared_analysis_digest(base),
+        "agent_spec_id": "agent-evaluator",
+        "agent_spec_version": "1.0",
+        "agent_spec_digest": load_agent_spec(
+            "agent-evaluator", expected_role="reviewer"
+        ).digest,
+        "profile": "codex/qwen38-27b",
+        "verdict": "ACCEPT",
+        "checks": {
+            name: {"status": "PASS", "detail": f"{name} passed."}
+            for name in EVALUATION_CHECKS
+        },
+        "observation_assessments": [],
+        "investigations": [],
+        "proposals": [],
+        "creates_task": True,
+        "grants_implementation_authority": False,
+    }
+    with pytest.raises(RetrospectiveError, match="authority"):
+        validate_evaluation_report(report, base)

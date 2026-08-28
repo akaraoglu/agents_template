@@ -98,7 +98,20 @@ canonical task IDs and handoffs.
 12. Report evidence, remaining risks, and any real showstopper to the operator.
 13. Before delivery, check each current Delivery Criteria row, run an acceptance-level product check, and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
 14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
-15. After each verified milestone commit, run the project-local milestone retrospective. Persist `NO_CHANGE` or `PROPOSALS_RECORDED`; treat `BLOCKED_INSUFFICIENT_EVIDENCE` as a transient, non-persisted response and correct its evidence before rerunning. Qualified proposals enter `management/BACKLOG.md` only as `Proposed`. Only an explicit human `decide --human-approved --apply` command may approve, reject, or defer one. Approval permits normal planning only, not task creation, execution, guidance changes, or implementation authority.
+15. After each verified milestone commit, run the staged v2 retrospective:
+    prepare immutable evidence; run one applied, schema-constrained local
+    `evaluate` over that packet; review its strict report; run deterministic
+    `accept`; then
+    present the human with the categorically prioritized `Proposed` entries or
+    the explicit conclusion `No candidate recommended this round`. The
+    evaluator handles the prepared metric and event material, so the Lead need
+    not manually read every metric or transcript. The Lead still inspects the
+    evaluation report and acceptance output and must not infer causes from
+    observations. Apply acceptance only after validation; accepted E3 proposals
+    then enter `management/BACKLOG.md` automatically as `Proposed`. Only an
+    explicit human `decide --human-approved --apply` command may approve,
+    reject, or defer one. Approval permits normal planning only, not task
+    creation, execution, guidance changes, or implementation authority.
 16. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
 17. Before substantial source investigation, search the exact control project's
     `discoveries/*.md` with task-specific terms. Verify relevant prior
@@ -176,7 +189,12 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Development and Integration Gate evidence is reused by the Reviewer and Documenter unless a concrete gap requires another check.
 - Architect output is approved by the Project Lead and audited for conformance by the Reviewer.
 - Git Steward is invoked only at a verified boundary, stages explicit approved paths, and never performs a remote action.
-- Every sufficiently evidenced verified milestone commit has a persisted retrospective disposition; blocked responses remain transient. Proposal approval is human-only, planning-only, and never implementation authority.
+- Every sufficiently evidenced verified milestone commit has a v2 evaluator
+  result and accepted retrospective disposition. `NO_CHANGE` may retain
+  observations or investigation requests because it means no concrete change
+  is justified now. Historical v1 records remain immutable and readable.
+  Proposal approval is human-only, planning-only, and never implementation
+  authority.
 - Normal corrections retain the same thread and attempt.
 - Only attempts carrying the current `execution-spec.json` contract may resume;
   historical pre-cutover attempts remain read-only project history.
@@ -203,6 +221,11 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Updating state from a worker claim rather than verified evidence
 - Accepting a review that attributes checks to an artifact that contains only a smaller unit-test run
 - Treating `DELIVERED` state as proof while scratch files or an acceptance-level output defect remain
+- Treating a timeout, correction loop, repeated command, or metric as its own
+  cause, or asking the Lead to manually reinterpret all prepared metrics instead
+  of using the evaluator flow
+- Recommending a change without E3 evidence for a concrete target and mechanism,
+  or judging speed against a baseline from unlike work
 - Narrating every poll and rereading full result/event blobs until a small project consumes a large context
 - Nesting a worker poll inside a shorter outer yield, which turns one wait into repeated Lead model cycles
 - Letting `BRIEF.md` drift after task or milestone transitions

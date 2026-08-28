@@ -16,7 +16,7 @@ the pinned selection; selecting another specialization requires a new attempt.
 
 Initial specialists are `python-developer`, `go-developer`,
 `frontend-developer`, `cpp-developer`, `cpp-embedded-developer`,
-`security-reviewer`, and `accessibility-reviewer`.
+`security-reviewer`, `accessibility-reviewer`, and `agent-evaluator`.
 
 AgentSpecs may declare capabilities, add catalog-owned guidance, and narrow
 allowed paths, denials, MCP servers/tools, or evidence types. They cannot select
@@ -32,3 +32,15 @@ infrastructure. The `security-reviewer` overlay remains within the Reviewer's
 read-only ceiling and produces an evidence-backed threat model covering assets,
 actors, entry points, trust boundaries, abuse cases, controls, and residual risk;
 it never repairs the product or changes lifecycle state.
+
+The `agent-evaluator` AgentSpec is a Reviewer-derived identity and guidance
+bundle for one prepared milestone retrospective packet. It is not selected on a
+worker attempt: `milestone-retrospective.py evaluate` supplies it directly to
+one schema-constrained local Ollama request with no tools, filesystem, MCP,
+cloud profile, retries, worker task, session, or unprepared project context.
+Deterministic caller code alone may persist the strict report. The report binds
+the exact boundary, preparation, evidence, and prepared-analysis digests;
+applies the `E1` observe, `E2` investigate, and `E3` proposal ceilings; and
+conservatively uses `NO_CHANGE` when facts, alternatives, and a discriminator do
+not justify a change. Evaluations create no task and grant no implementation
+authority.

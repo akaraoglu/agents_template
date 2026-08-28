@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from codexteam_tools.contract_registry import CONTRACT_REGISTRY, get_contract
+from codexteam_tools.contract_registry import (
+    CONTRACT_REGISTRY,
+    EVALUATION_CHECKS,
+    get_contract,
+    validate_milestone_retrospective_evaluation,
+)
 from codexteam_tools.contracts import (
     ResultValidationError,
     synthetic_result,
@@ -27,6 +32,7 @@ def test_contract_registry_contains_registered_contracts():
         "execution-spec",
         "agent-spec",
         "milestone-retrospective",
+        "milestone-retrospective-evaluation",
         "improvement-proposal",
         "improvement-disposition",
     }
@@ -46,6 +52,13 @@ def test_retrospective_contract_schemas_match_strict_validator_fields():
             "schema_version", "boundary_id", "evidence_digest", "disposition",
             "signals", "proposals", "advisory_model",
         },
+        "milestone-retrospective-evaluation.json": {
+            "schema_version", "boundary_id", "boundary_digest",
+            "preparation_digest", "evidence_digest", "prepared_analysis_digest",
+            "agent_spec_id", "agent_spec_version", "agent_spec_digest", "profile",
+            "verdict", "checks", "observation_assessments", "investigations", "proposals",
+            "creates_task", "grants_implementation_authority",
+        },
         "improvement-proposal.json": {
             "schema_version", "proposal_id", "boundary_id", "recurrence_key",
             "category", "scope", "impact", "confidence", "evidence", "trigger",
@@ -64,6 +77,85 @@ def test_retrospective_contract_schemas_match_strict_validator_fields():
         assert schema["additionalProperties"] is False
         assert set(schema["required"]) == fields
         assert set(schema["properties"]) == fields
+
+
+def _evaluation_report():
+    return {
+        "schema_version": "1.0",
+        "boundary_id": "M001",
+        "boundary_digest": "a" * 64,
+        "preparation_digest": "b" * 64,
+        "evidence_digest": "c" * 64,
+        "prepared_analysis_digest": "d" * 64,
+        "agent_spec_id": "agent-evaluator",
+        "agent_spec_version": "1.0",
+        "agent_spec_digest": "e" * 64,
+        "profile": "codex/qwen38-27b",
+        "verdict": "ACCEPT",
+        "checks": {
+            name: {"status": "PASS", "detail": f"{name} passed."}
+            for name in EVALUATION_CHECKS
+        },
+        "observation_assessments": [{
+            "observation_id": "OBS-001",
+            "evidence_ceiling": "E1",
+            "classification": "INSUFFICIENT_EVIDENCE",
+            "facts": ["One timeout was recorded."],
+            "hypotheses": ["The timeout may reflect natural complexity."],
+            "alternatives": ["Natural complexity", "Avoidable tool friction"],
+            "discriminator": "Comparable repeated work would distinguish the causes.",
+            "action": "NO_CHANGE",
+            "rationale": "E1 does not justify investigation or change.",
+            "evidence_refs": ["evidence.json#/tasks/0"],
+        }],
+        "investigations": [],
+        "proposals": [],
+        "creates_task": False,
+        "grants_implementation_authority": False,
+    }
+
+
+def test_milestone_evaluation_contract_is_strict_and_authority_free():
+    report = _evaluation_report()
+    assert validate_milestone_retrospective_evaluation(report) is report
+    assert tuple(report["checks"]) == EVALUATION_CHECKS
+
+    invalid = copy.deepcopy(report)
+    invalid["future"] = True
+    with pytest.raises(ValueError, match="strict contract"):
+        validate_milestone_retrospective_evaluation(invalid)
+
+    invalid = copy.deepcopy(report)
+    invalid["grants_implementation_authority"] = True
+    with pytest.raises(ValueError, match="authority"):
+        validate_milestone_retrospective_evaluation(invalid)
+
+
+def test_milestone_evaluation_enforces_checks_refs_and_evidence_ceiling():
+    report = _evaluation_report()
+    report["checks"].pop("authority")
+    with pytest.raises(ValueError, match="check names"):
+        validate_milestone_retrospective_evaluation(report)
+
+    report = _evaluation_report()
+    report["observation_assessments"][0]["evidence_refs"] = ["../private.json"]
+    with pytest.raises(ValueError, match="unsafe"):
+        validate_milestone_retrospective_evaluation(report)
+
+    report = _evaluation_report()
+    report["observation_assessments"][0]["action"] = "PROPOSE"
+    with pytest.raises(ValueError, match="evidence ceiling"):
+        validate_milestone_retrospective_evaluation(report)
+
+    report = _evaluation_report()
+    report["observation_assessments"][0]["rationale"] = "line one\nline two"
+    with pytest.raises(ValueError, match="rationale"):
+        validate_milestone_retrospective_evaluation(report)
+
+    report = _evaluation_report()
+    report["observation_assessments"][0]["facts"] = ["<!-- injected -->"]
+    with pytest.raises(ValueError, match="facts"):
+        validate_milestone_retrospective_evaluation(report)
 
 
 def test_contract_registry_validator_symbols_resolve():

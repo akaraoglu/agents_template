@@ -17,8 +17,10 @@ JSON Schema cannot fully express.
 | Role policy | `schemas/role-policy.json` | Role responsibility and permission ceiling |
 | Gate record | `schemas/gate-record.json` | Development or Integration Gate observation |
 | Commit plan/authorization/record | `schemas/commit-*.json` | Explicit local milestone commit workflow |
-| Milestone retrospective | `schemas/milestone-retrospective.json` | Evidence-backed disposition after a verified milestone commit |
-| Improvement proposal | `schemas/improvement-proposal.json` | Qualified backlog candidate initially recorded as `Proposed` |
+| Milestone retrospective v1 | `schemas/milestone-retrospective.json` | Historical evidence-backed analysis; immutable and readable |
+| Milestone retrospective v2 | Strict preparation record plus `schemas/milestone-retrospective-evaluation.json` | Staged evidence, tool-free Reviewer-derived judgment, and deterministic acceptance |
+| Evaluator report | `schemas/milestone-retrospective-evaluation.json` | Prepared-packet-bound tool-free judgment; no task or implementation authority |
+| Improvement proposal | `schemas/improvement-proposal.json` | Validated E3 backlog candidate initially recorded as `Proposed` |
 | Improvement disposition | `schemas/improvement-disposition.json` | Immutable explicit human decision with no implementation authority |
 
 The handoff references `execution-spec.json`; it does not independently select a
@@ -44,13 +46,28 @@ text is not an acceptance contract in direct mode.
 A timeout or opt-in Run Guard interruption preserves a captured thread for
 same-attempt feedback. It does not create another lifecycle or contract format.
 
-Each analysis invocation returns `NO_CHANGE`, `PROPOSALS_RECORDED`, or the
-transient `BLOCKED_INSUFFICIENT_EVIDENCE` response. Only `NO_CHANGE` and
-`PROPOSALS_RECORDED` are persisted in `analysis.json`; a blocked response is not
-persisted and does not mutate retrospective state. With `--apply`, qualified
-proposals automatically enter the project backlog as `Proposed`. Only an
-explicit human `milestone-retrospective.py decide` command may transition one
-to `Approved`, `Rejected`, or `Deferred`, and applying any decision requires
-`--human-approved`. Approval is for normal planning only: it does not create a
-task, execute work, change guidance or contracts, or grant implementation
-authority. See `MILESTONE_RETROSPECTIVE.md`.
+New rounds use `prepare -> evaluate -> accept -> human decide`. Preparation is
+content-addressed, makes no model call, and does not touch the backlog. The
+Reviewer-derived `agent-evaluator` identity and guidance run in one dedicated,
+schema-constrained local Ollama request over the prepared packet. It has no
+tools, filesystem, MCP, cloud profile, retries, worker task, session, or other
+project context; deterministic caller code alone may persist its report.
+Deterministic acceptance validates the AgentSpec identity and digest plus all
+report and evidence digests. The evaluator cannot raise evidence ceilings,
+invent evidence, write backlog state, create tasks, or approve work.
+
+An observation is not a cause. E1 permits observation, E2 permits
+investigation, and only E3 permits a proposal with a concrete target and
+mechanism, alternatives, falsifiable validation, and rollback. `NO_CHANGE` may
+therefore retain observations and investigations. Applied acceptance adds only
+validated E3 proposals to the backlog as `Proposed`. Presentation keeps impact,
+change risk, change amount, reversibility, confidence, and action band
+categorical; it may say `No candidate recommended this round`.
+
+Only an explicit human `milestone-retrospective.py decide` command may
+transition a proposal to `Approved`, `Rejected`, or `Deferred`, and applying any
+decision requires `--human-approved`. Approval is for normal planning only: it
+does not create a task, execute work, change guidance or contracts, or grant
+implementation authority. Historical v1 analyses and dispositions remain
+immutable and readable, without reclassification or backfill. See
+`MILESTONE_RETROSPECTIVE.md`.

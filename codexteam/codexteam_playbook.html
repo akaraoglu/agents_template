@@ -1701,7 +1701,7 @@
           </div>
           <div class="map-node">
             <span class="map-node-number">07</span>
-            <div><strong>Retrospective</strong><span>Records no change or human-gated proposals.</span></div>
+            <div><strong>Retrospective</strong><span>Stages evidence, Reviewer judgment, and human-gated proposals.</span></div>
           </div>
         </div>
 
@@ -2038,29 +2038,32 @@
           <article class="evaluation-card dark">
             <div>
               <p class="micro-label">After verified commit</p>
-              <h3>Milestone retrospective</h3>
-              <p>Correlates real attempts, gates, commit-tree evidence, correction loops, failures, and usage. Deterministic rules decide whether a proposal qualifies.</p>
+              <h3>Milestone retrospective v2</h3>
+              <p>Prepares immutable evidence for one tool-free local request using the Reviewer-derived agent-evaluator identity and guidance, then deterministically accepts its strict report.</p>
             </div>
             <ul class="evaluation-list">
               <li>Exact task, runtime, repository, and role identity</li>
               <li>Accepted Integration Gate snapshots</li>
               <li>Commit tree reconstructed from Git blobs</li>
-              <li>Timeout, guard, tool-loop, and retry signals</li>
+              <li>Observations are evidence, not inferred causes</li>
+              <li>No tools, filesystem, MCP, cloud profile, retries, or worker session</li>
+              <li>Evaluator handles metrics; Lead reviews the strict report</li>
+              <li>No speed judgment from unlike-work baselines</li>
               <li>Raw prompts and process output excluded</li>
-              <li>NO_CHANGE / PROPOSALS_RECORDED / BLOCKED_INSUFFICIENT_EVIDENCE</li>
+              <li>NO_CHANGE may retain observations or investigations</li>
             </ul>
           </article>
         </div>
 
         <div class="improvement-loop reveal" aria-label="CodexTeam improvement lifecycle">
-          <div class="loop-step"><span>01 / Evidence</span><strong>Observe</strong></div>
-          <div class="loop-step"><span>02 / Rules</span><strong>Qualify</strong></div>
-          <div class="loop-step"><span>03 / Backlog</span><strong>Propose</strong></div>
-          <div class="loop-step"><span>04 / Human</span><strong>Decide</strong></div>
-          <div class="loop-step"><span>05 / Normal flow</span><strong>Plan</strong></div>
-          <div class="loop-step"><span>06 / Authorized</span><strong>Implement</strong></div>
-          <div class="loop-step"><span>07 / Evidence</span><strong>Verify</strong></div>
-          <div class="loop-step"><span>08 / Human</span><strong>Accept / Reject</strong></div>
+          <div class="loop-step"><span>01 / Evidence</span><strong>Prepare</strong></div>
+          <div class="loop-step"><span>02 / Tool-free</span><strong>Evaluate</strong></div>
+          <div class="loop-step"><span>03 / Report</span><strong>Review</strong></div>
+          <div class="loop-step"><span>04 / Rules</span><strong>Accept</strong></div>
+          <div class="loop-step"><span>05 / Lead</span><strong>Prioritize</strong></div>
+          <div class="loop-step"><span>06 / Human</span><strong>Decide</strong></div>
+          <div class="loop-step"><span>07 / Normal flow</span><strong>Plan</strong></div>
+          <div class="loop-step"><span>08 / Authorized</span><strong>Implement</strong></div>
           <div class="loop-step"><span>09 / Later</span><strong>Measure</strong></div>
         </div>
 
@@ -2069,7 +2072,7 @@
             <p class="micro-label">Authority boundary</p>
             <h3>Proposed is not approved.</h3>
           </div>
-          <p>When retrospective analysis is applied, qualified findings are automatically captured in the project backlog as <strong>Proposed</strong>. Preview mode writes nothing. Only an explicit human decision may approve, reject, or defer proposals. Approval is for planning only: it creates no task, changes no contract or skill, and grants no implementation authority. A retrospective may validly conclude <strong>NO_CHANGE</strong>.</p>
+          <p>Applied acceptance automatically captures only validated E3 proposals in the project backlog as <strong>Proposed</strong>. Proposals are rare and require a concrete mechanism, alternatives, falsifiable validation, and rollback. The Lead orders separate categories: impact high to low; action band and evidence strength; change risk low to high to unknown; change amount small to large to unknown; reversibility easy to hard to unknown; recurrence breadth; then stable ID. It may instead say <strong>No candidate recommended this round</strong>. Only a human may approve, reject, or defer. Approval is planning-only and grants no implementation authority. Historical v1 records remain immutable and readable.</p>
         </div>
       </section>
 
@@ -2137,7 +2140,7 @@
 
         <div class="glossary-tools reveal">
           <input id="glossary-search" class="glossary-search" type="search" placeholder="Filter the vocabulary..." aria-label="Filter vocabulary">
-          <span id="glossary-count" class="glossary-count" aria-live="polite">22 terms</span>
+          <span id="glossary-count" class="glossary-count" aria-live="polite">23 terms</span>
         </div>
 
         <dl id="glossary-list" class="glossary reveal">
@@ -2160,8 +2163,9 @@
           <div class="term"><dt>Sparse RAG</dt><dd>Offline FTS5/BM25 retrieval over approved documentation sources.</dd></div>
           <div class="term"><dt>Git transaction broker</dt><dd>Read-only model planning followed by authorized deterministic mutation.</dd></div>
           <div class="term"><dt>Skill evaluator</dt><dd>Tool-free conformance harness for guidance structure, routing, and authority decisions.</dd></div>
-          <div class="term"><dt>Milestone retrospective</dt><dd>Post-commit analyzer that correlates bounded project evidence and deterministic friction signals.</dd></div>
-          <div class="term"><dt>Improvement proposal</dt><dd>Qualified backlog candidate recorded automatically as Proposed without task or implementation authority.</dd></div>
+          <div class="term"><dt>Agent evaluator</dt><dd>Reviewer specialization that evaluates prepared milestone evidence without new role or approval authority.</dd></div>
+          <div class="term"><dt>Milestone retrospective</dt><dd>Staged post-commit flow: prepare, tool-free Reviewer-derived evaluation, deterministic acceptance, Lead presentation, and human decision.</dd></div>
+          <div class="term"><dt>Improvement proposal</dt><dd>Validated E3 backlog candidate recorded automatically as Proposed without task or implementation authority.</dd></div>
           <div class="term"><dt>Human disposition</dt><dd>Immutable approve, reject, or defer decision; approval grants planning only.</dd></div>
         </dl>
       </section>

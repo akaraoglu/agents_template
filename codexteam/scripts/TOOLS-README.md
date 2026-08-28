@@ -117,6 +117,63 @@ The authoritative configuration is `management/TEST_GATES.toml`. Commands are ar
 
 Inspection and preview are non-committing. The project must be the exact Git root, branch and HEAD must match, evidence must be current, the index must be clean, and every staged path must be explicitly authorized. Applied commit reconstructs and re-tests the candidate tree before one local commit. The tool never pushes, merges, tags, releases, publishes, or opens a remote PR.
 
+## Milestone Retrospective V2
+
+New rounds use a staged Lead flow:
+
+```text
+prepare -> tool-free evaluate -> deterministic accept
+        -> prioritized Proposed entries -> human decide
+```
+
+These commands describe the staged v2 contract. The current CLI does not expose
+historical v1 `analyze`; a branch that still lists only `analyze`/`decide` must
+not use `analyze` for a new round and should wait for the v2 surfaces.
+
+Prepare immutable evidence without a model call or backlog mutation:
+
+```bash
+./scripts/milestone-retrospective.py prepare <control-root> \
+  --boundary <id> --tasks <T001,T002> --apply --json
+```
+
+Run one tool-free local evaluation over the exact applied preparation:
+
+```bash
+./scripts/milestone-retrospective.py evaluate <control-root> \
+  --boundary <id> --preparation <preparation-digest> \
+  --profile <curated-local-profile> --apply --json
+```
+
+Review the strict report returned by `evaluate`, then preview `accept` with its
+exact evaluation digest and path. Add `--apply` only after review:
+
+```bash
+./scripts/milestone-retrospective.py accept <control-root> \
+  --boundary <id> --preparation <preparation-digest> \
+  --evaluation-digest <evaluation-digest> \
+  --evaluation-path <evaluation-path> --json
+```
+
+Evaluation is one schema-constrained request to a curated local Ollama profile.
+The Reviewer-derived AgentSpec supplies identity and guidance, but this is not a
+worker task or session: it has no tools, filesystem, MCP, cloud profile, retries,
+or other project context. Acceptance validates the AgentSpec identity and
+digest, strict report, preparation and evidence digests, and E1/E2/E3 action
+ceiling without a model call. It may retain observations or investigations in
+`NO_CHANGE`; observations are not causes. A proposal is allowed rarely, at E3,
+and must name a concrete mechanism. Do not judge speed against unlike work.
+
+Applied acceptance automatically records validated proposals in the backlog as
+`Proposed`. The Lead presents impact, action band, evidence strength, change
+risk, change amount, reversibility, confidence, and recurrence breadth as
+separate categories. Order impact high to low; then action band and evidence
+strength; change risk low to high to unknown; change amount small to large to
+unknown; reversibility easy to hard to unknown; recurrence breadth; and stable
+ID. The Lead may conclude `No candidate recommended this round`.
+Only a human may approve, reject, or defer; approval grants planning only.
+Historical v1 `analyze` artifacts remain immutable and readable.
+
 ## Inspect Roles and Worker Status
 
 ```bash

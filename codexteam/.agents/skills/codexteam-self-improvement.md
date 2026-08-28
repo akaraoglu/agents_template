@@ -16,7 +16,8 @@ Capture observations during execution, but evaluate and promote them only at a s
 - Named traces, reports, commands, diffs, or verification artifacts
 - The current skill, playbook, tool, or memory entry closest to the problem
 - The intended roles and model profiles
-- A baseline and an observable success measure
+- A like-for-like baseline when a comparative claim requires one, plus an
+  observable success measure
 - Current project scope, attempt state, and publication authority
 
 Use this observation shape when useful:
@@ -41,8 +42,17 @@ CodexTeam improvement observation:
 2. Triage the evidence.
    - Consider severity, recurrence, cross-project reuse, objective verifiability, expected time or token benefit, and maintenance cost.
    - Permit a severe and reusable one-time failure to qualify.
-   - Permit `no change` when evidence or expected reuse is weak.
-   - After a verified milestone commit, use `milestone-retrospective.py analyze`; every invocation reports `NO_CHANGE`, `PROPOSALS_RECORDED`, or transient `BLOCKED_INSUFFICIENT_EVIDENCE`. Only the first two are persisted round dispositions.
+    - Permit `no change` when evidence or expected reuse is weak.
+    - After a verified milestone commit, use the staged v2 retrospective. Run
+      applied `prepare`, one tool-free local `evaluate`, then deterministic
+      `accept`.
+   - Treat observations as facts to explain, not causes. A timeout, feedback
+     loop, replacement attempt, repeated command, or large metric may reflect
+     natural task complexity. Do not judge relative speed without a comparable
+     like-for-like baseline.
+   - Let the evaluator handle the prepared event and metric material. The Lead
+      need not manually read every metric, but still reviews the evaluation report and
+     deterministic acceptance output.
 
 3. Classify the smallest durable response.
 
@@ -65,7 +75,15 @@ CodexTeam improvement observation:
    - Keep the change narrow and reviewable.
    - Record its originating evidence, intended trigger, affected roles or models, baseline, validation plan, and rollback.
    - Use the lifecycle `observed -> proposed -> candidate -> verified -> accepted`; record rejected candidates honestly. Later merge, deprecate, or retire accepted guidance when evidence changes.
-   - With `--apply`, qualified retrospective proposals enter `management/BACKLOG.md` as `Proposed`. Only an explicit human `decide --human-approved --apply` command changes that status. `Approved` means approved for planning only and grants no task or implementation authority.
+   - Propose rarely. Retain observations or request investigation at E1/E2;
+     recommend a proposal only at E3 with a concrete target and mechanism,
+     alternatives, falsifiable validation cases, and rollback.
+   - When v2 acceptance is applied, validated E3 proposals automatically enter
+     `management/BACKLOG.md` as `Proposed`. `NO_CHANGE` may still contain
+     observations and investigation requests. Only an explicit human
+     `decide --human-approved --apply` command changes proposal status.
+     `Approved` means approved for planning only and grants no task or
+     implementation authority.
 
 6. Keep judgment and verification separate.
    - The Project Lead may directly make a small Markdown correction.
@@ -79,7 +97,9 @@ CodexTeam improvement observation:
    - A negative case where the skill or tool should not activate
    - Existing repository regressions
    - The intended local model profile when behavior is model-dependent
-   - Time, turns, tokens, or corrections when performance is the claimed benefit
+   - Time, turns, tokens, or corrections against comparable work when
+     performance is the claimed benefit; never use unlike work as a speed
+     baseline
    - The deterministic skill structure suite and, when routing or decision behavior changes, the fixed manual skill case catalog
 
 8. Promote only supported claims.
@@ -113,19 +133,41 @@ git diff --check -- .
 
 Use `./scripts/run-skill-evals.py --profile <curated-local-profile> --output <new-json-path> --dry-run` before an authorized manual skill evaluation. The manual evaluator is one schema-constrained, tool-free local Ollama request, never retries, and is not lifecycle evidence. Use the relevant existing help, dry-run, product canary, or test-gate command when the candidate affects those surfaces. Do not introduce another validation framework for one improvement.
 
-After a verified milestone commit, preview or apply the bounded retrospective:
+After a verified milestone commit, run the staged v2 retrospective from the
+CodexTeam toolkit root. The Lead first prepares evidence, then runs one dedicated
+tool-free local evaluator request over that packet. This uses the
+Reviewer-derived `agent-evaluator` identity and guidance but creates no worker
+task or session and exposes no filesystem, MCP, tools, cloud profile, retries,
+or other project context. Deterministic acceptance validates the strict report.
+Use each command's `--help` for complete repository-binding arguments:
 
 ```bash
-./scripts/milestone-retrospective.py analyze <control-root> --boundary <id> --tasks <T001,T002> [--apply]
+./scripts/milestone-retrospective.py prepare <control-root> --boundary <id> --tasks <T001,T002> --apply --json
+./scripts/milestone-retrospective.py evaluate <control-root> --boundary <id> \
+  --preparation <preparation-digest> --profile <curated-local-profile> --apply --json
+# Review the strict evaluation report, then preview accept; add --apply only
+# after reviewing the preview.
+./scripts/milestone-retrospective.py accept <control-root> --boundary <id> \
+  --preparation <preparation-digest> --evaluation-digest <evaluation-digest> \
+  --evaluation-path <evaluation-path> --json
 ./scripts/milestone-retrospective.py decide <control-root> --boundary <id> --proposal <IMP-...> --decision approve|reject|defer --approver <identity> --reason <reason> [--human-approved --apply]
 ```
 
-Run these commands from the CodexTeam toolkit root; `<control-root>` identifies
-the generated project being analyzed.
+The Lead presents accepted proposals categorically, keeping impact, change risk,
+change amount, reversibility, confidence, and action band distinct rather than
+collapsing them into a numeric score. Prioritize impact first, then action band
+and evidence strength, then change risk low to high to unknown, change amount
+small to large to unknown, reversibility easy to hard to unknown, recurrence
+breadth, and stable ID. Say `No candidate recommended this round` when no
+candidate merits human action.
+
+Historical v1 `analyze` records, proposals, and dispositions remain immutable
+and readable. Do not reclassify or backfill them into v2.
 
 ## Expected Output
 
 - An evidence-backed classification, including `no change` when appropriate
+- A categorical, prioritized presentation or `No candidate recommended this round`
 - The smallest candidate diff
 - Named baseline and validation evidence
 - An accept, reject, revise, deprecate, or retire decision
@@ -158,6 +200,8 @@ For every accepted improvement:
 ## Common Mistakes Or Failure Modes
 
 - Treating every observation as a permanent skill
+- Treating an observation as proof of a cause or an automatic proposal
+- Comparing unlike work to claim a speed improvement or regression
 - Using recurrence count as the only decision rule
 - Letting the same agent propose, implement, verify, and approve a material change
 - Publishing a skill because it sounds useful without testing its trigger

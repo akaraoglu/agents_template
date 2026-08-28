@@ -18,7 +18,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from .contracts import ResultValidationError, validate_result
+from .agent_specs import (
+    AgentSpecError,
+    guidance_paths,
+    load_agent_spec,
+)
+from .contracts import (
+    ResultValidationError,
+    validate_result,
+)
+from .contract_registry import validate_milestone_retrospective_evaluation
 from .delegation import load_delegation
 from .execution_registry import ExecutionRegistryError, load_execution_registry
 from .execution_spec import ExecutionSpecError, load_execution_spec
@@ -31,6 +40,7 @@ from .turn_metrics import load_summary
 
 
 SCHEMA_VERSION = "1.0"
+V2_SCHEMA_VERSION = "2.0"
 DEFAULT_PROFILE = "qwen38-27b"
 OLLAMA_CHAT_URL = "http://127.0.0.1:11434/api/chat"
 DISPOSITIONS = ("NO_CHANGE", "PROPOSALS_RECORDED")
@@ -63,6 +73,63 @@ HARD_FINDING_MARKERS = {
     "[unsupported-acceptance]": ("unsupported-acceptance", "contract"),
     "[evidence-integrity]": ("evidence-integrity", "contract"),
     "[scope-violation]": ("scope-violation", "system"),
+}
+EVIDENCE_STRENGTHS = ("E1", "E2", "E3")
+EVALUATION_ACTIONS = ("OBSERVE", "NO_CHANGE", "INVESTIGATE", "PROPOSE")
+IMPACTS = ("high", "medium", "low")
+CHANGE_RISKS = ("low", "medium", "high", "unknown")
+CHANGE_AMOUNTS = ("small", "medium", "large", "unknown")
+REVERSIBILITIES = ("easy", "managed", "hard", "unknown")
+ACTION_BANDS = ("Candidate", "Investigate")
+CONFIDENCES = ("high", "medium", "low")
+MAX_EVALUATION_ITEMS = 999
+MAX_EVALUATION_REPORT_BYTES = 256 * 1024
+EVALUATOR_AGENT_SPEC_ID = "agent-evaluator"
+EVALUATOR_AGENT_SPEC_VERSION = "1.0"
+FIXED_REMEDIATION_RECIPES = {
+    "identity:invalid-execution-spec": {
+        "category": "system",
+        "target": "worker attempt launch validation",
+        "mechanism": "Reject a modern attempt before execution when its pinned execution specification is absent or invalid.",
+        "impact": "high",
+        "change_risk": "medium",
+        "change_amount": "medium",
+        "reversibility": "managed",
+    },
+    "identity:invalid-delegation": {
+        "category": "system",
+        "target": "worker delegation validation",
+        "mechanism": "Reject a modern attempt before execution when its delegation record is absent, orphaned, or invalid.",
+        "impact": "high",
+        "change_risk": "medium",
+        "change_amount": "medium",
+        "reversibility": "managed",
+    },
+    "authority:unauthorized": {
+        "category": "system",
+        "target": "worker authority enforcement",
+        "mechanism": "Stop an attempt when runtime evidence records unauthorized activity.",
+        "impact": "high",
+        "change_risk": "high",
+        "change_amount": "large",
+        "reversibility": "managed",
+    },
+    "authority:scope_violation": {
+        "category": "system",
+        "target": "worker write-scope enforcement",
+        "mechanism": "Stop an attempt when runtime evidence records a scope violation.",
+        "impact": "high",
+        "change_risk": "high",
+        "change_amount": "large",
+        "reversibility": "managed",
+    },
+}
+V2_PROPOSAL_FIELDS = {
+    "schema_version", "proposal_id", "boundary_id", "observation_id", "category",
+    "target", "mechanism", "alternatives", "validation_cases", "rollback", "impact",
+    "change_risk", "change_amount", "reversibility", "confidence", "action_band",
+    "evidence", "evidence_strength", "recurrence_breadth", "status",
+    "human_disposition", "creates_task", "grants_implementation_authority",
 }
 
 
@@ -148,41 +215,9 @@ def _analyze_round(
     apply: bool,
     model_runner: Callable[..., dict[str, Any]] | None,
 ) -> dict[str, Any]:
-    binding: RepositoryBinding | None = None
-    if work_root is not None:
-        try:
-            _exact_safe_root(work_root, "work root")
-            binding = load_repository_binding(root, work_root, str(repo_id))
-            _exact_safe_root(binding.git_root, "Git root")
-        except RetrospectiveError as exc:
-            raise _RoundError("repository_identity", str(exc)) from exc
-        except (OSError, RepositoryBindingError, ValueError) as exc:
-            raise _RoundError("repository_identity", "repository binding validation failed") from exc
-    work = binding.work_root if binding else _exact_git_root(root)
-    git_root = binding.git_root if binding else work
-
-    task_evidence, sources = _collect_tasks(root, work, binding, tasks)
-    commit_evidence, commit_sources = _collect_commit(
-        root, work, git_root, binding, boundary, tasks, commit_record, commit,
-        _terminal_gate_digest(task_evidence),
+    evidence = _collect_milestone_evidence(
+        root, boundary, tasks, commit_record, work_root, repo_id, commit
     )
-    sources.extend(commit_sources)
-    lead_usage = _collect_lead_metrics(root, tasks, sources)
-    evidence = {
-        "schema_version": SCHEMA_VERSION,
-        "project": {"id": root.name},
-        "repository": {
-            "id": binding.repo_id if binding else "control-root",
-            "mode": "split-root" if binding else "same-root",
-            **({"git_prefix": binding.git_prefix} if binding else {}),
-        },
-        "boundary_id": boundary,
-        "task_ids": list(tasks),
-        "tasks": task_evidence,
-        "commit": commit_evidence,
-        "lead_usage": lead_usage,
-        "source_digests": sorted(sources, key=lambda item: item["ref"]),
-    }
     signals = qualify_signals(evidence)
     proposals = _build_proposals(boundary, signals)
     disposition = "PROPOSALS_RECORDED" if proposals else "NO_CHANGE"
@@ -231,6 +266,1086 @@ def _analyze_round(
                 "retrospective artifacts were published; rerun the same boundary to finish backlog insertion",
             ) from exc
     return _analysis_response(analysis, destination, apply, idempotent=False)
+
+
+def _collect_milestone_evidence(
+    root: Path,
+    boundary: str,
+    tasks: tuple[str, ...],
+    commit_record: str | None,
+    work_root: str | Path | None,
+    repo_id: str | None,
+    commit: str | None,
+) -> dict[str, Any]:
+    binding: RepositoryBinding | None = None
+    if work_root is not None:
+        try:
+            _exact_safe_root(work_root, "work root")
+            binding = load_repository_binding(root, work_root, str(repo_id))
+            _exact_safe_root(binding.git_root, "Git root")
+        except RetrospectiveError as exc:
+            raise _RoundError("repository_identity", str(exc)) from exc
+        except (OSError, RepositoryBindingError, ValueError) as exc:
+            raise _RoundError("repository_identity", "repository binding validation failed") from exc
+    work = binding.work_root if binding else _exact_git_root(root)
+    git_root = binding.git_root if binding else work
+
+    task_evidence, sources = _collect_tasks(root, work, binding, tasks)
+    commit_evidence, commit_sources = _collect_commit(
+        root, work, git_root, binding, boundary, tasks, commit_record, commit,
+        _terminal_gate_digest(task_evidence),
+    )
+    sources.extend(commit_sources)
+    lead_usage = _collect_lead_metrics(root, tasks, sources)
+    evidence = {
+        "schema_version": SCHEMA_VERSION,
+        "project": {"id": root.name},
+        "repository": {
+            "id": binding.repo_id if binding else "control-root",
+            "mode": "split-root" if binding else "same-root",
+            **({"git_prefix": binding.git_prefix} if binding else {}),
+        },
+        "boundary_id": boundary,
+        "task_ids": list(tasks),
+        "tasks": task_evidence,
+        "commit": commit_evidence,
+        "lead_usage": lead_usage,
+        "source_digests": sorted(sources, key=lambda item: item["ref"]),
+    }
+    return evidence
+
+
+def prepare_milestone(
+    control_root: str | Path,
+    *,
+    boundary_id: str,
+    task_ids: tuple[str, ...] | list[str],
+    commit_record: str | None = None,
+    work_root: str | Path | None = None,
+    repo_id: str | None = None,
+    commit: str | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Validate a milestone and build an immutable v2 evaluator packet."""
+    root, boundary, tasks = _round_inputs(control_root, boundary_id, task_ids)
+    _validate_repository_arguments(commit_record, work_root, repo_id, commit, "preparation")
+    try:
+        if apply:
+            with _project_lock(root):
+                return _prepare_round(
+                    root, boundary, tasks, commit_record, work_root, repo_id, commit, True
+                )
+        return _prepare_round(
+            root, boundary, tasks, commit_record, work_root, repo_id, commit, False
+        )
+    except Exception as exc:
+        code = exc.code if isinstance(exc, _RoundError) else _failure_code(exc)
+        message = (
+            str(exc)
+            if isinstance(exc, RetrospectiveError)
+            else f"{exc.__class__.__name__} interrupted retrospective preparation"
+        )
+        return _blocked(boundary, tasks, code, message)
+
+
+def _prepare_round(
+    root: Path,
+    boundary: str,
+    tasks: tuple[str, ...],
+    commit_record: str | None,
+    work_root: str | Path | None,
+    repo_id: str | None,
+    commit: str | None,
+    apply: bool,
+) -> dict[str, Any]:
+    _reject_v1_boundary(root, boundary)
+    evidence = _collect_milestone_evidence(
+        root, boundary, tasks, commit_record, work_root, repo_id, commit
+    )
+    observations, assessments, investigations = _build_v2_observations(evidence)
+    packet = {
+        "schema_version": V2_SCHEMA_VERSION,
+        "boundary_id": boundary,
+        "task_ids": list(tasks),
+        "evidence_digest": _digest(evidence),
+        "evidence": evidence,
+        "observations": observations,
+        "assessments": assessments,
+        "investigations": investigations,
+    }
+    validate_preparation(packet)
+    if len(json.dumps(packet, sort_keys=True, separators=(",", ":")).encode("utf-8")) > MAX_JSON_BYTES:
+        raise _RoundError("evidence_bound", "preparation packet exceeds size limit")
+    digest = _digest(packet)
+    destination = _artifact_root(root, boundary) / "preparations" / digest
+    idempotent = _publish_content_addressed_json(
+        root, destination, "preparation.json", packet, apply=apply
+    )
+    return {
+        "schema_version": V2_SCHEMA_VERSION,
+        "boundary_id": boundary,
+        "task_ids": list(tasks),
+        "disposition": "PREPARED",
+        "preparation_digest": digest,
+        "evidence_digest": packet["evidence_digest"],
+        "observation_count": len(observations),
+        "applied": apply,
+        "mutates": apply and not idempotent,
+        "idempotent": idempotent,
+        "artifact_root": str(destination),
+        "preparation": packet,
+    }
+
+
+def _build_v2_observations(
+    evidence: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    observations = []
+    assessments = []
+    investigations = []
+    for ordinal, signal in enumerate(qualify_signals(evidence), 1):
+        key = signal["recurrence_key"]
+        recipe = FIXED_REMEDIATION_RECIPES.get(key)
+        if recipe is not None and signal["qualification"] == "hard":
+            strength, default_action = "E3", "NO_CHANGE"
+        elif signal["qualification"] == "hard" or signal["distinct_task_count"] >= 2:
+            strength, default_action = "E2", "INVESTIGATE"
+        else:
+            strength, default_action = "E1", "NO_CHANGE"
+        observation_id = f"OBS-{ordinal:03d}"
+        observation = {
+            "observation_id": observation_id,
+            "recurrence_key": key,
+            "statement": _trigger(key),
+            "count": signal["count"],
+            "distinct_task_count": signal["distinct_task_count"],
+            "task_ids": signal["task_ids"],
+            "evidence_refs": signal["evidence_refs"],
+            "evidence_strength": strength,
+            "action_ceiling": strength,
+        }
+        assessment = {
+            "observation_id": observation_id,
+            "evidence_strength": strength,
+            "default_action": default_action,
+            "rationale": (
+                "A fixed deterministic enforcement recipe exists for this hard finding."
+                if recipe is not None and strength == "E3"
+                else "The evidence supports investigation, but does not identify a concrete change mechanism."
+                if strength == "E2"
+                else "The event is observable, but does not by itself prove avoidable friction."
+            ),
+            "fixed_recipe": (
+                {"target": recipe["target"], "mechanism": recipe["mechanism"]}
+                if recipe is not None
+                else None
+            ),
+        }
+        observations.append(observation)
+        assessments.append(assessment)
+        if strength == "E2":
+            investigations.append({
+                "observation_id": observation_id,
+                "question": f"What natural complexity or avoidable mechanism explains `{key}`?",
+                "evidence_refs": signal["evidence_refs"],
+            })
+    return observations, assessments, investigations
+
+
+def validate_preparation(value: Any) -> dict[str, Any]:
+    fields = {
+        "schema_version", "boundary_id", "task_ids", "evidence_digest", "evidence",
+        "observations", "assessments", "investigations",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise RetrospectiveError("preparation fields do not match the strict v2 contract")
+    if value.get("schema_version") != V2_SCHEMA_VERSION:
+        raise RetrospectiveError("preparation schema_version must be '2.0'")
+    boundary = validate_identifier(value.get("boundary_id", ""), label="boundary ID")
+    tasks = value.get("task_ids")
+    if value.get("boundary_id") != boundary or not isinstance(tasks, list) or not tasks:
+        raise RetrospectiveError("preparation identity is invalid")
+    if any(normalize_task_id(item) != item for item in tasks) or len(tasks) != len(set(tasks)):
+        raise RetrospectiveError("preparation task IDs are invalid")
+    if not isinstance(value.get("evidence"), dict) or _digest(value["evidence"]) != value.get("evidence_digest"):
+        raise RetrospectiveError("preparation evidence digest mismatch")
+    if value["evidence"].get("boundary_id") != boundary or value["evidence"].get("task_ids") != tasks:
+        raise RetrospectiveError("preparation evidence identity mismatch")
+    observations = value.get("observations")
+    assessments = value.get("assessments")
+    investigations = value.get("investigations")
+    if any(not isinstance(items, list) or len(items) > MAX_SIGNALS for items in (observations, assessments, investigations)):
+        raise RetrospectiveError("preparation collections exceed bounded limits")
+    assert isinstance(observations, list) and isinstance(assessments, list) and isinstance(investigations, list)
+    observed: dict[str, dict[str, Any]] = {}
+    for item in observations:
+        expected = {
+            "observation_id", "recurrence_key", "statement", "count", "distinct_task_count",
+            "task_ids", "evidence_refs", "evidence_strength", "action_ceiling",
+        }
+        if not isinstance(item, dict) or set(item) != expected:
+            raise RetrospectiveError("observation fields are invalid")
+        identifier = item.get("observation_id")
+        if not isinstance(identifier, str) or not re.fullmatch(r"OBS-[0-9]{3}", identifier) or identifier in observed:
+            raise RetrospectiveError("observation identity is invalid")
+        if item.get("evidence_strength") not in EVIDENCE_STRENGTHS or item.get("action_ceiling") != item["evidence_strength"]:
+            raise RetrospectiveError("observation evidence ceiling is invalid")
+        if not _short_text(item.get("recurrence_key"), 300) or not _short_text(item.get("statement"), 1_000):
+            raise RetrospectiveError("observation text is invalid")
+        if _integer(item.get("count")) in (None, 0) or _integer(item.get("distinct_task_count")) in (None, 0):
+            raise RetrospectiveError("observation counts are invalid")
+        item_tasks = item.get("task_ids")
+        if not isinstance(item_tasks, list) or len(item_tasks) != item["distinct_task_count"] or any(task not in tasks for task in item_tasks):
+            raise RetrospectiveError("observation task references are invalid")
+        _validate_refs(item.get("evidence_refs"), "observation evidence")
+        observed[identifier] = item
+    if len(assessments) != len(observed):
+        raise RetrospectiveError("each observation requires one assessment")
+    assessed = set()
+    for item in assessments:
+        expected = {"observation_id", "evidence_strength", "default_action", "rationale", "fixed_recipe"}
+        if not isinstance(item, dict) or set(item) != expected or item.get("observation_id") not in observed:
+            raise RetrospectiveError("assessment fields are invalid")
+        identifier = item["observation_id"]
+        if identifier in assessed or item.get("evidence_strength") != observed[identifier]["evidence_strength"]:
+            raise RetrospectiveError("assessment identity is invalid")
+        if item.get("default_action") not in {"NO_CHANGE", "INVESTIGATE"} or not _short_text(item.get("rationale"), 1_000):
+            raise RetrospectiveError("assessment action or rationale is invalid")
+        recipe = item.get("fixed_recipe")
+        if recipe is not None and (
+            not isinstance(recipe, dict) or set(recipe) != {"target", "mechanism"}
+            or not _short_text(recipe.get("target"), 300) or not _short_text(recipe.get("mechanism"), 1_000)
+            or item["evidence_strength"] != "E3"
+        ):
+            raise RetrospectiveError("assessment fixed recipe is invalid")
+        assessed.add(identifier)
+    for item in investigations:
+        if not isinstance(item, dict) or set(item) != {"observation_id", "question", "evidence_refs"}:
+            raise RetrospectiveError("investigation fields are invalid")
+        observation_id = item.get("observation_id")
+        observation = observed.get(observation_id) if isinstance(observation_id, str) else None
+        if observation is None or observation["evidence_strength"] != "E2" or not _short_text(item.get("question"), 1_000):
+            raise RetrospectiveError("investigation identity is invalid")
+        _validate_refs(item.get("evidence_refs"), "investigation evidence")
+        if not set(item["evidence_refs"]) <= set(observation["evidence_refs"]):
+            raise RetrospectiveError("investigation invents evidence references")
+    expected = _build_v2_observations(value["evidence"])
+    if (observations, assessments, investigations) != expected:
+        raise RetrospectiveError("preparation analysis does not match deterministic evidence")
+    return value
+
+
+def evaluate_milestone(
+    control_root: str | Path,
+    *,
+    boundary_id: str,
+    preparation_digest: str,
+    profile: str = DEFAULT_PROFILE,
+    apply: bool = False,
+    model_runner: Callable[..., dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Run one tool-free local evaluation over an exact prepared packet."""
+    root = _exact_safe_root(control_root, "control root")
+    boundary = validate_identifier(boundary_id, label="boundary ID")
+    if not isinstance(preparation_digest, str) or not HEX64.fullmatch(preparation_digest):
+        raise RetrospectiveError("preparation digest is invalid")
+    try:
+        _reject_v1_boundary(root, boundary)
+        preparation = _load_preparation(root, boundary, preparation_digest)
+        request, canonical_profile = build_evaluation_request(
+            preparation, profile=profile
+        )
+        provider = (model_runner or _post_ollama)(request, timeout_seconds=300)
+        evaluation = _parse_evaluation_response(provider)
+        validate_evaluation_report(evaluation, preparation)
+        path_ref = _evaluation_report_ref(boundary, preparation_digest)
+        content = json.dumps(evaluation, indent=2, sort_keys=True) + "\n"
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        path = root.joinpath(*safe_relative_path(path_ref).parts)
+        idempotent = _publish_evaluation(path, content, apply=apply)
+        return {
+            "schema_version": V2_SCHEMA_VERSION,
+            "boundary_id": boundary,
+            "disposition": "EVALUATED",
+            "preparation_digest": preparation_digest,
+            "evaluation_digest": digest,
+            "evaluation_path": path_ref,
+            "agent_spec_id": evaluation["agent_spec_id"],
+            "agent_spec_version": evaluation["agent_spec_version"],
+            "agent_spec_digest": evaluation["agent_spec_digest"],
+            "profile": canonical_profile,
+            "applied": apply,
+            "mutates": apply and not idempotent,
+            "idempotent": idempotent,
+            "evaluation": evaluation,
+        }
+    except Exception as exc:
+        code = exc.code if isinstance(exc, _RoundError) else _failure_code(exc)
+        message = (
+            str(exc)
+            if isinstance(exc, RetrospectiveError)
+            else f"{exc.__class__.__name__} interrupted retrospective evaluation"
+        )
+        return _blocked(boundary, (), code, message)
+
+
+def build_evaluation_request(
+    preparation: dict[str, Any], *, profile: str
+) -> tuple[dict[str, Any], str]:
+    validate_preparation(preparation)
+    resolved = _resolve_evaluator_profile(profile)
+    try:
+        spec = load_agent_spec(EVALUATOR_AGENT_SPEC_ID, expected_role="reviewer")
+        guidance = _evaluator_guidance(spec)
+    except (AgentSpecError, OSError, ValueError) as exc:
+        raise RetrospectiveError("canonical agent-evaluator AgentSpec is invalid") from exc
+    evaluator_digest = _evaluator_agent_spec_digest(spec, guidance)
+    schema_path = Path(__file__).resolve().parents[2] / "schemas" / "milestone-retrospective-evaluation.json"
+    schema = _read_json_file(schema_path, "evaluation schema")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        raise RetrospectiveError("evaluation schema is invalid")
+    properties["agent_spec_id"] = {"const": spec.agent_spec_id}
+    properties["agent_spec_version"] = {"const": spec.version}
+    properties["agent_spec_digest"] = {"const": evaluator_digest}
+    properties["profile"] = {"const": resolved.canonical_profile}
+    prompt = json.dumps(
+        {
+            "agent_spec": {**spec.snapshot(), "digest": evaluator_digest},
+            "guidance": guidance,
+            "preparation": preparation,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if len(prompt) > MAX_MODEL_PROMPT_CHARS:
+        raise RetrospectiveError("bounded evaluator prompt is too large")
+    return (
+        {
+            "model": resolved.provider_locator,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Evaluate only the supplied immutable packet under the supplied "
+                        "AgentSpec guidance. You have no tools, filesystem, retries, MCP, "
+                        "cloud, or other project context. Return only schema-valid JSON."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "stream": False,
+            "format": schema,
+            "options": {"temperature": 0},
+        },
+        resolved.canonical_profile,
+    )
+
+
+def _resolve_evaluator_profile(profile: Any):
+    if not isinstance(profile, str):
+        raise RetrospectiveError("evaluation profile is invalid")
+    named = profile.split("/", 1)[1] if profile.startswith("codex/") else profile
+    try:
+        resolved = load_execution_registry().resolve("codex", named, "medium")
+    except ExecutionRegistryError as exc:
+        raise RetrospectiveError(str(exc)) from exc
+    if resolved.provider != "ollama_local":
+        raise RetrospectiveError("evaluation requires a curated local Ollama profile")
+    return resolved
+
+
+def _evaluator_guidance(spec: Any) -> str:
+    paths = guidance_paths(spec)
+    if len(paths) != 1:
+        raise RetrospectiveError("agent-evaluator requires exactly one canonical guidance file")
+    guidance = paths[0].read_text(encoding="utf-8")
+    if len(guidance) > 20_000:
+        raise RetrospectiveError("agent-evaluator guidance exceeds size limit")
+    return guidance
+
+
+def _evaluator_agent_spec_digest(spec: Any, guidance: str) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "agent_spec_digest": spec.digest,
+                "guidance_sha256": hashlib.sha256(guidance.encode("utf-8")).hexdigest(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _parse_evaluation_response(provider: dict[str, Any]) -> dict[str, Any]:
+    message = provider.get("message")
+    if not isinstance(message, dict):
+        raise RetrospectiveError("Ollama response lacks assistant message")
+    if message.get("tool_calls") not in (None, []):
+        raise RetrospectiveError("tool-free evaluation returned tool calls")
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise RetrospectiveError("Ollama response lacks evaluation JSON")
+    if len(content.encode("utf-8")) > MAX_EVALUATION_REPORT_BYTES:
+        raise RetrospectiveError("evaluation response is too large")
+    try:
+        value = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise RetrospectiveError("evaluation response is not JSON") from exc
+    return _sanitize_evaluation_report(value)
+
+
+def _sanitize_evaluation_report(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise RetrospectiveError("evaluation response must be an object")
+    cleaned = json.loads(json.dumps(value))
+    text_fields: list[tuple[dict[str, Any], str]] = []
+    checks = cleaned.get("checks")
+    if isinstance(checks, dict):
+        text_fields.extend(
+            (check, "detail") for check in checks.values() if isinstance(check, dict)
+        )
+    for assessment in cleaned.get("observation_assessments", []):
+        if isinstance(assessment, dict):
+            text_fields.extend((assessment, key) for key in ("discriminator", "rationale"))
+            for key in ("facts", "hypotheses", "alternatives"):
+                _sanitize_text_list(assessment, key)
+    for investigation in cleaned.get("investigations", []):
+        if isinstance(investigation, dict):
+            text_fields.extend(
+                (investigation, key) for key in ("question", "discriminator")
+            )
+            _sanitize_text_list(investigation, "evidence_needed")
+    for proposal in cleaned.get("proposals", []):
+        if isinstance(proposal, dict):
+            text_fields.extend((proposal, key) for key in ("target", "mechanism", "rollback"))
+            for key in ("alternatives", "validation_cases"):
+                _sanitize_text_list(proposal, key)
+    for container, key in text_fields:
+        if isinstance(container.get(key), str):
+            container[key] = _sanitize_model_text(container[key])
+    return cleaned
+
+
+def _sanitize_text_list(container: dict[str, Any], key: str) -> None:
+    value = container.get(key)
+    if isinstance(value, list):
+        container[key] = [
+            _sanitize_model_text(item) if isinstance(item, str) else item for item in value
+        ]
+
+
+def _sanitize_model_text(value: str) -> str:
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", value)
+    text = text.replace("<!--", "").replace("-->", "")
+    text = re.sub(r"/?codexteam-improvement:", "", text, flags=re.IGNORECASE)
+    return " ".join(text.split())
+
+
+def _load_preparation(root: Path, boundary: str, digest: str) -> dict[str, Any]:
+    path = _artifact_root(root, boundary) / "preparations" / digest / "preparation.json"
+    preparation = _read_json_file(
+        _safe_existing_file(root, path, "preparation", MAX_JSON_BYTES), "preparation"
+    )
+    validate_preparation(preparation)
+    if _digest(preparation) != digest or preparation["boundary_id"] != boundary:
+        raise _RoundError("preparation_identity", "preparation digest or boundary mismatch")
+    return preparation
+
+
+def _evaluation_report_ref(boundary: str, preparation_digest: str) -> str:
+    return f"results/retrospectives/{boundary}/evaluations/{preparation_digest}.json"
+
+
+def _publish_evaluation(path: Path, content: str, *, apply: bool) -> bool:
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file():
+            raise _RoundError("artifact_conflict", "evaluation report path is unsafe")
+        if path.read_text(encoding="utf-8") != content:
+            raise _RoundError("artifact_conflict", "evaluation report conflicts with existing bytes")
+        return True
+    if not apply:
+        return False
+    if path.parent.is_symlink():
+        raise _RoundError("artifact_path", "evaluation directory is a symlink")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    create_json(path, json.loads(content))
+    return False
+
+
+def accept_evaluation(
+    control_root: str | Path,
+    *,
+    boundary_id: str,
+    preparation_digest: str,
+    evaluation_digest: str,
+    evaluation_path: str,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Validate one tool-free evaluator report and deterministically accept it."""
+    root = _exact_safe_root(control_root, "control root")
+    boundary = validate_identifier(boundary_id, label="boundary ID")
+    if not isinstance(preparation_digest, str) or not HEX64.fullmatch(preparation_digest):
+        raise RetrospectiveError("preparation digest is invalid")
+    if not isinstance(evaluation_digest, str) or not HEX64.fullmatch(evaluation_digest):
+        raise RetrospectiveError("evaluation digest is invalid")
+    try:
+        expected_path = _evaluation_report_ref(boundary, preparation_digest)
+        if evaluation_path != expected_path:
+            raise RetrospectiveError("evaluation path is not canonical for the preparation")
+        if apply:
+            with _project_lock(root):
+                return _accept_round(
+                    root, boundary, preparation_digest, evaluation_digest,
+                    evaluation_path, True,
+                )
+        return _accept_round(
+            root, boundary, preparation_digest, evaluation_digest,
+            evaluation_path, False,
+        )
+    except Exception as exc:
+        code = exc.code if isinstance(exc, _RoundError) else _failure_code(exc)
+        message = (
+            str(exc)
+            if isinstance(exc, RetrospectiveError)
+            else f"{exc.__class__.__name__} interrupted retrospective acceptance"
+        )
+        return _blocked(
+            boundary,
+            (),
+            code,
+            message,
+            artifact_root=(
+                str(_artifact_root(root, boundary))
+                if code in {"acceptance_publication_pending", "backlog_publication_pending"}
+                else None
+            ),
+        )
+
+
+def _accept_round(
+    root: Path,
+    boundary: str,
+    preparation_digest: str,
+    evaluation_digest: str,
+    evaluation_path: str,
+    apply: bool,
+) -> dict[str, Any]:
+    _reject_v1_boundary(root, boundary)
+    preparation_path = (
+        _artifact_root(root, boundary) / "preparations" / preparation_digest / "preparation.json"
+    )
+    preparation = _read_json_file(
+        _safe_existing_file(root, preparation_path, "preparation", MAX_JSON_BYTES),
+        "preparation",
+    )
+    validate_preparation(preparation)
+    if _digest(preparation) != preparation_digest or preparation["boundary_id"] != boundary:
+        raise _RoundError("preparation_identity", "preparation digest or boundary mismatch")
+
+    report_path = _safe_control_relative_file(
+        root, evaluation_path, "evaluation report", MAX_EVALUATION_REPORT_BYTES
+    )
+    if _file_digest(report_path) != evaluation_digest:
+        raise _RoundError("evaluation_digest", "evaluation report digest mismatch")
+    evaluation = _read_json_file(report_path, "evaluation report")
+    destination = _artifact_root(root, boundary)
+    accepted_path = destination / "analysis-v2.json"
+    receipt_path = _acceptance_receipt_path(root, boundary)
+    accepted = None
+    receipt = None
+    if receipt_path.exists() or receipt_path.is_symlink():
+        receipt = _read_json_file(
+            _safe_existing_file(root, receipt_path, "v2 acceptance receipt", MAX_JSON_BYTES),
+            "v2 acceptance receipt",
+        )
+        if accepted_path.exists() or accepted_path.is_symlink():
+            accepted = _read_json_file(
+                _safe_existing_file(root, accepted_path, "v2 analysis", MAX_JSON_BYTES),
+                "v2 analysis",
+            )
+            validate_v2_analysis(accepted)
+        validate_evaluation_report(
+            evaluation, preparation, require_current_evaluator=False
+        )
+        evaluator = {
+            "agent_spec_id": evaluation["agent_spec_id"],
+            "agent_spec_version": evaluation["agent_spec_version"],
+            "agent_spec_digest": evaluation["agent_spec_digest"],
+            "profile": evaluation["profile"],
+            "evaluation_report_ref": evaluation_path,
+            "evaluation_report_digest": evaluation_digest,
+        }
+        if accepted is not None and evaluator != accepted["evaluator"]:
+            raise _RoundError(
+                "evaluator_identity", "accepted evaluator provenance does not match report"
+            )
+    else:
+        validate_evaluation_report(evaluation, preparation)
+        evaluator = _validate_evaluator_identity(
+            evaluation, evaluation_path, evaluation_digest
+        )
+    analysis = _build_v2_analysis(
+        preparation_digest, preparation, evaluator, evaluation, evaluation_digest
+    )
+    validate_v2_analysis(analysis)
+    if receipt is not None and receipt != _acceptance_receipt(analysis):
+        raise _RoundError(
+            "artifact_conflict", "v2 acceptance receipt does not match analysis"
+        )
+    if accepted is not None and accepted != analysis:
+        raise _RoundError("artifact_conflict", "accepted v2 analysis conflicts")
+    _update_backlog(root, analysis["proposals"], write=False)
+    receipt_created = False
+    if apply and receipt is None:
+        create_json(receipt_path, _acceptance_receipt(analysis))
+        receipt_created = True
+    try:
+        idempotent = _publish_v2_analysis(root, destination, analysis, apply=apply)
+    except Exception as exc:
+        if receipt_created:
+            raise _RoundError(
+                "acceptance_publication_pending",
+                "v2 acceptance receipt was published; rerun the same acceptance to finish public artifacts",
+            ) from exc
+        raise
+    backlog_changed = False
+    if apply:
+        try:
+            backlog_changed = _update_backlog(root, analysis["proposals"], write=True)
+        except Exception as exc:
+            raise _RoundError(
+                "backlog_publication_pending",
+                "v2 analysis was published; rerun the same acceptance to finish backlog insertion",
+            ) from exc
+    return {
+        **analysis,
+        "applied": apply,
+        "mutates": apply and (not idempotent or backlog_changed),
+        "idempotent": idempotent and not backlog_changed,
+        "artifact_root": str(destination),
+    }
+
+
+def _validate_evaluator_identity(
+    evaluation: dict[str, Any], evaluation_path: str, evaluation_digest: str
+) -> dict[str, Any]:
+    try:
+        spec = load_agent_spec(EVALUATOR_AGENT_SPEC_ID, expected_role="reviewer")
+        guidance = _evaluator_guidance(spec)
+        profile = _resolve_evaluator_profile(evaluation["profile"])
+    except (AgentSpecError, ExecutionRegistryError, OSError, ValueError) as exc:
+        raise _RoundError("evaluator_identity", "canonical evaluator identity is invalid") from exc
+    if (
+        evaluation["agent_spec_id"] != spec.agent_spec_id
+        or evaluation["agent_spec_version"] != spec.version
+        or evaluation["agent_spec_digest"] != _evaluator_agent_spec_digest(spec, guidance)
+        or evaluation["profile"] != profile.canonical_profile
+    ):
+        raise _RoundError("evaluator_identity", "evaluation evaluator metadata is not canonical")
+    return {
+        "agent_spec_id": spec.agent_spec_id,
+        "agent_spec_version": spec.version,
+        "agent_spec_digest": _evaluator_agent_spec_digest(spec, guidance),
+        "profile": profile.canonical_profile,
+        "evaluation_report_ref": evaluation_path,
+        "evaluation_report_digest": evaluation_digest,
+    }
+
+
+def validate_evaluation_report(
+    value: Any,
+    preparation: dict[str, Any],
+    *,
+    require_current_evaluator: bool = True,
+) -> dict[str, Any]:
+    try:
+        validate_milestone_retrospective_evaluation(value)
+    except ValueError as exc:
+        raise RetrospectiveError(str(exc)) from exc
+    assert isinstance(value, dict)
+    if _sanitize_evaluation_report(value) != value:
+        raise RetrospectiveError("evaluation model text is not canonically sanitized")
+    expected_digests = {
+        "boundary_digest": _preparation_boundary_digest(preparation),
+        "preparation_digest": _digest(preparation),
+        "evidence_digest": preparation["evidence_digest"],
+        "prepared_analysis_digest": _prepared_analysis_digest(preparation),
+    }
+    if value.get("boundary_id") != preparation["boundary_id"] or any(
+        value.get(field) != digest for field, digest in expected_digests.items()
+    ):
+        raise RetrospectiveError("evaluation report preparation bindings do not match")
+    if require_current_evaluator:
+        try:
+            spec = load_agent_spec(EVALUATOR_AGENT_SPEC_ID, expected_role="reviewer")
+            guidance = _evaluator_guidance(spec)
+            profile = _resolve_evaluator_profile(value.get("profile"))
+        except (AgentSpecError, ExecutionRegistryError, OSError, ValueError) as exc:
+            raise RetrospectiveError("evaluation evaluator identity is invalid") from exc
+        if (
+            value.get("agent_spec_id") != spec.agent_spec_id
+            or value.get("agent_spec_version") != spec.version
+            or value.get("agent_spec_digest") != _evaluator_agent_spec_digest(spec, guidance)
+            or value.get("profile") != profile.canonical_profile
+        ):
+            raise RetrospectiveError("evaluation evaluator identity does not match canonical metadata")
+    if value.get("verdict") != "ACCEPT":
+        raise RetrospectiveError("retrospective acceptance requires evaluator verdict ACCEPT")
+    observations = {item["observation_id"]: item for item in preparation["observations"]}
+    assessments = value["observation_assessments"]
+    if len(assessments) != len(observations):
+        raise RetrospectiveError("evaluation report must classify every prepared observation once")
+    seen = set()
+    allowed = {
+        "E1": {"OBSERVE", "NO_CHANGE"},
+        "E2": {"INVESTIGATE", "NO_CHANGE"},
+        "E3": {"PROPOSE", "INVESTIGATE", "NO_CHANGE"},
+    }
+    for item in assessments:
+        identifier = item.get("observation_id")
+        observation = observations.get(identifier) if isinstance(identifier, str) else None
+        if observation is None or identifier in seen:
+            raise RetrospectiveError("evaluation item references an unknown or duplicate observation")
+        action = item.get("action")
+        if (
+            item.get("evidence_ceiling") != observation["action_ceiling"]
+            or action not in allowed[observation["action_ceiling"]]
+        ):
+            raise RetrospectiveError("evaluation action exceeds its prepared evidence ceiling")
+        if item["evidence_refs"] != observation["evidence_refs"]:
+            raise RetrospectiveError("evaluation assessment evidence must exactly match its observation")
+        seen.add(identifier)
+    investigation_ids = {
+        observation_id
+        for investigation in value["investigations"]
+        for observation_id in investigation["observation_ids"]
+    }
+    proposal_ids = {
+        observation_id
+        for proposal in value["proposals"]
+        for observation_id in proposal["observation_ids"]
+    }
+    for item in assessments:
+        if item["action"] == "INVESTIGATE" and item["observation_id"] not in investigation_ids:
+            raise RetrospectiveError("evaluation investigation does not cover its assessment")
+        if item["action"] == "PROPOSE" and item["observation_id"] not in proposal_ids:
+            raise RetrospectiveError("evaluation proposal does not cover its assessment")
+    for investigation in value["investigations"]:
+        expected_refs = sorted({
+            ref
+            for observation_id in investigation["observation_ids"]
+            for ref in observations[observation_id]["evidence_refs"]
+        })
+        if investigation["evidence_refs"] != expected_refs:
+            raise RetrospectiveError("evaluation investigation evidence does not exactly match its observations")
+    prepared_assessments = {
+        item["observation_id"]: item for item in preparation["assessments"]
+    }
+    for proposal in value["proposals"]:
+        if len(proposal["observation_ids"]) != 1:
+            raise RetrospectiveError("each evaluator proposal must target one observation")
+        observation_id = proposal["observation_ids"][0]
+        prepared_assessment = prepared_assessments[observation_id]
+        recipe = prepared_assessment.get("fixed_recipe")
+        if (
+            not isinstance(recipe, dict)
+            or proposal["target"] != recipe["target"]
+            or proposal["mechanism"] != recipe["mechanism"]
+        ):
+            raise RetrospectiveError("evaluation proposal does not match its fixed E3 recipe")
+        if proposal["evidence_refs"] != observations[observation_id]["evidence_refs"]:
+            raise RetrospectiveError("evaluation proposal evidence does not exactly match its observation")
+    return value
+
+
+def _preparation_boundary_digest(preparation: dict[str, Any]) -> str:
+    return _digest(
+        {
+            "boundary_id": preparation["boundary_id"],
+            "task_ids": preparation["task_ids"],
+        }
+    )
+
+
+def _prepared_analysis_digest(preparation: dict[str, Any]) -> str:
+    return _digest(
+        {
+            "observations": preparation["observations"],
+            "assessments": preparation["assessments"],
+            "investigations": preparation["investigations"],
+        }
+    )
+
+
+def _validate_evaluator_proposal(value: Any) -> None:
+    fields = {
+        "category", "target", "mechanism", "alternatives", "validation_cases",
+        "rollback", "impact", "change_risk", "change_amount", "reversibility",
+        "confidence", "action_band",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise RetrospectiveError("evaluator proposal fields are invalid")
+    if value.get("category") not in CANDIDATE_TYPES:
+        raise RetrospectiveError("evaluator proposal category is invalid")
+    for field, limit in (("target", 300), ("mechanism", 2_000), ("rollback", 1_000)):
+        if not _short_text(value.get(field), limit):
+            raise RetrospectiveError(f"evaluator proposal {field} is invalid")
+    for field in ("alternatives", "validation_cases"):
+        items = value.get(field)
+        if not isinstance(items, list) or not items or len(items) > 20 or len(items) != len(set(items)) or any(not _short_text(item, 1_000) for item in items):
+            raise RetrospectiveError(f"evaluator proposal {field} is invalid")
+    if value.get("impact") not in IMPACTS or value.get("change_risk") not in CHANGE_RISKS or value.get("change_amount") not in CHANGE_AMOUNTS or value.get("reversibility") not in REVERSIBILITIES or value.get("confidence") not in CONFIDENCES or value.get("action_band") not in ACTION_BANDS:
+        raise RetrospectiveError("evaluator proposal categorical fields are invalid")
+
+
+def _build_v2_analysis(
+    preparation_digest: str,
+    preparation: dict[str, Any],
+    evaluator: dict[str, Any],
+    evaluation: dict[str, Any],
+    evaluation_digest: str,
+) -> dict[str, Any]:
+    observation_by_id = {
+        item["observation_id"]: item for item in preparation["observations"]
+    }
+    proposals = []
+    investigations = []
+    boundary = preparation["boundary_id"]
+    prefix = re.sub(r"[^A-Z0-9]+", "-", boundary.upper()).strip("-")
+    boundary_tag = hashlib.sha256(
+        f"{boundary}:{preparation_digest}".encode("utf-8")
+    ).hexdigest()[:16].upper()
+    assessment_by_id = {
+        item["observation_id"]: item
+        for item in evaluation["observation_assessments"]
+    }
+    proposal_by_observation = {
+        observation_id: proposal
+        for proposal in evaluation["proposals"]
+        for observation_id in proposal["observation_ids"]
+    }
+    for investigation in evaluation["investigations"]:
+        investigations.append(
+            {
+                "investigation_id": investigation["investigation_id"],
+                "observation_ids": investigation["observation_ids"],
+                "question": investigation["question"],
+                "discriminator": investigation["discriminator"],
+                "evidence_needed": investigation["evidence_needed"],
+                "evidence_refs": investigation["evidence_refs"],
+            }
+        )
+    accepted_observations = []
+    for observation_id, observation in observation_by_id.items():
+        item = assessment_by_id[observation_id]
+        accepted_observations.append(item)
+        if item["action"] != "PROPOSE":
+            continue
+        candidate = proposal_by_observation[item["observation_id"]]
+        recipe = FIXED_REMEDIATION_RECIPES[observation["recurrence_key"]]
+        ordinal = len(proposals) + 1
+        proposal = {
+            "schema_version": V2_SCHEMA_VERSION,
+            "proposal_id": f"IMP-{prefix}-{boundary_tag}-{ordinal:03d}",
+            "boundary_id": boundary,
+            "observation_id": item["observation_id"],
+            "category": recipe["category"],
+            "target": recipe["target"],
+            "mechanism": recipe["mechanism"],
+            "alternatives": candidate["alternatives"],
+            "validation_cases": candidate["validation_cases"],
+            "rollback": candidate["rollback"],
+            "impact": recipe["impact"],
+            "change_risk": recipe["change_risk"],
+            "change_amount": recipe["change_amount"],
+            "reversibility": recipe["reversibility"],
+            "confidence": "high" if observation["evidence_strength"] == "E3" else "medium",
+            "action_band": _proposal_action_band(
+                recipe["impact"],
+                recipe["change_risk"],
+                recipe["change_amount"],
+                recipe["reversibility"],
+            ),
+            "evidence": item["evidence_refs"],
+            "evidence_strength": observation["evidence_strength"],
+            "recurrence_breadth": observation["distinct_task_count"],
+            "status": "Proposed",
+            "human_disposition": "None",
+            "creates_task": False,
+            "grants_implementation_authority": False,
+        }
+        validate_v2_proposal(proposal)
+        proposals.append(proposal)
+    proposals.sort(key=_v2_proposal_sort_key)
+    priorities = {
+        band: [item["proposal_id"] for item in proposals if item["action_band"] == band]
+        for band in ACTION_BANDS
+    }
+    return {
+        "schema_version": V2_SCHEMA_VERSION,
+        "boundary_id": boundary,
+        "preparation_digest": preparation_digest,
+        "evidence_digest": preparation["evidence_digest"],
+        "evaluation_digest": evaluation_digest,
+        "evaluator": evaluator,
+        "summary": "Agent evaluator accepted the prepared milestone assessment.",
+        "disposition": "PROPOSALS_RECORDED" if proposals else "NO_CHANGE",
+        "observations": accepted_observations,
+        "investigations": investigations,
+        "proposals": proposals,
+        "priority_categories": priorities,
+        "creates_task": False,
+        "grants_implementation_authority": False,
+    }
+
+
+def _proposal_action_band(
+    impact: str,
+    change_risk: str,
+    change_amount: str,
+    reversibility: str,
+) -> str:
+    del impact
+    if change_risk in {"high", "unknown"} or change_amount in {"large", "unknown"} or reversibility in {"hard", "unknown"}:
+        return "Investigate"
+    return "Candidate"
+
+
+def validate_v2_proposal(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != V2_PROPOSAL_FIELDS:
+        raise RetrospectiveError("v2 proposal fields do not match the strict contract")
+    if value.get("schema_version") != V2_SCHEMA_VERSION:
+        raise RetrospectiveError("v2 proposal schema_version must be '2.0'")
+    if not isinstance(value.get("proposal_id"), str) or not PROPOSAL_ID.fullmatch(value["proposal_id"]):
+        raise RetrospectiveError("v2 proposal ID is invalid")
+    boundary = validate_identifier(value.get("boundary_id", ""), label="boundary ID")
+    if boundary != value.get("boundary_id") or not isinstance(value.get("observation_id"), str) or not re.fullmatch(r"OBS-[0-9]{3}", value["observation_id"]):
+        raise RetrospectiveError("v2 proposal identity is invalid")
+    _validate_evaluator_proposal({
+        key: value[key]
+        for key in (
+            "category", "target", "mechanism", "alternatives", "validation_cases",
+            "rollback", "impact", "change_risk", "change_amount", "reversibility",
+            "confidence", "action_band",
+        )
+    })
+    _validate_refs(value.get("evidence"), "v2 proposal evidence")
+    if value.get("evidence_strength") != "E3":
+        raise RetrospectiveError("v2 proposal requires E3 evidence")
+    breadth = value.get("recurrence_breadth")
+    if isinstance(breadth, bool) or not isinstance(breadth, int) or breadth < 1 or breadth > MAX_TASKS:
+        raise RetrospectiveError("v2 proposal recurrence breadth is invalid")
+    if value.get("status") != "Proposed" or value.get("human_disposition") != "None":
+        raise RetrospectiveError("v2 proposal must remain Proposed")
+    if value.get("creates_task") is not False or value.get("grants_implementation_authority") is not False:
+        raise RetrospectiveError("v2 proposal cannot create tasks or implementation authority")
+    return value
+
+
+def validate_v2_analysis(value: Any) -> dict[str, Any]:
+    fields = {
+        "schema_version", "boundary_id", "preparation_digest", "evidence_digest",
+        "evaluation_digest", "evaluator", "summary", "disposition", "observations",
+        "investigations", "proposals", "priority_categories", "creates_task",
+        "grants_implementation_authority",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise RetrospectiveError("v2 analysis fields do not match the strict contract")
+    if value.get("schema_version") != V2_SCHEMA_VERSION:
+        raise RetrospectiveError("v2 analysis schema_version must be '2.0'")
+    validate_identifier(value.get("boundary_id", ""), label="boundary ID")
+    for field in ("preparation_digest", "evidence_digest", "evaluation_digest"):
+        if not isinstance(value.get(field), str) or not HEX64.fullmatch(value[field]):
+            raise RetrospectiveError(f"v2 analysis {field} is invalid")
+    evaluator = value.get("evaluator")
+    evaluator_fields = {
+        "agent_spec_id", "agent_spec_version", "agent_spec_digest", "profile",
+        "evaluation_report_ref", "evaluation_report_digest",
+    }
+    if not isinstance(evaluator, dict) or set(evaluator) != evaluator_fields or evaluator.get("agent_spec_id") != EVALUATOR_AGENT_SPEC_ID or evaluator.get("agent_spec_version") != EVALUATOR_AGENT_SPEC_VERSION:
+        raise RetrospectiveError("v2 analysis evaluator provenance is invalid")
+    for field in ("agent_spec_digest", "evaluation_report_digest"):
+        if not isinstance(evaluator.get(field), str) or not HEX64.fullmatch(evaluator[field]):
+            raise RetrospectiveError("v2 analysis evaluator digest is invalid")
+    _validate_refs([evaluator.get("evaluation_report_ref")], "v2 evaluator reference")
+    if not _short_text(evaluator.get("profile"), 200):
+        raise RetrospectiveError("v2 evaluator profile is invalid")
+    if not _short_text(value.get("summary"), 2_000):
+        raise RetrospectiveError("v2 analysis summary is invalid")
+    proposals = value.get("proposals")
+    if not isinstance(proposals, list) or len(proposals) > MAX_SIGNALS:
+        raise RetrospectiveError("v2 analysis proposals are invalid")
+    ids = set()
+    for proposal in proposals:
+        validate_v2_proposal(proposal)
+        if proposal["proposal_id"] in ids or proposal["boundary_id"] != value["boundary_id"]:
+            raise RetrospectiveError("v2 analysis proposal identity is invalid")
+        ids.add(proposal["proposal_id"])
+    if proposals != sorted(proposals, key=_v2_proposal_sort_key):
+        raise RetrospectiveError("v2 proposals are not in categorical priority order")
+    if (value.get("disposition") == "NO_CHANGE") != (not proposals) or value.get("disposition") not in DISPOSITIONS:
+        raise RetrospectiveError("v2 analysis disposition does not match proposals")
+    priorities = value.get("priority_categories")
+    if not isinstance(priorities, dict) or set(priorities) != set(ACTION_BANDS):
+        raise RetrospectiveError("v2 analysis priority categories are invalid")
+    expected_priorities = {
+        band: [item["proposal_id"] for item in proposals if item["action_band"] == band]
+        for band in ACTION_BANDS
+    }
+    if priorities != expected_priorities:
+        raise RetrospectiveError("v2 analysis priority categories do not match proposals")
+    for field in ("observations", "investigations"):
+        if not isinstance(value.get(field), list) or len(value[field]) > MAX_EVALUATION_ITEMS:
+            raise RetrospectiveError(f"v2 analysis {field} are invalid")
+    if value.get("creates_task") is not False or value.get("grants_implementation_authority") is not False:
+        raise RetrospectiveError("v2 analysis cannot create tasks or implementation authority")
+    return value
+
+
+def _v2_proposal_sort_key(
+    value: dict[str, Any]
+) -> tuple[int, int, int, int, int, int, int, str]:
+    return (
+        IMPACTS.index(value["impact"]),
+        ACTION_BANDS.index(value["action_band"]),
+        EVIDENCE_STRENGTHS[::-1].index(value["evidence_strength"]),
+        CHANGE_RISKS.index(value["change_risk"]),
+        CHANGE_AMOUNTS.index(value["change_amount"]),
+        REVERSIBILITIES.index(value["reversibility"]),
+        -value["recurrence_breadth"],
+        value["proposal_id"],
+    )
+
+
+def _round_inputs(
+    control_root: str | Path,
+    boundary_id: str,
+    task_ids: tuple[str, ...] | list[str],
+) -> tuple[Path, str, tuple[str, ...]]:
+    root = _exact_safe_root(control_root, "control root")
+    boundary = validate_identifier(boundary_id, label="boundary ID")
+    tasks = tuple(normalize_task_id(item) for item in task_ids)
+    if not tasks or len(tasks) > MAX_TASKS or len(tasks) != len(set(tasks)):
+        raise RetrospectiveError(f"tasks must contain 1-{MAX_TASKS} unique task IDs")
+    return root, boundary, tasks
+
+
+def _validate_repository_arguments(
+    commit_record: str | None,
+    work_root: str | Path | None,
+    repo_id: str | None,
+    commit: str | None,
+    operation: str,
+) -> None:
+    split = (work_root, repo_id, commit)
+    if any(value is not None for value in split) and not all(value is not None for value in split):
+        raise RetrospectiveError(
+            f"split-root {operation} requires --work-root, --repo-id, and --commit together"
+        )
+    if all(value is not None for value in split) and commit_record is not None:
+        raise RetrospectiveError("--commit-record is supported only in same-root mode")
 
 
 def decide_proposal(
@@ -284,30 +1399,7 @@ def _decide_round(
     destination = _artifact_root(root, boundary)
     if destination.is_symlink() or not destination.is_dir():
         raise RetrospectiveError("retrospective boundary is missing or unsafe")
-    analysis = _read_json_file(
-        _safe_existing_file(root, destination / "analysis.json", "analysis", MAX_JSON_BYTES),
-        "analysis",
-    )
-    validate_retrospective(analysis)
-    if analysis["boundary_id"] != boundary:
-        raise RetrospectiveError("retrospective boundary identity mismatch")
-    evidence = _read_json_file(
-        _safe_existing_file(root, destination / "evidence.json", "evidence", MAX_JSON_BYTES),
-        "evidence",
-    )
-    if _digest(evidence) != analysis["evidence_digest"]:
-        raise RetrospectiveError("retrospective evidence digest mismatch")
-    reconstructed_signals = qualify_signals(evidence)
-    reconstructed_proposals = _build_proposals(boundary, reconstructed_signals)
-    if (
-        reconstructed_signals != analysis["signals"]
-        or reconstructed_proposals != analysis["proposals"]
-    ):
-        raise RetrospectiveError("retrospective analysis does not match deterministic evidence")
-    proposal = next(
-        (item for item in analysis["proposals"] if item["proposal_id"] == proposal_id),
-        None,
-    )
+    proposal = _load_proposal_for_decision(root, destination, boundary, proposal_id)
     if proposal is None:
         raise RetrospectiveError(f"proposal {proposal_id} does not belong to {boundary}")
 
@@ -376,6 +1468,91 @@ def _decide_round(
     assert latest_block is not None
     atomic_write_text(backlog_path, latest.replace(latest_block, updated_block, 1))
     return {**record, "applied": True, "idempotent": existing_record is not None, "record_ref": record_ref}
+
+
+def _load_proposal_for_decision(
+    root: Path, destination: Path, boundary: str, proposal_id: str
+) -> dict[str, Any] | None:
+    v1_path = destination / "analysis.json"
+    if v1_path.exists() or v1_path.is_symlink():
+        analysis = _read_json_file(
+            _safe_existing_file(root, v1_path, "analysis", MAX_JSON_BYTES), "analysis"
+        )
+        validate_retrospective(analysis)
+        if analysis["boundary_id"] != boundary:
+            raise RetrospectiveError("retrospective boundary identity mismatch")
+        evidence = _read_json_file(
+            _safe_existing_file(root, destination / "evidence.json", "evidence", MAX_JSON_BYTES),
+            "evidence",
+        )
+        if _digest(evidence) != analysis["evidence_digest"]:
+            raise RetrospectiveError("retrospective evidence digest mismatch")
+        reconstructed_signals = qualify_signals(evidence)
+        reconstructed_proposals = _build_proposals(boundary, reconstructed_signals)
+        if reconstructed_signals != analysis["signals"] or reconstructed_proposals != analysis["proposals"]:
+            raise RetrospectiveError("retrospective analysis does not match deterministic evidence")
+        proposal = next(
+            (item for item in analysis["proposals"] if item["proposal_id"] == proposal_id),
+            None,
+        )
+        if proposal is not None:
+            return proposal
+    v2_path = destination / "analysis-v2.json"
+    if not v2_path.exists() and not v2_path.is_symlink():
+        return None
+    analysis_v2 = _read_json_file(
+        _safe_existing_file(root, v2_path, "v2 analysis", MAX_JSON_BYTES), "v2 analysis"
+    )
+    validate_v2_analysis(analysis_v2)
+    if analysis_v2["boundary_id"] != boundary:
+        raise RetrospectiveError("v2 retrospective boundary identity mismatch")
+    preparation_path = (
+        destination / "preparations" / analysis_v2["preparation_digest"] / "preparation.json"
+    )
+    preparation = _read_json_file(
+        _safe_existing_file(root, preparation_path, "preparation", MAX_JSON_BYTES), "preparation"
+    )
+    validate_preparation(preparation)
+    if (
+        _digest(preparation) != analysis_v2["preparation_digest"]
+        or preparation["evidence_digest"] != analysis_v2["evidence_digest"]
+    ):
+        raise RetrospectiveError("v2 retrospective preparation digest mismatch")
+    evaluator = analysis_v2["evaluator"]
+    evaluation_path = _safe_control_relative_file(
+        root, evaluator["evaluation_report_ref"], "evaluation report", MAX_EVALUATION_REPORT_BYTES
+    )
+    evaluation = _read_json_file(evaluation_path, "evaluation report")
+    validate_evaluation_report(evaluation, preparation, require_current_evaluator=False)
+    if _file_digest(evaluation_path) != evaluator["evaluation_report_digest"]:
+        raise RetrospectiveError("v2 evaluator report digest mismatch")
+    accepted_evaluator = {
+        "agent_spec_id": evaluation["agent_spec_id"],
+        "agent_spec_version": evaluation["agent_spec_version"],
+        "agent_spec_digest": evaluation["agent_spec_digest"],
+        "profile": evaluation["profile"],
+        "evaluation_report_ref": evaluator["evaluation_report_ref"],
+        "evaluation_report_digest": evaluator["evaluation_report_digest"],
+    }
+    if accepted_evaluator != evaluator:
+        raise RetrospectiveError("v2 evaluator provenance changed after acceptance")
+    reconstructed = _build_v2_analysis(
+        analysis_v2["preparation_digest"], preparation, evaluator, evaluation,
+        evaluator["evaluation_report_digest"],
+    )
+    if reconstructed != analysis_v2:
+        raise RetrospectiveError("v2 retrospective analysis does not match accepted evaluation")
+    receipt_path = _acceptance_receipt_path(root, boundary)
+    receipt = _read_json_file(
+        _safe_existing_file(root, receipt_path, "v2 acceptance receipt", MAX_JSON_BYTES),
+        "v2 acceptance receipt",
+    )
+    if receipt != _acceptance_receipt(analysis_v2):
+        raise RetrospectiveError("v2 acceptance receipt does not match accepted analysis")
+    return next(
+        (item for item in analysis_v2["proposals"] if item["proposal_id"] == proposal_id),
+        None,
+    )
 
 
 def validate_retrospective(value: Any) -> dict[str, Any]:
@@ -1329,6 +2506,9 @@ def _gain(category: str) -> str:
 
 
 def _proposal_block(proposal: dict[str, Any]) -> str:
+    if proposal.get("schema_version") == V2_SCHEMA_VERSION:
+        validate_v2_proposal(proposal)
+        return _v2_proposal_block(proposal)
     evidence = ", ".join(f"`{item}`" for item in proposal["evidence"])
     proposal_id = proposal["proposal_id"]
     return "\n".join((
@@ -1339,6 +2519,28 @@ def _proposal_block(proposal: dict[str, Any]) -> str:
         f"- Evidence: {evidence}", f"- Trigger: {proposal['trigger']}",
         f"- Expected gain: {proposal['expected_gain']}",
         f"- Validation: {proposal['validation']}", f"- Rollback: {proposal['rollback']}",
+        "- Status: Proposed", "- Human disposition: None", "- Creates task: No",
+        "- Implementation authority: Not granted",
+        f"<!-- /codexteam-improvement:{proposal_id} -->",
+    ))
+
+
+def _v2_proposal_block(proposal: dict[str, Any]) -> str:
+    evidence = ", ".join(f"`{item}`" for item in proposal["evidence"])
+    alternatives = "; ".join(proposal["alternatives"])
+    validation = "; ".join(proposal["validation_cases"])
+    proposal_id = proposal["proposal_id"]
+    return "\n".join((
+        f"<!-- codexteam-improvement:{proposal_id} -->",
+        f"### {proposal_id}",
+        f"- Category: {proposal['category']}", f"- Target: {proposal['target']}",
+        f"- Mechanism: {proposal['mechanism']}", f"- Alternatives: {alternatives}",
+        f"- Impact: {proposal['impact']}", f"- Change risk: {proposal['change_risk']}",
+        f"- Change amount: {proposal['change_amount']}",
+        f"- Reversibility: {proposal['reversibility']}",
+        f"- Confidence: {proposal['confidence']}", f"- Action band: {proposal['action_band']}",
+        f"- Evidence strength: {proposal['evidence_strength']}", f"- Evidence: {evidence}",
+        f"- Validation: {validation}", f"- Rollback: {proposal['rollback']}",
         "- Status: Proposed", "- Human disposition: None", "- Creates task: No",
         "- Implementation authority: Not granted",
         f"<!-- /codexteam-improvement:{proposal_id} -->",
@@ -1380,23 +2582,8 @@ def _proposal_block_matches(
         path = _safe_control_relative_file(root, disposition.group(1), "disposition", MAX_JSON_BYTES)
         record = _read_json_file(path, "disposition")
         validate_disposition(record)
-        analysis = _read_json_file(
-            _safe_existing_file(
-                root,
-                root / "results" / "retrospectives" / boundary / "analysis.json",
-                "analysis",
-                MAX_JSON_BYTES,
-            ),
-            "analysis",
-        )
-        proposal = next(
-            (
-                item
-                for item in analysis.get("proposals", [])
-                if isinstance(item, dict) and item.get("proposal_id") == proposal_id
-            ),
-            None,
-        )
+        destination = root / "results" / "retrospectives" / boundary
+        proposal = _load_proposal_for_decision(root, destination, boundary, proposal_id)
     except (OSError, RetrospectiveError, ValueError):
         return False
     if (
@@ -1500,6 +2687,124 @@ def _publish_artifacts(
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
+
+
+def _publish_content_addressed_json(
+    root: Path,
+    destination: Path,
+    filename: str,
+    value: dict[str, Any],
+    *,
+    apply: bool,
+) -> bool:
+    if destination.exists() or destination.is_symlink():
+        if destination.is_symlink() or not destination.is_dir():
+            raise _RoundError("artifact_conflict", "content-addressed destination is unsafe")
+        existing = _read_json_file(
+            _safe_existing_file(root, destination / filename, filename, MAX_JSON_BYTES),
+            filename,
+        )
+        if existing != value:
+            raise _RoundError("artifact_conflict", "content-addressed artifact conflicts with its digest")
+        return True
+    if not apply:
+        return False
+    parent = destination.parent
+    for path in (root / "results", _artifact_root(root, value["boundary_id"]), parent):
+        if path.is_symlink():
+            raise _RoundError("artifact_path", f"artifact path is a symlink: {path}")
+        path.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.", dir=parent))
+    try:
+        (temporary / filename).write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        if destination.exists() or destination.is_symlink():
+            raise _RoundError("artifact_conflict", "content-addressed destination appeared concurrently")
+        os.rename(temporary, destination)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return False
+
+
+def _publish_v2_analysis(
+    root: Path, destination: Path, analysis: dict[str, Any], *, apply: bool
+) -> bool:
+    path = destination / "analysis-v2.json"
+    report_path = destination / "RETROSPECTIVE-v2.md"
+    report = _render_v2_report(analysis)
+    if path.exists() or path.is_symlink() or report_path.exists() or report_path.is_symlink():
+        analysis_exists = path.exists() or path.is_symlink()
+        report_exists = report_path.exists() or report_path.is_symlink()
+        if analysis_exists:
+            existing = _read_json_file(
+                _safe_existing_file(root, path, "v2 analysis", MAX_JSON_BYTES), "v2 analysis"
+            )
+            validate_v2_analysis(existing)
+            if existing != analysis:
+                raise _RoundError("artifact_conflict", "existing v2 analysis conflicts")
+        if report_exists:
+            safe_report = _safe_existing_file(root, report_path, "v2 report", MAX_TEXT_BYTES)
+            if safe_report.read_text(encoding="utf-8") != report:
+                raise _RoundError("artifact_conflict", "existing v2 report conflicts")
+        if analysis_exists and report_exists:
+            return True
+        if not apply:
+            return False
+        if not analysis_exists:
+            create_json(path, analysis)
+        if not report_exists:
+            atomic_write_text(report_path, report)
+        return False
+    if not apply:
+        return False
+    if destination.is_symlink() or not destination.is_dir():
+        raise _RoundError("artifact_path", "retrospective boundary is missing or unsafe")
+    dispositions = destination / "dispositions"
+    if dispositions.is_symlink():
+        raise _RoundError("artifact_path", "dispositions path is a symlink")
+    dispositions.mkdir(exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".accept-v2.", dir=destination))
+    try:
+        temporary_analysis = temporary / "analysis-v2.json"
+        temporary_report = temporary / "RETROSPECTIVE-v2.md"
+        temporary_analysis.write_text(
+            json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        temporary_report.write_text(report, encoding="utf-8")
+        os.rename(temporary_analysis, path)
+        try:
+            os.rename(temporary_report, report_path)
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return False
+
+
+def _render_v2_report(analysis: dict[str, Any]) -> str:
+    lines = [
+        f"# Milestone Retrospective v2: {analysis['boundary_id']}", "",
+        f"- Disposition: `{analysis['disposition']}`",
+        f"- Preparation digest: `{analysis['preparation_digest']}`",
+        f"- Evaluator: `{analysis['evaluator']['agent_spec_id']}@{analysis['evaluator']['agent_spec_version']}`",
+        f"- Profile: `{analysis['evaluator']['profile']}`",
+        f"- Investigation requests: {len(analysis['investigations'])}",
+        f"- Proposed improvements: {len(analysis['proposals'])}", "",
+    ]
+    if not analysis["proposals"]:
+        lines.extend(["## Priority", "", "No candidate recommended this round."])
+    else:
+        lines.extend(["## Priority", ""])
+        for proposal in analysis["proposals"]:
+            lines.append(
+                f"- `{proposal['proposal_id']}`: {proposal['impact']} impact, "
+                f"`{proposal['action_band']}`, {proposal['change_amount']} change."
+            )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _render_report(analysis: dict[str, Any]) -> str:
@@ -1782,6 +3087,31 @@ def _artifact_root(root: Path, boundary: str) -> Path:
     return root / "results" / "retrospectives" / boundary
 
 
+def _acceptance_receipt_path(root: Path, boundary: str) -> Path:
+    return root / ".codexteam" / "runtime" / "milestone-retrospectives" / boundary / "acceptance.json"
+
+
+def _acceptance_receipt(analysis: dict[str, Any]) -> dict[str, Any]:
+    evaluator = analysis["evaluator"]
+    return {
+        "schema_version": V2_SCHEMA_VERSION,
+        "boundary_id": analysis["boundary_id"],
+        "preparation_digest": analysis["preparation_digest"],
+        "evaluation_report_digest": evaluator["evaluation_report_digest"],
+        "agent_spec_digest": evaluator["agent_spec_digest"],
+        "analysis_digest": _digest(analysis),
+    }
+
+
+def _reject_v1_boundary(root: Path, boundary: str) -> None:
+    path = _artifact_root(root, boundary) / "analysis.json"
+    if path.exists() or path.is_symlink():
+        raise _RoundError(
+            "historical_v1_boundary",
+            "historical v1 retrospective boundary cannot be reused or backfilled",
+        )
+
+
 def _load_backlog(root: Path) -> tuple[Path, str]:
     path = _safe_existing_file(root, root / "management" / "BACKLOG.md", "backlog", MAX_TEXT_BYTES)
     return path, path.read_text(encoding="utf-8")
@@ -1969,18 +3299,31 @@ def _utc_now() -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Preview or publish a bounded milestone retrospective.")
     commands = parser.add_subparsers(dest="command", required=True)
-    analyze_parser = commands.add_parser("analyze")
-    analyze_parser.add_argument("control_root")
-    analyze_parser.add_argument("--boundary", required=True)
-    analyze_parser.add_argument("--tasks", required=True)
-    analyze_parser.add_argument("--commit-record")
-    analyze_parser.add_argument("--work-root")
-    analyze_parser.add_argument("--repo-id")
-    analyze_parser.add_argument("--commit")
-    analyze_parser.add_argument("--profile", default=DEFAULT_PROFILE)
-    analyze_parser.add_argument("--without-model", action="store_true")
-    analyze_parser.add_argument("--apply", action="store_true")
-    analyze_parser.add_argument("--json", action="store_true")
+    prepare_parser = commands.add_parser("prepare")
+    prepare_parser.add_argument("control_root")
+    prepare_parser.add_argument("--boundary", required=True)
+    prepare_parser.add_argument("--tasks", required=True)
+    prepare_parser.add_argument("--commit-record")
+    prepare_parser.add_argument("--work-root")
+    prepare_parser.add_argument("--repo-id")
+    prepare_parser.add_argument("--commit")
+    prepare_parser.add_argument("--apply", action="store_true")
+    prepare_parser.add_argument("--json", action="store_true")
+    evaluate_parser = commands.add_parser("evaluate")
+    evaluate_parser.add_argument("control_root")
+    evaluate_parser.add_argument("--boundary", required=True)
+    evaluate_parser.add_argument("--preparation", required=True)
+    evaluate_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    evaluate_parser.add_argument("--apply", action="store_true")
+    evaluate_parser.add_argument("--json", action="store_true")
+    accept_parser = commands.add_parser("accept")
+    accept_parser.add_argument("control_root")
+    accept_parser.add_argument("--boundary", required=True)
+    accept_parser.add_argument("--preparation", required=True)
+    accept_parser.add_argument("--evaluation-digest", required=True)
+    accept_parser.add_argument("--evaluation-path", required=True)
+    accept_parser.add_argument("--apply", action="store_true")
+    accept_parser.add_argument("--json", action="store_true")
     decide_parser = commands.add_parser("decide")
     decide_parser.add_argument("control_root")
     decide_parser.add_argument("--boundary", required=True)
@@ -1997,13 +3340,26 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.command == "analyze":
-            payload = analyze_milestone(
+        if args.command == "prepare":
+            payload = prepare_milestone(
                 args.control_root, boundary_id=args.boundary,
                 task_ids=tuple(item.strip() for item in args.tasks.split(",") if item.strip()),
                 commit_record=args.commit_record, work_root=args.work_root,
-                repo_id=args.repo_id, commit=args.commit, profile=args.profile,
-                without_model=args.without_model, apply=args.apply,
+                repo_id=args.repo_id, commit=args.commit, apply=args.apply,
+            )
+        elif args.command == "evaluate":
+            payload = evaluate_milestone(
+                args.control_root, boundary_id=args.boundary,
+                preparation_digest=args.preparation, profile=args.profile,
+                apply=args.apply,
+            )
+        elif args.command == "accept":
+            payload = accept_evaluation(
+                args.control_root, boundary_id=args.boundary,
+                preparation_digest=args.preparation,
+                evaluation_digest=args.evaluation_digest,
+                evaluation_path=args.evaluation_path,
+                apply=args.apply,
             )
         else:
             payload = decide_proposal(
@@ -2024,6 +3380,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 analyze = analyze_milestone
+prepare = prepare_milestone
+evaluate = evaluate_milestone
+accept = accept_evaluation
 decide = decide_proposal
 
 

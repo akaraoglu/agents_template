@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.milestone-retrospective-evaluation",
+  "title": "CodexTeam Milestone Retrospective Evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "boundary_id", "boundary_digest", "preparation_digest", "evidence_digest", "prepared_analysis_digest", "agent_spec_id", "agent_spec_version", "agent_spec_digest", "profile", "verdict", "checks", "observation_assessments", "investigations", "proposals", "creates_task", "grants_implementation_authority"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "boundary_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "boundary_digest": {"$ref": "#/$defs/digest"},
+    "preparation_digest": {"$ref": "#/$defs/digest"},
+    "evidence_digest": {"$ref": "#/$defs/digest"},
+    "prepared_analysis_digest": {"$ref": "#/$defs/digest"},
+    "agent_spec_id": {"const": "agent-evaluator"},
+    "agent_spec_version": {"const": "1.0"},
+    "agent_spec_digest": {"$ref": "#/$defs/digest"},
+    "profile": {"type": "string", "pattern": "^codex/[a-z0-9][a-z0-9.-]{0,99}$"},
+    "verdict": {"enum": ["ACCEPT", "REVISE", "BLOCKED"]},
+    "checks": {"$ref": "#/$defs/checks"},
+    "observation_assessments": {"type": "array", "maxItems": 999, "items": {"$ref": "#/$defs/assessment"}},
+    "investigations": {"type": "array", "maxItems": 999, "items": {"$ref": "#/$defs/investigation"}},
+    "proposals": {"type": "array", "maxItems": 999, "items": {"$ref": "#/$defs/proposal"}},
+    "creates_task": {"const": false},
+    "grants_implementation_authority": {"const": false}
+  },
+  "$comment": "The validator additionally enforces verdict/check consistency, unique identities, action coverage, and E1/E2/E3 ceilings.",
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "^(?!.*[\\r\\n\\u0000])(?!.*<!--)(?!.*-->).*\\S.*$"},
+    "safe_ref": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).*\\S.*$"},
+    "refs": {"type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": {"$ref": "#/$defs/safe_ref"}},
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "detail"],
+      "properties": {"status": {"enum": ["PASS", "FAIL", "BLOCKED"]}, "detail": {"$ref": "#/$defs/text"}}
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boundary_binding", "preparation_binding", "evidence_binding", "prepared_analysis_binding", "evidence_reference_integrity", "causal_analysis", "evidence_ceiling", "authority"],
+      "properties": {
+        "boundary_binding": {"$ref": "#/$defs/check"},
+        "preparation_binding": {"$ref": "#/$defs/check"},
+        "evidence_binding": {"$ref": "#/$defs/check"},
+        "prepared_analysis_binding": {"$ref": "#/$defs/check"},
+        "evidence_reference_integrity": {"$ref": "#/$defs/check"},
+        "causal_analysis": {"$ref": "#/$defs/check"},
+        "evidence_ceiling": {"$ref": "#/$defs/check"},
+        "authority": {"$ref": "#/$defs/check"}
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation_id", "evidence_ceiling", "classification", "facts", "hypotheses", "alternatives", "discriminator", "action", "rationale", "evidence_refs"],
+      "properties": {
+        "observation_id": {"$ref": "#/$defs/identifier"},
+        "evidence_ceiling": {"enum": ["E1", "E2", "E3"]},
+        "classification": {"enum": ["AVOIDABLE_FRICTION", "NATURAL_COMPLEXITY", "INSUFFICIENT_EVIDENCE", "UNSUPPORTED"]},
+        "facts": {"type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "hypotheses": {"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "alternatives": {"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "discriminator": {"$ref": "#/$defs/text"},
+        "action": {"enum": ["NO_CHANGE", "OBSERVE", "INVESTIGATE", "PROPOSE"]},
+        "rationale": {"$ref": "#/$defs/text"},
+        "evidence_refs": {"$ref": "#/$defs/refs"}
+      },
+      "allOf": [
+        {"if": {"properties": {"evidence_ceiling": {"const": "E1"}}, "required": ["evidence_ceiling"]}, "then": {"properties": {"action": {"enum": ["NO_CHANGE", "OBSERVE"]}}}},
+        {"if": {"properties": {"evidence_ceiling": {"const": "E2"}}, "required": ["evidence_ceiling"]}, "then": {"properties": {"action": {"enum": ["NO_CHANGE", "INVESTIGATE"]}}}},
+        {"if": {"properties": {"evidence_ceiling": {"const": "E3"}}, "required": ["evidence_ceiling"]}, "then": {"properties": {"action": {"enum": ["NO_CHANGE", "INVESTIGATE", "PROPOSE"]}}}}
+      ]
+    },
+    "investigation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["investigation_id", "observation_ids", "question", "discriminator", "evidence_needed", "evidence_refs"],
+      "properties": {
+        "investigation_id": {"$ref": "#/$defs/identifier"},
+        "observation_ids": {"type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "question": {"$ref": "#/$defs/text"},
+        "discriminator": {"$ref": "#/$defs/text"},
+        "evidence_needed": {"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "evidence_refs": {"$ref": "#/$defs/refs"}
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposal_id", "observation_ids", "target", "mechanism", "alternatives", "validation_cases", "rollback", "evidence_refs", "creates_task", "grants_implementation_authority"],
+      "properties": {
+        "proposal_id": {"$ref": "#/$defs/identifier"},
+        "observation_ids": {"type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "target": {"$ref": "#/$defs/text"},
+        "mechanism": {"$ref": "#/$defs/text"},
+        "alternatives": {"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "validation_cases": {"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "rollback": {"$ref": "#/$defs/text"},
+        "evidence_refs": {"$ref": "#/$defs/refs"},
+        "creates_task": {"const": false},
+        "grants_implementation_authority": {"const": false}
+      }
+    }
+  }
+}
