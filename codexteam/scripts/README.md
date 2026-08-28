@@ -13,6 +13,7 @@ Operator commands are thin wrappers around `src/codexteam_tools/`.
 - `sync-project-guidance.py`: preview, check, or refresh managed role references in an initialized project.
 - `run-test-gate.py`: dry-run, execute, or validate the project Development and Integration Gates from TOML argument arrays.
 - `git-steward.py`: inspect a verified Git boundary, pin authorization, and create one exact local commit after explicit `--apply`.
+- `milestone-retrospective.py`: preview or record a post-commit retrospective and apply an explicit human proposal decision.
 - `local-docs-index.py`: preview, atomically update, or verify the deterministic offline documentation index.
 - `local-docs-mcp.py`: serve the fixed three-tool offline read-only documentation MCP over STDIO.
 - `benchmark-team-context-mcp.py`: compare bounded context tools with broad and focused local reads, including the selected role's filtered tool-schema cost.
@@ -21,7 +22,7 @@ Operator commands are thin wrappers around `src/codexteam_tools/`.
 - `run-e2e-fibonacci-test.sh`: run or preview the historical five-role Fibonacci Tree CLI compatibility canary.
 - `../.agents/scripts/spawn-subagent.sh`: run one `draft`, `feedback`, or `final` turn in a persistent local Codex session.
 
-All commands provide `--help`. File-mutating commands support dry-run or preview where meaningful. No command uses external Python dependencies or evaluates shell text. Git Steward has no remote operations.
+All commands provide `--help`. File-mutating commands support dry-run or preview where meaningful. `milestone-retrospective.py` requires `--apply` for analysis or decision writes; approval permits planning only and never implementation. No command uses external Python dependencies or evaluates shell text. Git Steward has no remote operations.
 
 Preview the live canary before spending model time:
 

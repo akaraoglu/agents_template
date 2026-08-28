@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.improvement-disposition",
+  "title": "CodexTeam Improvement Disposition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "boundary_id", "proposal_id", "proposal_sha256", "decision", "status", "approver", "reason", "decided_at", "approval_scope", "creates_task", "grants_implementation_authority"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "boundary_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "proposal_id": {"type": "string", "pattern": "^IMP-[A-Z0-9]+(?:-[A-Z0-9]+)*-[A-F0-9]{16}-[0-9]{3}$"},
+    "proposal_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "decision": {"enum": ["approve", "reject", "defer"]},
+    "status": {"enum": ["Approved", "Rejected", "Deferred"]},
+    "approver": {"type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S"},
+    "reason": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S"},
+    "decided_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$"},
+    "approval_scope": {"enum": ["planning-only", "not-approved"]},
+    "creates_task": {"const": false},
+    "grants_implementation_authority": {"const": false}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"decision": {"const": "approve"}}},
+      "then": {"properties": {"status": {"const": "Approved"}, "approval_scope": {"const": "planning-only"}}}
+    },
+    {
+      "if": {"properties": {"decision": {"const": "reject"}}},
+      "then": {"properties": {"status": {"const": "Rejected"}, "approval_scope": {"const": "not-approved"}}}
+    },
+    {
+      "if": {"properties": {"decision": {"const": "defer"}}},
+      "then": {"properties": {"status": {"const": "Deferred"}, "approval_scope": {"const": "not-approved"}}}
+    }
+  ]
+}

@@ -3,6 +3,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from codexteam_tools.contract_registry import CONTRACT_REGISTRY
+
 
 CODEXTEAM_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = CODEXTEAM_ROOT.parent
@@ -40,6 +42,45 @@ def test_machine_schemas_are_valid_json():
     )
     assert role_schema["properties"]["digest"]["pattern"] == "^[a-f0-9]{64}$"
     assert role_schema["properties"]["mcp_tools"]["minProperties"] == 1
+
+    retrospective_schema = json.loads(
+        (CODEXTEAM_ROOT / "schemas" / "milestone-retrospective.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert retrospective_schema["properties"]["disposition"]["enum"] == [
+        "NO_CHANGE",
+        "PROPOSALS_RECORDED",
+    ]
+    assert set(retrospective_schema["required"]) == set(retrospective_schema["properties"])
+    assert retrospective_schema["additionalProperties"] is False
+    assert retrospective_schema["properties"]["proposals"]["items"]["$ref"] == (
+        "improvement-proposal.json"
+    )
+    proposal_schema = json.loads(
+        (CODEXTEAM_ROOT / "schemas" / "improvement-proposal.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert proposal_schema["properties"]["status"]["const"] == "Proposed"
+    assert set(proposal_schema["required"]) == set(proposal_schema["properties"])
+    assert proposal_schema["properties"]["creates_task"]["const"] is False
+    disposition_schema = json.loads(
+        (CODEXTEAM_ROOT / "schemas" / "improvement-disposition.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert set(disposition_schema["required"]) == set(disposition_schema["properties"])
+    assert disposition_schema["properties"]["approval_scope"]["enum"] == [
+        "planning-only",
+        "not-approved",
+    ]
+    assert disposition_schema["properties"]["grants_implementation_authority"]["const"] is False
+    assert {
+        "milestone-retrospective",
+        "improvement-proposal",
+        "improvement-disposition",
+    } <= set(CONTRACT_REGISTRY)
 
 
 def test_criteria_guidance_routes_evidence_without_operator_verification_requirement():
@@ -136,6 +177,7 @@ def test_documentation_index_targets_exist():
         "ADAPTER_GUIDE.md",
         "AGENT_SPECS.md",
         "SKILL_EVALUATION.md",
+        "MILESTONE_RETROSPECTIVE.md",
         "OPTIONAL_INTERFACES.md",
         "TROUBLESHOOTING.md",
         "rules/project_isolation.md",
@@ -354,6 +396,27 @@ def test_project_lead_progressively_discloses_self_improvement_workflow():
     assert "observed -> proposed -> candidate -> verified -> accepted" in skill
     assert "A negative case where the skill or tool should not activate" in skill
     assert "Loading all skills into every agent" in skill
+
+
+def test_milestone_retrospective_authority_is_documented():
+    guide = (CODEXTEAM_ROOT / "docs" / "MILESTONE_RETROSPECTIVE.md").read_text(
+        encoding="utf-8"
+    )
+    compact = " ".join(guide.split())
+    assert "after each verified milestone commit" in compact
+    assert "NO_CHANGE" in guide
+    assert "PROPOSALS_RECORDED" in guide
+    assert "BLOCKED_INSUFFICIENT_EVIDENCE" in guide
+    assert "transient CLI/API output" in compact
+    assert "never persisted as `analysis.json`" in compact
+    assert "automatically added to the backlog with `Status: Proposed`" in compact
+    assert "Only an explicit human `decide` command" in compact
+    assert "requires both `--human-approved` and `--apply`" in compact
+    assert "approved for normal planning only" in compact
+    assert "grant implementation authority" in compact
+    assert "accepted per-task Integration Gate snapshots" in compact
+    assert "tool-free request" in compact
+    assert "rerun the identical human-approved command" in compact
 
 
 def test_project_lead_context_mcp_workflow_is_discoverable_and_bounded():

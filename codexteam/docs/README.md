@@ -13,6 +13,7 @@ These documents describe the current local workflow toolkit.
 - `LOCAL_DOCS_MCP.md`: offline bounded documentation retrieval and measured pilot.
 - `TASK_CAPSULE_PILOT.md`: opt-in digest-bound handoff capsule experiment.
 - `SKILL_EVALUATION.md`: deterministic skill structure checks and the bounded manual evaluator.
+- `MILESTONE_RETROSPECTIVE.md`: post-commit evidence analysis, improvement proposals, and human dispositions.
 - `USER_GUIDE.md`: operator workflow.
 - `TROUBLESHOOTING.md`: common failures.
 

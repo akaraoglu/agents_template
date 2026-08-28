@@ -236,6 +236,13 @@ def test_project_initialization_renders_all_tokens(tmp_path: Path):
     assert "Owner: Test Engineer (`tester` protocol role)" in gates
     assert "runs the Development Gate first" in gates
     assert "TEST_GATES.toml" in gates
+    backlog = (plan.project_dir / "management" / "BACKLOG.md").read_text()
+    compact_backlog = " ".join(backlog.split())
+    assert "## Improvement Proposals" in compact_backlog
+    assert "Status: Proposed" in compact_backlog
+    assert "explicit human `milestone-retrospective.py decide --human-approved --apply`" in compact_backlog
+    assert "Approval authorizes planning only" in compact_backlog
+    assert "grant implementation authority" in compact_backlog
     assert (plan.project_dir / ".git").is_dir()
     initialized_files = tuple(
         sorted(

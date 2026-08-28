@@ -98,12 +98,13 @@ canonical task IDs and handoffs.
 12. Report evidence, remaining risks, and any real showstopper to the operator.
 13. Before delivery, check each current Delivery Criteria row, run an acceptance-level product check, and inspect the project manifest for scratch or incomplete files. Unit-suite success and result-schema validity are necessary, not sufficient.
 14. At a named architecture or milestone boundary, review the Git Steward plan, authorize exact paths, and let the deterministic executor reverify the candidate tree before one local commit. Never delegate remote Git authority.
-15. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
-16. Before substantial source investigation, search the exact control project's
+15. After each verified milestone commit, run the project-local milestone retrospective. Persist `NO_CHANGE` or `PROPOSALS_RECORDED`; treat `BLOCKED_INSUFFICIENT_EVIDENCE` as a transient, non-persisted response and correct its evidence before rerunning. Qualified proposals enter `management/BACKLOG.md` only as `Proposed`. Only an explicit human `decide --human-approved --apply` command may approve, reject, or defer one. Approval permits normal planning only, not task creation, execution, guidance changes, or implementation authority.
+16. Capture evidence-backed CodexTeam improvement observations without changing healthy active work. At a stable boundary, load `.agents/skills/codexteam-self-improvement.md` from the toolkit root, or `.codexteam/skills/codexteam-self-improvement.md` inside a generated project, only when the operator requests a reusable improvement or evidence shows a severe, recurring, or broadly reusable gap.
+17. Before substantial source investigation, search the exact control project's
     `design/architecture/*.md` with task-specific terms. Verify relevant prior
     findings against current source and carry concise findings plus exact source
     targets into split-root handoffs. Record when no relevant note exists.
-17. After substantial discovery or deep research, preserve durable reusable
+18. After substantial discovery or deep research, preserve durable reusable
     findings in the active project at
     `design/architecture/YYYY-MM-DD_descriptive_title.md`. Use the exact project
     path returned by initialization or otherwise confirmed by the operator; do
@@ -175,6 +176,7 @@ Preference-only feedback such as "reword this in my preferred style" is not a re
 - Development and Integration Gate evidence is reused by the Reviewer and Documenter unless a concrete gap requires another check.
 - Architect output is approved by the Project Lead and audited for conformance by the Reviewer.
 - Git Steward is invoked only at a verified boundary, stages explicit approved paths, and never performs a remote action.
+- Every sufficiently evidenced verified milestone commit has a persisted retrospective disposition; blocked responses remain transient. Proposal approval is human-only, planning-only, and never implementation authority.
 - Normal corrections retain the same thread and attempt.
 - Only attempts carrying the current `execution-spec.json` contract may resume;
   historical pre-cutover attempts remain read-only project history.

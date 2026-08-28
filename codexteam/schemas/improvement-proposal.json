@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.improvement-proposal",
+  "title": "CodexTeam Improvement Proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "proposal_id", "boundary_id", "recurrence_key", "category", "scope", "impact", "confidence", "evidence", "trigger", "expected_gain", "validation", "rollback", "status", "human_disposition", "creates_task", "grants_implementation_authority"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "proposal_id": {"type": "string", "pattern": "^IMP-[A-Z0-9]+(?:-[A-Z0-9]+)*-[A-F0-9]{16}-[0-9]{3}$"},
+    "boundary_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "recurrence_key": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "\\S"},
+    "category": {"enum": ["instruction", "skill", "template", "contract", "tool", "system"]},
+    "scope": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "\\S"},
+    "impact": {"enum": ["medium", "high"]},
+    "confidence": {"enum": ["medium", "high"]},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).*\\S.*$"}
+    },
+    "trigger": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "\\S"},
+    "expected_gain": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "\\S"},
+    "validation": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "\\S"},
+    "rollback": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "\\S"},
+    "status": {"const": "Proposed"},
+    "human_disposition": {"const": "None"},
+    "creates_task": {"const": false},
+    "grants_implementation_authority": {"const": false}
+  }
+}

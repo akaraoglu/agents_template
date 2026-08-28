@@ -1,4 +1,5 @@
 import copy
+import importlib
 import json
 from pathlib import Path
 
@@ -25,6 +26,9 @@ def test_contract_registry_contains_registered_contracts():
         "gate-record",
         "execution-spec",
         "agent-spec",
+        "milestone-retrospective",
+        "improvement-proposal",
+        "improvement-disposition",
     }
     root = Path(__file__).parents[1]
     for entry in CONTRACT_REGISTRY.values():
@@ -33,6 +37,39 @@ def test_contract_registry_contains_registered_contracts():
     assert get_contract("result").unknown_fields == "additive"
     with pytest.raises(ValueError, match="unknown CodexTeam contract"):
         get_contract("missing")
+
+
+def test_retrospective_contract_schemas_match_strict_validator_fields():
+    root = Path(__file__).parents[1]
+    expected = {
+        "milestone-retrospective.json": {
+            "schema_version", "boundary_id", "evidence_digest", "disposition",
+            "signals", "proposals", "advisory_model",
+        },
+        "improvement-proposal.json": {
+            "schema_version", "proposal_id", "boundary_id", "recurrence_key",
+            "category", "scope", "impact", "confidence", "evidence", "trigger",
+            "expected_gain", "validation", "rollback", "status",
+            "human_disposition", "creates_task",
+            "grants_implementation_authority",
+        },
+        "improvement-disposition.json": {
+            "schema_version", "boundary_id", "proposal_id", "proposal_sha256",
+            "decision", "status", "approver", "reason", "decided_at",
+            "approval_scope", "creates_task", "grants_implementation_authority",
+        },
+    }
+    for filename, fields in expected.items():
+        schema = json.loads((root / "schemas" / filename).read_text(encoding="utf-8"))
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == fields
+        assert set(schema["properties"]) == fields
+
+
+def test_contract_registry_validator_symbols_resolve():
+    for entry in CONTRACT_REGISTRY.values():
+        module_name, symbol = entry.validator_symbol.rsplit(".", 1)
+        assert callable(getattr(importlib.import_module(module_name), symbol))
 
 
 def test_artifact_report_is_small_and_permissive():

@@ -62,6 +62,24 @@ CONTRACT_REGISTRY: Mapping[str, ContractEntry] = MappingProxyType({
         "codexteam_tools.agent_specs.agent_spec_from_mapping", "strict",
         "Technical specialization overlay bounded by one protocol role.",
     ),
+    "milestone-retrospective": ContractEntry(
+        "milestone-retrospective", "1.0", "json",
+        "schemas/milestone-retrospective.json",
+        "codexteam_tools.milestone_retrospective.validate_retrospective", "strict",
+        "Evidence-backed analysis of one verified milestone commit.",
+    ),
+    "improvement-proposal": ContractEntry(
+        "improvement-proposal", "1.0", "json",
+        "schemas/improvement-proposal.json",
+        "codexteam_tools.milestone_retrospective.validate_proposal", "strict",
+        "Qualified improvement recorded as Proposed without execution authority.",
+    ),
+    "improvement-disposition": ContractEntry(
+        "improvement-disposition", "1.0", "json",
+        "schemas/improvement-disposition.json",
+        "codexteam_tools.milestone_retrospective.validate_disposition", "strict",
+        "Immutable human decision granting at most planning approval.",
+    ),
 })
 
 

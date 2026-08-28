@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codexteam.milestone-retrospective",
+  "title": "CodexTeam Milestone Retrospective",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "boundary_id", "evidence_digest", "disposition", "signals", "proposals", "advisory_model"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "boundary_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "evidence_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "disposition": {"enum": ["NO_CHANGE", "PROPOSALS_RECORDED"]},
+    "signals": {
+      "type": "array",
+      "maxItems": 999,
+      "items": {"$ref": "#/$defs/signal"}
+    },
+    "proposals": {
+      "type": "array",
+      "maxItems": 999,
+      "items": {"$ref": "improvement-proposal.json"}
+    },
+    "advisory_model": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/advisory_model"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"disposition": {"const": "NO_CHANGE"}}},
+      "then": {"properties": {"signals": {"maxItems": 0}, "proposals": {"maxItems": 0}}}
+    },
+    {
+      "if": {"properties": {"disposition": {"const": "PROPOSALS_RECORDED"}}},
+      "then": {"properties": {"proposals": {"minItems": 1}}}
+    }
+  ],
+  "$comment": "The Python validator additionally enforces exact distinct_task_count, one proposal per signal recurrence_key, proposal boundary identity, and advisory references limited to qualified signal keys.",
+  "$defs": {
+    "safe_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).*\\S.*$"
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recurrence_key", "category", "impact", "count", "distinct_task_count", "task_ids", "evidence_refs", "recommended_response_class", "qualification"],
+      "properties": {
+        "recurrence_key": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "\\S"},
+        "category": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "\\S"},
+        "impact": {"enum": ["medium", "high"]},
+        "count": {"type": "integer", "minimum": 1},
+        "distinct_task_count": {"type": "integer", "minimum": 1},
+        "task_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^T[0-9]{3,6}$"}
+        },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/safe_ref"}
+        },
+        "recommended_response_class": {"enum": ["instruction", "skill", "template", "contract", "tool", "system"]},
+        "qualification": {"enum": ["hard", "threshold"]}
+      }
+    },
+    "advisory_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "profile", "usage", "response"],
+      "properties": {
+        "provider": {"const": "ollama_local"},
+        "profile": {"type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S"},
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt_eval_count": {"type": "integer", "minimum": 0},
+            "eval_count": {"type": "integer", "minimum": 0}
+          }
+        },
+        "response": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "summary", "recommendations"],
+          "properties": {
+            "schema_version": {"const": "1.0"},
+            "summary": {"type": "string", "maxLength": 2000},
+            "recommendations": {
+              "type": "array",
+              "maxItems": 999,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["recurrence_keys", "candidate_type", "rationale"],
+                "properties": {
+                  "recurrence_keys": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 300}},
+                  "candidate_type": {"enum": ["instruction", "skill", "template", "contract", "tool", "system"]},
+                  "rationale": {"type": "string", "maxLength": 500}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

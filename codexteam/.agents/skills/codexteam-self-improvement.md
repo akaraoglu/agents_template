@@ -8,7 +8,7 @@ Turn observed team friction into the smallest verified reusable improvement with
 
 Use when the operator explicitly requests a reusable CodexTeam improvement, a severe failure exposes a durable gap, the same failure pattern recurs, existing guidance conflicts with evidence, or a repeated manual operation is risky and deterministic enough to become a tool.
 
-Capture observations during execution, but evaluate and promote them only at a stable task or project boundary. Do not use this workflow to redesign a healthy active task, replace a persistent attempt, or compensate for weak task reasoning with an automatic control script.
+Capture observations during execution, but evaluate and promote them only at a stable task boundary or after a verified milestone commit. Do not use this workflow to redesign a healthy active task, replace a persistent attempt, or compensate for weak task reasoning with an automatic control script.
 
 ## Inputs Needed
 
@@ -42,6 +42,7 @@ CodexTeam improvement observation:
    - Consider severity, recurrence, cross-project reuse, objective verifiability, expected time or token benefit, and maintenance cost.
    - Permit a severe and reusable one-time failure to qualify.
    - Permit `no change` when evidence or expected reuse is weak.
+   - After a verified milestone commit, use `milestone-retrospective.py analyze`; every invocation reports `NO_CHANGE`, `PROPOSALS_RECORDED`, or transient `BLOCKED_INSUFFICIENT_EVIDENCE`. Only the first two are persisted round dispositions.
 
 3. Classify the smallest durable response.
 
@@ -64,6 +65,7 @@ CodexTeam improvement observation:
    - Keep the change narrow and reviewable.
    - Record its originating evidence, intended trigger, affected roles or models, baseline, validation plan, and rollback.
    - Use the lifecycle `observed -> proposed -> candidate -> verified -> accepted`; record rejected candidates honestly. Later merge, deprecate, or retire accepted guidance when evidence changes.
+   - With `--apply`, qualified retrospective proposals enter `management/BACKLOG.md` as `Proposed`. Only an explicit human `decide --human-approved --apply` command changes that status. `Approved` means approved for planning only and grants no task or implementation authority.
 
 6. Keep judgment and verification separate.
    - The Project Lead may directly make a small Markdown correction.
@@ -110,6 +112,16 @@ git diff --check -- .
 ```
 
 Use `./scripts/run-skill-evals.py --profile <curated-local-profile> --output <new-json-path> --dry-run` before an authorized manual skill evaluation. The manual evaluator is one schema-constrained, tool-free local Ollama request, never retries, and is not lifecycle evidence. Use the relevant existing help, dry-run, product canary, or test-gate command when the candidate affects those surfaces. Do not introduce another validation framework for one improvement.
+
+After a verified milestone commit, preview or apply the bounded retrospective:
+
+```bash
+./scripts/milestone-retrospective.py analyze <control-root> --boundary <id> --tasks <T001,T002> [--apply]
+./scripts/milestone-retrospective.py decide <control-root> --boundary <id> --proposal <IMP-...> --decision approve|reject|defer --approver <identity> --reason <reason> [--human-approved --apply]
+```
+
+Run these commands from the CodexTeam toolkit root; `<control-root>` identifies
+the generated project being analyzed.
 
 ## Expected Output
 

@@ -2,6 +2,9 @@
 
 CodexTeam has one contract set. Contract IDs and filenames are unversioned;
 every record retains `schema_version` for future compatible evolution.
+The registered Python validator is normative for cross-field invariants,
+canonical identifier and timestamp forms, and exact integer representation that
+JSON Schema cannot fully express.
 
 | Contract | Schema | Authority |
 |---|---|---|
@@ -14,6 +17,9 @@ every record retains `schema_version` for future compatible evolution.
 | Role policy | `schemas/role-policy.json` | Role responsibility and permission ceiling |
 | Gate record | `schemas/gate-record.json` | Development or Integration Gate observation |
 | Commit plan/authorization/record | `schemas/commit-*.json` | Explicit local milestone commit workflow |
+| Milestone retrospective | `schemas/milestone-retrospective.json` | Evidence-backed disposition after a verified milestone commit |
+| Improvement proposal | `schemas/improvement-proposal.json` | Qualified backlog candidate initially recorded as `Proposed` |
+| Improvement disposition | `schemas/improvement-disposition.json` | Immutable explicit human decision with no implementation authority |
 
 The handoff references `execution-spec.json`; it does not independently select a
 backend, model, profile, reasoning effort, or AgentSpec. Session stores only the
@@ -37,3 +43,14 @@ text is not an acceptance contract in direct mode.
 
 A timeout or opt-in Run Guard interruption preserves a captured thread for
 same-attempt feedback. It does not create another lifecycle or contract format.
+
+Each analysis invocation returns `NO_CHANGE`, `PROPOSALS_RECORDED`, or the
+transient `BLOCKED_INSUFFICIENT_EVIDENCE` response. Only `NO_CHANGE` and
+`PROPOSALS_RECORDED` are persisted in `analysis.json`; a blocked response is not
+persisted and does not mutate retrospective state. With `--apply`, qualified
+proposals automatically enter the project backlog as `Proposed`. Only an
+explicit human `milestone-retrospective.py decide` command may transition one
+to `Approved`, `Rejected`, or `Deferred`, and applying any decision requires
+`--human-approved`. Approval is for normal planning only: it does not create a
+task, execute work, change guidance or contracts, or grant implementation
+authority. See `MILESTONE_RETROSPECTIVE.md`.
