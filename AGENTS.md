@@ -127,6 +127,11 @@ apply only when their named platform or tool is part of the task.
 - Follow established repository patterns before introducing new abstractions,
   dependencies, or tools.
 - Never overwrite, discard, stage, or revert unrelated user changes.
+- Never delete, clean, reset, overwrite, or otherwise destroy an uncommitted
+  path unless the active task explicitly owns that exact path and a reversible
+  copy or rollback path has been verified first. If ownership is uncertain,
+  leave it untouched and report it. Do not perform an irreversible action and
+  assume recovery can be done later.
 - Behavior changes and bug fixes normally require practical regression
   coverage. Explain when suitable automated coverage is unavailable.
 - Run the smallest relevant checks first, then broaden verification according
